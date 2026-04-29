@@ -1,0 +1,45 @@
+# ===== Secrets / Env =====
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# ===== Logs / Runtime =====
+logs/
+backend/src/logs/
+*.log
+*.pid
+*.pid.lock
+*.out
+*.err
+
+# ===== Local DB / Cache =====
+*.db
+*.sqlite
+*.sqlite3
+*.dump
+*.rdb
+
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+
+# ===== Node / Frontend =====
+node_modules/
+dist/
+build/
+.next/
+
+# ===== OS / IDE =====
+.DS_Store
+.idea/
+.vscode/
