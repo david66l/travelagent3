@@ -20,7 +20,7 @@ COPY pyproject.toml ./
 
 # Install production dependencies into a virtual environment
 RUN uv venv /opt/venv && \
-    uv pip install --no-cache -e "." --system
+    uv pip install --no-cache -e "." --python /opt/venv/bin/python
 
 # ── Production stage ──
 FROM python:3.13-slim AS production
@@ -36,6 +36,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy virtual environment from builder
 COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
+ENV PYTHONPATH="/app/src"
 
 # Create non-root user
 RUN groupadd -r appgroup && useradd -r -g appgroup appuser
