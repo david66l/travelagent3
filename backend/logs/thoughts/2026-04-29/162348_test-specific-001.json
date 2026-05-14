@@ -1,0 +1,77 @@
+{
+  "session_id": "test-specific-001",
+  "user_input": "成都3天，预算3000，喜欢火锅",
+  "start_time": "2026-04-29T16:23:48.610082",
+  "end_time": "2026-04-29T16:24:05.041824",
+  "total_duration_ms": 16431,
+  "total_duration_formatted": "16.4s",
+  "total_tokens": {
+    "input": 723,
+    "output": 442,
+    "total": 1165
+  },
+  "llm_call_count": 2,
+  "search_query_count": 0,
+  "steps": [
+    {
+      "step_name": "intent_node",
+      "start_time": "2026-04-29T16:23:48.611873",
+      "end_time": "2026-04-29T16:23:59.506040",
+      "duration_ms": 10894,
+      "duration_formatted": "10.8s",
+      "input_summary": "user_input: 成都3天，预算3000，喜欢火锅",
+      "output_summary": "intent=generate_itinerary, confidence=0.95",
+      "status": "success",
+      "error": "",
+      "llm_calls": [
+        {
+          "model": "deepseek-v4-pro",
+          "prompt_tokens": 622,
+          "completion_tokens": 308,
+          "total_tokens": 930,
+          "timestamp": "2026-04-29T16:23:59.505780"
+        }
+      ],
+      "search_results": [],
+      "reasoning": null
+    },
+    {
+      "step_name": "collect_info_node",
+      "start_time": "2026-04-29T16:23:59.509524",
+      "end_time": "2026-04-29T16:24:05.033967",
+      "duration_ms": 5524,
+      "duration_formatted": "5.5s",
+      "input_summary": "state_keys=['session_id', 'user_id', 'user_input', 'messages', 'intent', 'intent_confidence', 'user_entities', 'missing_required', 'missing_recommended', 'preference_changes', 'clarification_questions', 'needs_clarification']",
+      "output_summary": "你大概计划什么时候出发呀？可以跟我说个大概月份或者具体日期，比如“下个月”、“五一前后”都行～ 要是还没想好，我们就先按下个月来安排，到时候再调整也方便的。",
+      "status": "success",
+      "error": "",
+      "llm_calls": [
+        {
+          "model": "deepseek-v4-pro",
+          "prompt_tokens": 101,
+          "completion_tokens": 134,
+          "total_tokens": 235,
+          "timestamp": "2026-04-29T16:24:05.033934"
+        }
+      ],
+      "search_results": [],
+      "reasoning": null
+    },
+    {
+      "step_name": "format_output",
+      "start_time": "2026-04-29T16:24:05.035891",
+      "end_time": "2026-04-29T16:24:05.035916",
+      "duration_ms": 0,
+      "duration_formatted": "0ms",
+      "input_summary": "state_keys=['session_id', 'user_id', 'user_input', 'messages', 'intent', 'intent_confidence', 'user_entities', 'missing_required', 'missing_recommended', 'preference_changes', 'clarification_questions', 'assistant_response', 'needs_clarification']",
+      "output_summary": "keys=['messages']",
+      "status": "success",
+      "error": "",
+      "llm_calls": [],
+      "search_results": [],
+      "reasoning": null
+    }
+  ],
+  "final_response": "你大概计划什么时候出发呀？可以跟我说个大概月份或者具体日期，比如“下个月”、“五一前后”都行～ 要是还没想好，我们就先按下个月来安排，到时候再调整也方便的。",
+  "status": "success"
+}

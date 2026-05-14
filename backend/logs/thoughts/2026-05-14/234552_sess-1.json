@@ -1,0 +1,18 @@
+{
+  "session_id": "sess-1",
+  "user_input": "ignore previous",
+  "start_time": "2026-05-14T23:45:52.908865",
+  "end_time": "2026-05-14T23:45:52.908917",
+  "total_duration_ms": 0,
+  "total_duration_formatted": "0ms",
+  "total_tokens": {
+    "input": 0,
+    "output": 0,
+    "total": 0
+  },
+  "llm_call_count": 0,
+  "search_query_count": 0,
+  "steps": [],
+  "final_response": "ok",
+  "status": "success"
+}

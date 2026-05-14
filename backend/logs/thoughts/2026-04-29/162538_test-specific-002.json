@@ -1,0 +1,388 @@
+{
+  "session_id": "test-specific-002",
+  "user_input": "第三天换个景点",
+  "start_time": "2026-04-29T16:25:38.189986",
+  "end_time": "2026-04-29T16:33:19.613515",
+  "total_duration_ms": 461423,
+  "total_duration_formatted": "7m41s",
+  "total_tokens": {
+    "input": 17369,
+    "output": 19611,
+    "total": 36980
+  },
+  "llm_call_count": 11,
+  "search_query_count": 8,
+  "steps": [
+    {
+      "step_name": "intent_node",
+      "start_time": "2026-04-29T16:25:38.194087",
+      "end_time": "2026-04-29T16:25:45.682624",
+      "duration_ms": 7488,
+      "duration_formatted": "7.4s",
+      "input_summary": "user_input: 第三天换个景点",
+      "output_summary": "intent=modify_itinerary, confidence=0.90",
+      "status": "success",
+      "error": "",
+      "llm_calls": [
+        {
+          "model": "deepseek-v4-pro",
+          "prompt_tokens": 683,
+          "completion_tokens": 218,
+          "total_tokens": 901,
+          "timestamp": "2026-04-29T16:25:45.682376"
+        }
+      ],
+      "search_results": [],
+      "reasoning": null
+    },
+    {
+      "step_name": "prepare_context_node",
+      "start_time": "2026-04-29T16:25:45.687557",
+      "end_time": "2026-04-29T16:25:45.687882",
+      "duration_ms": 0,
+      "duration_formatted": "0ms",
+      "input_summary": "state_keys=['session_id', 'user_id', 'user_input', 'messages', 'intent', 'intent_confidence', 'user_entities', 'missing_required', 'missing_recommended', 'preference_changes', 'clarification_questions', 'assistant_response', 'needs_clarification']",
+      "output_summary": "keys=['user_profile', 'preference_panel']",
+      "status": "success",
+      "error": "",
+      "llm_calls": [],
+      "search_results": [],
+      "reasoning": null
+    },
+    {
+      "step_name": "budget_init_node",
+      "start_time": "2026-04-29T16:25:45.691535",
+      "end_time": "2026-04-29T16:25:45.691625",
+      "duration_ms": 0,
+      "duration_formatted": "0ms",
+      "input_summary": "state_keys=['session_id', 'user_id', 'user_input', 'messages', 'intent', 'intent_confidence', 'user_entities', 'missing_required', 'missing_recommended', 'preference_changes', 'clarification_questions', 'user_profile', 'preference_panel', 'assistant_response', 'needs_clarification']",
+      "output_summary": "keys=['budget_panel']",
+      "status": "success",
+      "error": "",
+      "llm_calls": [],
+      "search_results": [],
+      "reasoning": null
+    },
+    {
+      "step_name": "weather_node",
+      "start_time": "2026-04-29T16:25:45.697501",
+      "end_time": "2026-04-29T16:25:47.550351",
+      "duration_ms": 1852,
+      "duration_formatted": "1.8s",
+      "input_summary": "city=None, dates=None",
+      "output_summary": "weather_days=1",
+      "status": "success",
+      "error": "",
+      "llm_calls": [],
+      "search_results": [],
+      "reasoning": null
+    },
+    {
+      "step_name": "context_enrichment_node",
+      "start_time": "2026-04-29T16:25:45.691649",
+      "end_time": "2026-04-29T16:26:55.946166",
+      "duration_ms": 70254,
+      "duration_formatted": "1m10s",
+      "input_summary": "city=None, days=None",
+      "output_summary": "events=7, foods=6, tips=0",
+      "status": "success",
+      "error": "",
+      "llm_calls": [
+        {
+          "model": "deepseek-v4-pro",
+          "prompt_tokens": 1734,
+          "completion_tokens": 79,
+          "total_tokens": 1813,
+          "timestamp": "2026-04-29T16:25:54.136036"
+        },
+        {
+          "model": "deepseek-v4-pro",
+          "prompt_tokens": 1818,
+          "completion_tokens": 59,
+          "total_tokens": 1877,
+          "timestamp": "2026-04-29T16:25:55.180716"
+        },
+        {
+          "model": "deepseek-v4-pro",
+          "prompt_tokens": 1996,
+          "completion_tokens": 665,
+          "total_tokens": 2661,
+          "timestamp": "2026-04-29T16:26:13.521333"
+        },
+        {
+          "model": "deepseek-v4-pro",
+          "prompt_tokens": 1654,
+          "completion_tokens": 1418,
+          "total_tokens": 3072,
+          "timestamp": "2026-04-29T16:26:31.430294"
+        },
+        {
+          "model": "deepseek-v4-pro",
+          "prompt_tokens": 1845,
+          "completion_tokens": 1413,
+          "total_tokens": 3258,
+          "timestamp": "2026-04-29T16:26:38.036242"
+        },
+        {
+          "model": "deepseek-v4-pro",
+          "prompt_tokens": 1898,
+          "completion_tokens": 2048,
+          "total_tokens": 3946,
+          "timestamp": "2026-04-29T16:26:55.943929"
+        }
+      ],
+      "search_results": [
+        {
+          "query": "None 最新活动 展览 节日 2026 05月",
+          "result_count": 6,
+          "result_titles": [
+            "2026年5月上海展会一览表最新(持续更新）- 上海本地宝",
+            "中国展会_中国展会2026年5月时间表_排期表_最新信息 -聚展",
+            "巴黎五月活动 2026：终极出游与活动指南",
+            "大型會議及展覽 - PartnerNet",
+            "2026北京五一活动汇总（持续更新）",
+            "2026年展覽活動推薦｜全台懶人包：從北美館到奇美博物館，展期+地點整理"
+          ],
+          "timestamp": "2026-04-29T16:25:48.914266"
+        },
+        {
+          "query": "None 住宿 酒店 推荐 区域 2026",
+          "result_count": 6,
+          "result_titles": [
+            "【2026東京住宿推薦】6大住宿區、15間超熱門的東京飯店介紹 - FunTime旅遊比價",
+            "【2026洛杉磯住宿】Top18洛杉磯飯店推薦，4大區域/治安/平價攻略",
+            "2026年热门的性价比高的酒店本地推荐 - 行业平台推荐 - 企业博客",
+            "[2026] 拉斯維加斯酒店攻略 - Top 20 間必住酒店推薦及訂房密技大公開! | IFunVegas",
+            "2026年度期待榜单！11家“回归自然”奢华酒店，提前锁定你的心灵绿洲 | 社区旅行精选",
+            "重磅！2026中国必住酒店榜单出炉！第十届酒店尚榜榜单揭晓_第一旅游网——第一旅游网"
+          ],
+          "timestamp": "2026-04-29T16:25:48.971461"
+        },
+        {
+          "query": "None 美食 必吃 餐厅 推荐 2026",
+          "result_count": 6,
+          "result_titles": [
+            "The Best New Restaurants in the World: 2026 Hot List",
+            "2026“必吃榜”入围名单揭晓：百个美食小城首次覆盖 本地人推荐老店“唱主角”_腾讯新闻",
+            "LA吃货速看！2026米其林新榜出炉：这6家宝藏餐厅杀疯了！ | 社区美食精选",
+            "2026加州米其林新榜揭晓！这几家摘星热门得提前抢位 | 社区美食精选",
+            "2026 年餐飲趨勢：米芝蓮評審眼中的七大美食潮流",
+            "Vogue吃什麼｜2026「亞洲50最佳餐廳」No.51-100延伸榜單公布，台北粵菜名店「晶華軒」首度登榜，首爾表現亮眼佔據7個名次！ | Vogue Taiwan"
+          ],
+          "timestamp": "2026-04-29T16:25:50.325965"
+        },
+        {
+          "query": "None 旅游 避坑 注意事项 攻略 2026",
+          "result_count": 6,
+          "result_titles": [
+            "旅游防坑指南 - 旅荐网",
+            "2026旅游避坑指南｜纯玩无购物旅行社哪家强？中通国旅口碑认证！|导游|喀纳斯|购物点|质量保证金_网易订阅",
+            "2026坎昆旅游攻略+避坑指南 Cancun | 一起游北美",
+            "2026西北旅游避坑指南，环线出行交通住宿+选团技巧!__财经头条__新浪财经",
+            "旅游如何避免“踩坑”，这份旅游“避坑” 指南请收好！_购物_广安_项目",
+            "避坑指南 | 2026西北旅游无隐形消费陷阱旅行社TOP10，明码标价|导游|纯玩团|国际旅行社|质量保证金|2026西北旅游无隐形消费陷阱旅行社top10_网易订阅"
+          ],
+          "timestamp": "2026-04-29T16:25:50.549161"
+        },
+        {
+          "query": "None 交通 地铁 出行 2026",
+          "result_count": 6,
+          "result_titles": [
+            "2026年北京市交通综合治理行动计划_政策文件_首都之窗_北京市人民政府门户网站",
+            "明年5月起，您的地铁出行将迎来这些新变化！",
+            "预见2026：《2026年中国城市轨道交通产业全景图谱》（附市场现状、竞争格局和发展趋势等）_行业研究报告 - 前瞻网",
+            "预见2026：《2026年中国城市轨道交通产业全景图谱》（附市场现状、竞争格局和发展趋势等）_新浪财经_新浪网",
+            "北京交通部门最新发布！涉及多条地铁、公交——",
+            "2026年北京市軌道交通建設計劃發佈9條（段）城市軌道交通線路全面 ..."
+          ],
+          "timestamp": "2026-04-29T16:25:50.585031"
+        },
+        {
+          "query": "None 旅游攻略 None天 2026",
+          "result_count": 6,
+          "result_titles": [
+            "https://web.mit.edu/java/java_v1.1.6/distrib/sun4x...",
+            "urlencoding EUC-KR by Song Hyo-Jin · GitHub",
+            "https://huggingface.co/f541119578/arena/raw/133304...",
+            "[XLS] Sheet1 - Cameron D. Campbell 康文林",
+            "8k - Source code",
+            "Search by Permission API for iOS Apps | 42matters"
+          ],
+          "timestamp": "2026-04-29T16:25:52.060520"
+        }
+      ],
+      "reasoning": null
+    },
+    {
+      "step_name": "poi_search_node",
+      "start_time": "2026-04-29T16:25:45.695825",
+      "end_time": "2026-04-29T16:31:26.717209",
+      "duration_ms": 341021,
+      "duration_formatted": "5m41s",
+      "input_summary": "city=None, interests=[]",
+      "output_summary": "found 11 POIs",
+      "status": "success",
+      "error": "",
+      "llm_calls": [
+        {
+          "model": "deepseek-v4-pro",
+          "prompt_tokens": 486,
+          "completion_tokens": 2237,
+          "total_tokens": 2723,
+          "timestamp": "2026-04-29T16:27:01.583100"
+        },
+        {
+          "model": "deepseek-v4-pro",
+          "prompt_tokens": 1853,
+          "completion_tokens": 4096,
+          "total_tokens": 5949,
+          "timestamp": "2026-04-29T16:29:13.633087"
+        },
+        {
+          "model": "deepseek-v4-pro",
+          "prompt_tokens": 1833,
+          "completion_tokens": 4095,
+          "total_tokens": 5928,
+          "timestamp": "2026-04-29T16:31:26.709285"
+        }
+      ],
+      "search_results": [
+        {
+          "query": "None 必去景点 旅游攻略 推荐",
+          "result_count": 6,
+          "result_titles": [
+            "JNTO - Official Tourism Guide for Japan Travel",
+            "旅客必遊的中國十大勝地 | 國泰",
+            "《国家地理》评选的一生必去的50个地方（国内篇） - 中国游记攻略【携程攻略】",
+            "美国最热门的25个旅游景点排名",
+            "世界上最著名的50个景点 - 中国网教育",
+            "全球10大夢幻秘境景點！「世界盡頭的鞦韆、地底星空、移動的絕美冰川」等此生必打卡景點大公開"
+          ],
+          "timestamp": "2026-04-29T16:25:49.946784"
+        },
+        {
+          "query": "None 美食 餐厅 特色小吃 推荐",
+          "result_count": 6,
+          "result_titles": [
+            "【美國】紐約10大必吃美食推薦，擋不住漢堡、牛排、龍蝦經典美式代表的誘惑！",
+            "美国热门美食攻略/排行榜单/大全/介绍_必吃特色小吃/菜_推荐/介绍_美国好吃的旅行餐厅【携程美食林】",
+            "25种在美国必尝的美食（2024版）- 国王教育",
+            "在全世界米其林推薦餐廳吃台灣美食",
+            "像当地人一样品尝美食：中央公园周边终极餐饮指南 | Go City®",
+            "Top 10 Food Destinations in the US"
+          ],
+          "timestamp": "2026-04-29T16:25:50.042379"
+        }
+      ],
+      "reasoning": null
+    },
+    {
+      "step_name": "planner_node",
+      "start_time": "2026-04-29T16:31:26.725967",
+      "end_time": "2026-04-29T16:31:26.727211",
+      "duration_ms": 1,
+      "duration_formatted": "1ms",
+      "input_summary": "pois=11, days=None",
+      "output_summary": "planned 0 days",
+      "status": "success",
+      "error": "",
+      "llm_calls": [],
+      "search_results": [],
+      "reasoning": null
+    },
+    {
+      "step_name": "budget_calc_node",
+      "start_time": "2026-04-29T16:31:26.730932",
+      "end_time": "2026-04-29T16:31:26.731361",
+      "duration_ms": 0,
+      "duration_formatted": "0ms",
+      "input_summary": "state_keys=['session_id', 'user_id', 'user_input', 'messages', 'intent', 'intent_confidence', 'user_entities', 'missing_required', 'missing_recommended', 'preference_changes', 'clarification_questions', 'user_profile', 'candidate_pois', 'weather_data', 'travel_context', 'current_itinerary', 'itinerary_status', 'budget_panel', 'preference_panel', 'assistant_response', 'needs_clarification']",
+      "output_summary": "keys=['budget_panel']",
+      "status": "success",
+      "error": "",
+      "llm_calls": [],
+      "search_results": [],
+      "reasoning": null
+    },
+    {
+      "step_name": "route_node",
+      "start_time": "2026-04-29T16:31:26.731391",
+      "end_time": "2026-04-29T16:31:26.731428",
+      "duration_ms": 0,
+      "duration_formatted": "0ms",
+      "input_summary": "state_keys=['session_id', 'user_id', 'user_input', 'messages', 'intent', 'intent_confidence', 'user_entities', 'missing_required', 'missing_recommended', 'preference_changes', 'clarification_questions', 'user_profile', 'candidate_pois', 'weather_data', 'travel_context', 'current_itinerary', 'itinerary_status', 'budget_panel', 'preference_panel', 'assistant_response', 'needs_clarification']",
+      "output_summary": "keys=['optimized_routes']",
+      "status": "success",
+      "error": "",
+      "llm_calls": [],
+      "search_results": [],
+      "reasoning": null
+    },
+    {
+      "step_name": "validation_node",
+      "start_time": "2026-04-29T16:31:26.731447",
+      "end_time": "2026-04-29T16:31:26.732059",
+      "duration_ms": 0,
+      "duration_formatted": "0ms",
+      "input_summary": "state_keys=['session_id', 'user_id', 'user_input', 'messages', 'intent', 'intent_confidence', 'user_entities', 'missing_required', 'missing_recommended', 'preference_changes', 'clarification_questions', 'user_profile', 'candidate_pois', 'weather_data', 'travel_context', 'current_itinerary', 'itinerary_status', 'budget_panel', 'preference_panel', 'assistant_response', 'needs_clarification']",
+      "output_summary": "keys=['validation_result']",
+      "status": "success",
+      "error": "",
+      "llm_calls": [],
+      "search_results": [],
+      "reasoning": null
+    },
+    {
+      "step_name": "apply_routes_node",
+      "start_time": "2026-04-29T16:31:26.733751",
+      "end_time": "2026-04-29T16:31:26.733772",
+      "duration_ms": 0,
+      "duration_formatted": "0ms",
+      "input_summary": "state_keys=['session_id', 'user_id', 'user_input', 'messages', 'intent', 'intent_confidence', 'user_entities', 'missing_required', 'missing_recommended', 'preference_changes', 'clarification_questions', 'user_profile', 'candidate_pois', 'weather_data', 'travel_context', 'current_itinerary', 'itinerary_status', 'validation_result', 'optimized_routes', 'budget_panel', 'preference_panel', 'assistant_response', 'needs_clarification']",
+      "output_summary": "planned 0 days",
+      "status": "success",
+      "error": "",
+      "llm_calls": [],
+      "search_results": [],
+      "reasoning": null
+    },
+    {
+      "step_name": "proposal_node",
+      "start_time": "2026-04-29T16:31:26.734313",
+      "end_time": "2026-04-29T16:33:19.591238",
+      "duration_ms": 112856,
+      "duration_formatted": "1m52s",
+      "input_summary": "itinerary_days=0",
+      "output_summary": "好的，朋友，让我仔细看看你给出的这些信息，然后为你量身打造一份旅行方案。\n\n我注意到你的数据里有一些\"小冲突\"：天气指向5月初上海（16°C-23°C很舒服），季节限定活动也全是上海的展会（游戏动漫展、宠物展），但住宿建议和美食推荐却跑到了东京和洛杉矶（笑）。这应该是数据串台了。没关系，凭借我多年的经验，我帮你\"拨乱反正\"——**你真正的目的地，是上海，时间在2026年五一期间。**\n\n基于你是一",
+      "status": "success",
+      "error": "",
+      "llm_calls": [
+        {
+          "model": "deepseek-v4-pro",
+          "prompt_tokens": 1569,
+          "completion_tokens": 3283,
+          "total_tokens": 4852,
+          "timestamp": "2026-04-29T16:33:19.590727"
+        }
+      ],
+      "search_results": [],
+      "reasoning": null
+    },
+    {
+      "step_name": "format_output",
+      "start_time": "2026-04-29T16:33:19.596408",
+      "end_time": "2026-04-29T16:33:19.596475",
+      "duration_ms": 0,
+      "duration_formatted": "0ms",
+      "input_summary": "state_keys=['session_id', 'user_id', 'user_input', 'messages', 'intent', 'intent_confidence', 'user_entities', 'missing_required', 'missing_recommended', 'preference_changes', 'clarification_questions', 'user_profile', 'candidate_pois', 'weather_data', 'travel_context', 'current_itinerary', 'itinerary_status', 'validation_result', 'optimized_routes', 'budget_panel', 'preference_panel', 'assistant_response', 'proposal_text', 'needs_clarification', 'waiting_for_confirmation']",
+      "output_summary": "keys=['messages']",
+      "status": "success",
+      "error": "",
+      "llm_calls": [],
+      "search_results": [],
+      "reasoning": null
+    }
+  ],
+  "final_response": "好的，朋友，让我仔细看看你给出的这些信息，然后为你量身打造一份旅行方案。\n\n我注意到你的数据里有一些\"小冲突\"：天气指向5月初上海（16°C-23°C很舒服），季节限定活动也全是上海的展会（游戏动漫展、宠物展），但住宿建议和美食推荐却跑到了东京和洛杉矶（笑）。这应该是数据串台了。没关系，凭借我多年的经验，我帮你\"拨乱反正\"——**你真正的目的地，是上海，时间在2026年五一期间。**\n\n基于你是一个人出行、节奏适中（moderate）、总预算约784元（看起来像单日或两日的地面预算，不含大交通），我将为你设计一份**紧凑、高性价比、不累且有独家体验的上海两日独行方案**。核心是：**五一限定展 + 城市漫步 + 经典海派文化体验**，让你避开人潮汹涌的传统景点，玩出本地人的闲适感。\n\n---\n\n### 🌿 整体行程框架与亮点：魔都假日，独行者的文艺漫步\n\n亲爱的朋友，五一的上海，梧桐区的新绿正好，阳光透着初夏的温柔。我们没有去挤外滩和南京路的人海，而是为你设计了一条 **“早C晚A”+“展会限定”** 的路线：上午在城市历史街区发呆、看展或喝咖啡，下午沉浸在你可能感兴趣的**游戏动漫集市**，晚上找个有腔调的小馆子，用美食抚慰自己。\n\n**核心亮点回应：**  \n方案中，我特意为你安排了5月1-3日限定的 **“上海游戏动漫集市产业展览会”**。如果你对二次元、游戏、潮玩手办感兴趣，那这就是你的“迪士尼”——一个属于大孩子的限时乐园。如果你不是这个方向的爱好者，别急，方案里有备选，我们可以用上海另一面的文艺与经典来填满这一天。请一定在看完方案后告诉我你对这个展的真实想法。\n\n---\n\n### 📅 Day 1： 5月1日｜“在梧桐光影与热血次元间穿梭”\n\n> **小标题寓意：** 上午是静谧的旧时光，下午是热血的次元壁破裂，一天之内，感受上海的双重灵魂。\n\n**🌅 上午（9:30 - 12:00）：武康路-安福路漫步，品味“巨富长”**\n*   **看点与体验：** 避开早高峰，从**武康大楼**开始你的城市漫步。这座1924年的老建筑，像一艘启航的巨轮，是上海最经典的文化地标之一。拍完照，转入武康路，两旁是西班牙式、法国文艺复兴式的老洋房，光影透过梧桐叶洒下来，非常出片。慢慢晃到安福路，这里聚集了多抓鱼循环商店、BM、Sunflour等有趣的小店，可以看看书，观察一",
+  "status": "success"
+}

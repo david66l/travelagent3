@@ -1,0 +1,77 @@
+{
+  "session_id": "test-persist-001",
+  "user_input": "成都3天",
+  "start_time": "2026-04-29T11:29:16.542298",
+  "end_time": "2026-04-29T11:29:29.441075",
+  "total_duration_ms": 12898,
+  "total_duration_formatted": "12.8s",
+  "total_tokens": {
+    "input": 709,
+    "output": 308,
+    "total": 1017
+  },
+  "llm_call_count": 2,
+  "search_query_count": 0,
+  "steps": [
+    {
+      "step_name": "intent_node",
+      "start_time": "2026-04-29T11:29:16.550689",
+      "end_time": "2026-04-29T11:29:25.273693",
+      "duration_ms": 8723,
+      "duration_formatted": "8.7s",
+      "input_summary": "user_input: 成都3天",
+      "output_summary": "intent=generate_itinerary, confidence=0.95",
+      "status": "success",
+      "error": "",
+      "llm_calls": [
+        {
+          "model": "deepseek-v4-pro",
+          "prompt_tokens": 608,
+          "completion_tokens": 220,
+          "total_tokens": 828,
+          "timestamp": "2026-04-29T11:29:25.273506"
+        }
+      ],
+      "search_results": [],
+      "reasoning": null
+    },
+    {
+      "step_name": "collect_info_node",
+      "start_time": "2026-04-29T11:29:25.277146",
+      "end_time": "2026-04-29T11:29:29.432034",
+      "duration_ms": 4154,
+      "duration_formatted": "4.1s",
+      "input_summary": "state_keys=['session_id', 'user_id', 'user_input', 'messages', 'intent', 'intent_confidence', 'user_entities', 'missing_required', 'missing_recommended', 'preference_changes', 'clarification_questions', 'needs_clarification']",
+      "output_summary": "嘿，关于出发时间，你心里有大概的念头吗？比如是打算五一假期走，还是倾向于暑假或者年底之类的？如果还没想好也没关系，我先按九月初来帮你规划，到时候再调整也来得及～",
+      "status": "success",
+      "error": "",
+      "llm_calls": [
+        {
+          "model": "deepseek-v4-pro",
+          "prompt_tokens": 101,
+          "completion_tokens": 88,
+          "total_tokens": 189,
+          "timestamp": "2026-04-29T11:29:29.431933"
+        }
+      ],
+      "search_results": [],
+      "reasoning": null
+    },
+    {
+      "step_name": "format_output",
+      "start_time": "2026-04-29T11:29:29.434949",
+      "end_time": "2026-04-29T11:29:29.435001",
+      "duration_ms": 0,
+      "duration_formatted": "0ms",
+      "input_summary": "state_keys=['session_id', 'user_id', 'user_input', 'messages', 'intent', 'intent_confidence', 'user_entities', 'missing_required', 'missing_recommended', 'preference_changes', 'clarification_questions', 'assistant_response', 'needs_clarification']",
+      "output_summary": "keys=['messages']",
+      "status": "success",
+      "error": "",
+      "llm_calls": [],
+      "search_results": [],
+      "reasoning": null
+    }
+  ],
+  "final_response": "嘿，关于出发时间，你心里有大概的念头吗？比如是打算五一假期走，还是倾向于暑假或者年底之类的？如果还没想好也没关系，我先按九月初来帮你规划，到时候再调整也来得及～",
+  "status": "success"
+}

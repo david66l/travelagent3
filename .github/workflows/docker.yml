@@ -1,0 +1,92 @@
+name: Docker CI
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - "backend/**"
+      - "frontend/**"
+      - "docker-compose.yml"
+      - "Dockerfile*"
+      - ".github/workflows/docker.yml"
+  pull_request:
+    branches: [main, master]
+    paths:
+      - "backend/**"
+      - "frontend/**"
+      - "docker-compose.yml"
+      - "Dockerfile*"
+      - ".github/workflows/docker.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-backend:
+    name: Build Backend Image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build backend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: false
+          load: true
+          tags: travel-agent-backend:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  build-frontend:
+    name: Build Frontend Image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build frontend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: false
+          load: true
+          tags: travel-agent-frontend:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  compose-up:
+    name: Docker Compose Up
+    runs-on: ubuntu-latest
+    needs: [build-backend, build-frontend]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create .env file
+        run: |
+          cp .env.example .env
+          echo "OPENAI_API_KEY=sk-test-mock" >> .env
+          echo "TAVILY_API_KEY=tvly-test-mock" >> .env
+
+      - name: Start services
+        run: docker compose up -d --wait
+
+      - name: Health check
+        run: |
+          sleep 5
+          curl -sf http://localhost:8000/api/health || exit 1
+
+      - name: Stop services
+        if: always()
+        run: docker compose down -v

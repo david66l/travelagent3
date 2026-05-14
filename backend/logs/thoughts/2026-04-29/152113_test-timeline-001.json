@@ -1,0 +1,77 @@
+{
+  "session_id": "test-timeline-001",
+  "user_input": "成都3天",
+  "start_time": "2026-04-29T15:21:13.099585",
+  "end_time": "2026-04-29T15:21:43.826100",
+  "total_duration_ms": 30726,
+  "total_duration_formatted": "30.7s",
+  "total_tokens": {
+    "input": 709,
+    "output": 914,
+    "total": 1623
+  },
+  "llm_call_count": 2,
+  "search_query_count": 0,
+  "steps": [
+    {
+      "step_name": "intent_node",
+      "start_time": "2026-04-29T15:21:13.109237",
+      "end_time": "2026-04-29T15:21:39.171621",
+      "duration_ms": 26062,
+      "duration_formatted": "26.0s",
+      "input_summary": "user_input: 成都3天",
+      "output_summary": "intent=generate_itinerary, confidence=0.95",
+      "status": "success",
+      "error": "",
+      "llm_calls": [
+        {
+          "model": "deepseek-v4-pro",
+          "prompt_tokens": 608,
+          "completion_tokens": 811,
+          "total_tokens": 1419,
+          "timestamp": "2026-04-29T15:21:39.170228"
+        }
+      ],
+      "search_results": [],
+      "reasoning": null
+    },
+    {
+      "step_name": "collect_info_node",
+      "start_time": "2026-04-29T15:21:39.175246",
+      "end_time": "2026-04-29T15:21:43.814461",
+      "duration_ms": 4639,
+      "duration_formatted": "4.6s",
+      "input_summary": "state_keys=['session_id', 'user_id', 'user_input', 'messages', 'intent', 'intent_confidence', 'user_entities', 'missing_required', 'missing_recommended', 'preference_changes', 'clarification_questions', 'needs_clarification']",
+      "output_summary": "想去哪里玩，大概什么时候出发呀？比如五一假期前后，还是暑假七八月，或者你已经有具体的日期了？告诉我大概时间，我帮你把行程安排得更合适～",
+      "status": "success",
+      "error": "",
+      "llm_calls": [
+        {
+          "model": "deepseek-v4-pro",
+          "prompt_tokens": 101,
+          "completion_tokens": 103,
+          "total_tokens": 204,
+          "timestamp": "2026-04-29T15:21:43.814371"
+        }
+      ],
+      "search_results": [],
+      "reasoning": null
+    },
+    {
+      "step_name": "format_output",
+      "start_time": "2026-04-29T15:21:43.817568",
+      "end_time": "2026-04-29T15:21:43.817620",
+      "duration_ms": 0,
+      "duration_formatted": "0ms",
+      "input_summary": "state_keys=['session_id', 'user_id', 'user_input', 'messages', 'intent', 'intent_confidence', 'user_entities', 'missing_required', 'missing_recommended', 'preference_changes', 'clarification_questions', 'assistant_response', 'needs_clarification']",
+      "output_summary": "keys=['messages']",
+      "status": "success",
+      "error": "",
+      "llm_calls": [],
+      "search_results": [],
+      "reasoning": null
+    }
+  ],
+  "final_response": "想去哪里玩，大概什么时候出发呀？比如五一假期前后，还是暑假七八月，或者你已经有具体的日期了？告诉我大概时间，我帮你把行程安排得更合适～",
+  "status": "success"
+}

@@ -1,0 +1,77 @@
+{
+  "session_id": "test-fix-001",
+  "user_input": "成都3天",
+  "start_time": "2026-04-29T11:48:21.744791",
+  "end_time": "2026-04-29T11:48:36.288397",
+  "total_duration_ms": 14543,
+  "total_duration_formatted": "14.5s",
+  "total_tokens": {
+    "input": 709,
+    "output": 376,
+    "total": 1085
+  },
+  "llm_call_count": 2,
+  "search_query_count": 0,
+  "steps": [
+    {
+      "step_name": "intent_node",
+      "start_time": "2026-04-29T11:48:21.752433",
+      "end_time": "2026-04-29T11:48:28.883730",
+      "duration_ms": 7131,
+      "duration_formatted": "7.1s",
+      "input_summary": "user_input: 成都3天",
+      "output_summary": "intent=generate_itinerary, confidence=0.95",
+      "status": "success",
+      "error": "",
+      "llm_calls": [
+        {
+          "model": "deepseek-v4-pro",
+          "prompt_tokens": 608,
+          "completion_tokens": 188,
+          "total_tokens": 796,
+          "timestamp": "2026-04-29T11:48:28.882986"
+        }
+      ],
+      "search_results": [],
+      "reasoning": null
+    },
+    {
+      "step_name": "collect_info_node",
+      "start_time": "2026-04-29T11:48:28.887303",
+      "end_time": "2026-04-29T11:48:36.278837",
+      "duration_ms": 7391,
+      "duration_formatted": "7.3s",
+      "input_summary": "state_keys=['session_id', 'user_id', 'user_input', 'messages', 'intent', 'intent_confidence', 'user_entities', 'missing_required', 'missing_recommended', 'preference_changes', 'clarification_questions', 'needs_clarification']",
+      "output_summary": "嘿，关于出发时间你是怎么想的呀？是打算近期就走，还是下个月，或者某个特定月份？要是还没想好也没关系，我可以先按春夏之交的默认时间来帮你看看～",
+      "status": "success",
+      "error": "",
+      "llm_calls": [
+        {
+          "model": "deepseek-v4-pro",
+          "prompt_tokens": 101,
+          "completion_tokens": 188,
+          "total_tokens": 289,
+          "timestamp": "2026-04-29T11:48:36.278766"
+        }
+      ],
+      "search_results": [],
+      "reasoning": null
+    },
+    {
+      "step_name": "format_output",
+      "start_time": "2026-04-29T11:48:36.280433",
+      "end_time": "2026-04-29T11:48:36.280467",
+      "duration_ms": 0,
+      "duration_formatted": "0ms",
+      "input_summary": "state_keys=['session_id', 'user_id', 'user_input', 'messages', 'intent', 'intent_confidence', 'user_entities', 'missing_required', 'missing_recommended', 'preference_changes', 'clarification_questions', 'assistant_response', 'needs_clarification']",
+      "output_summary": "keys=['messages']",
+      "status": "success",
+      "error": "",
+      "llm_calls": [],
+      "search_results": [],
+      "reasoning": null
+    }
+  ],
+  "final_response": "嘿，关于出发时间你是怎么想的呀？是打算近期就走，还是下个月，或者某个特定月份？要是还没想好也没关系，我可以先按春夏之交的默认时间来帮你看看～",
+  "status": "success"
+}

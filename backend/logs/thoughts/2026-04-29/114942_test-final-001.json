@@ -1,0 +1,77 @@
+{
+  "session_id": "test-final-001",
+  "user_input": "成都3天",
+  "start_time": "2026-04-29T11:49:42.616888",
+  "end_time": "2026-04-29T11:49:55.634428",
+  "total_duration_ms": 13017,
+  "total_duration_formatted": "13.0s",
+  "total_tokens": {
+    "input": 709,
+    "output": 377,
+    "total": 1086
+  },
+  "llm_call_count": 2,
+  "search_query_count": 0,
+  "steps": [
+    {
+      "step_name": "intent_node",
+      "start_time": "2026-04-29T11:49:42.625426",
+      "end_time": "2026-04-29T11:49:50.747604",
+      "duration_ms": 8122,
+      "duration_formatted": "8.1s",
+      "input_summary": "user_input: 成都3天",
+      "output_summary": "intent=generate_itinerary, confidence=0.95",
+      "status": "success",
+      "error": "",
+      "llm_calls": [
+        {
+          "model": "deepseek-v4-pro",
+          "prompt_tokens": 608,
+          "completion_tokens": 235,
+          "total_tokens": 843,
+          "timestamp": "2026-04-29T11:49:50.747411"
+        }
+      ],
+      "search_results": [],
+      "reasoning": null
+    },
+    {
+      "step_name": "collect_info_node",
+      "start_time": "2026-04-29T11:49:50.760254",
+      "end_time": "2026-04-29T11:49:55.625936",
+      "duration_ms": 4865,
+      "duration_formatted": "4.8s",
+      "input_summary": "state_keys=['session_id', 'user_id', 'user_input', 'messages', 'intent', 'intent_confidence', 'user_entities', 'missing_required', 'missing_recommended', 'preference_changes', 'clarification_questions', 'needs_clarification']",
+      "output_summary": "想去哪儿浪我已经记下啦～那大概什么时候出发呢？比如是下个月初，还是等到秋天？也可以直接告诉我具体日期或者月份，这样我也好帮你盯着最合适的时机😉",
+      "status": "success",
+      "error": "",
+      "llm_calls": [
+        {
+          "model": "deepseek-v4-pro",
+          "prompt_tokens": 101,
+          "completion_tokens": 142,
+          "total_tokens": 243,
+          "timestamp": "2026-04-29T11:49:55.625776"
+        }
+      ],
+      "search_results": [],
+      "reasoning": null
+    },
+    {
+      "step_name": "format_output",
+      "start_time": "2026-04-29T11:49:55.627712",
+      "end_time": "2026-04-29T11:49:55.627754",
+      "duration_ms": 0,
+      "duration_formatted": "0ms",
+      "input_summary": "state_keys=['session_id', 'user_id', 'user_input', 'messages', 'intent', 'intent_confidence', 'user_entities', 'missing_required', 'missing_recommended', 'preference_changes', 'clarification_questions', 'assistant_response', 'needs_clarification']",
+      "output_summary": "keys=['messages']",
+      "status": "success",
+      "error": "",
+      "llm_calls": [],
+      "search_results": [],
+      "reasoning": null
+    }
+  ],
+  "final_response": "想去哪儿浪我已经记下啦～那大概什么时候出发呢？比如是下个月初，还是等到秋天？也可以直接告诉我具体日期或者月份，这样我也好帮你盯着最合适的时机😉",
+  "status": "success"
+}

@@ -1,0 +1,77 @@
+{
+  "session_id": "test-modify-001",
+  "user_input": "成都3天，预算3000，喜欢火锅",
+  "start_time": "2026-04-29T16:23:01.727366",
+  "end_time": "2026-04-29T16:23:18.167502",
+  "total_duration_ms": 16440,
+  "total_duration_formatted": "16.4s",
+  "total_tokens": {
+    "input": 723,
+    "output": 421,
+    "total": 1144
+  },
+  "llm_call_count": 2,
+  "search_query_count": 0,
+  "steps": [
+    {
+      "step_name": "intent_node",
+      "start_time": "2026-04-29T16:23:01.739577",
+      "end_time": "2026-04-29T16:23:11.356598",
+      "duration_ms": 9617,
+      "duration_formatted": "9.6s",
+      "input_summary": "user_input: 成都3天，预算3000，喜欢火锅",
+      "output_summary": "intent=generate_itinerary, confidence=0.95",
+      "status": "success",
+      "error": "",
+      "llm_calls": [
+        {
+          "model": "deepseek-v4-pro",
+          "prompt_tokens": 622,
+          "completion_tokens": 249,
+          "total_tokens": 871,
+          "timestamp": "2026-04-29T16:23:11.355873"
+        }
+      ],
+      "search_results": [],
+      "reasoning": null
+    },
+    {
+      "step_name": "collect_info_node",
+      "start_time": "2026-04-29T16:23:11.360869",
+      "end_time": "2026-04-29T16:23:18.156164",
+      "duration_ms": 6795,
+      "duration_formatted": "6.7s",
+      "input_summary": "state_keys=['session_id', 'user_id', 'user_input', 'messages', 'intent', 'intent_confidence', 'user_entities', 'missing_required', 'missing_recommended', 'preference_changes', 'clarification_questions', 'needs_clarification']",
+      "output_summary": "嘿，想先了解一下你大概什么时候出发呢？是近期一两个月内，还是打算等到某个特定的季节，比如春天或者秋天呀？这样我能帮你更好地规划～",
+      "status": "success",
+      "error": "",
+      "llm_calls": [
+        {
+          "model": "deepseek-v4-pro",
+          "prompt_tokens": 101,
+          "completion_tokens": 172,
+          "total_tokens": 273,
+          "timestamp": "2026-04-29T16:23:18.156035"
+        }
+      ],
+      "search_results": [],
+      "reasoning": null
+    },
+    {
+      "step_name": "format_output",
+      "start_time": "2026-04-29T16:23:18.159798",
+      "end_time": "2026-04-29T16:23:18.159854",
+      "duration_ms": 0,
+      "duration_formatted": "0ms",
+      "input_summary": "state_keys=['session_id', 'user_id', 'user_input', 'messages', 'intent', 'intent_confidence', 'user_entities', 'missing_required', 'missing_recommended', 'preference_changes', 'clarification_questions', 'assistant_response', 'needs_clarification']",
+      "output_summary": "keys=['messages']",
+      "status": "success",
+      "error": "",
+      "llm_calls": [],
+      "search_results": [],
+      "reasoning": null
+    }
+  ],
+  "final_response": "嘿，想先了解一下你大概什么时候出发呢？是近期一两个月内，还是打算等到某个特定的季节，比如春天或者秋天呀？这样我能帮你更好地规划～",
+  "status": "success"
+}

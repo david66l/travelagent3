@@ -1,0 +1,77 @@
+{
+  "session_id": "test-fix-final-001",
+  "user_input": "成都3天",
+  "start_time": "2026-04-29T11:51:04.992436",
+  "end_time": "2026-04-29T11:51:21.502713",
+  "total_duration_ms": 16510,
+  "total_duration_formatted": "16.5s",
+  "total_tokens": {
+    "input": 709,
+    "output": 385,
+    "total": 1094
+  },
+  "llm_call_count": 2,
+  "search_query_count": 0,
+  "steps": [
+    {
+      "step_name": "intent_node",
+      "start_time": "2026-04-29T11:51:05.011347",
+      "end_time": "2026-04-29T11:51:13.039711",
+      "duration_ms": 8028,
+      "duration_formatted": "8.0s",
+      "input_summary": "user_input: 成都3天",
+      "output_summary": "intent=generate_itinerary, confidence=0.95",
+      "status": "success",
+      "error": "",
+      "llm_calls": [
+        {
+          "model": "deepseek-v4-pro",
+          "prompt_tokens": 608,
+          "completion_tokens": 200,
+          "total_tokens": 808,
+          "timestamp": "2026-04-29T11:51:13.039407"
+        }
+      ],
+      "search_results": [],
+      "reasoning": null
+    },
+    {
+      "step_name": "collect_info_node",
+      "start_time": "2026-04-29T11:51:13.042440",
+      "end_time": "2026-04-29T11:51:21.492675",
+      "duration_ms": 8450,
+      "duration_formatted": "8.4s",
+      "input_summary": "state_keys=['session_id', 'user_id', 'user_input', 'messages', 'intent', 'intent_confidence', 'user_entities', 'missing_required', 'missing_recommended', 'preference_changes', 'clarification_questions', 'needs_clarification']",
+      "output_summary": "你大概计划什么时候出发呀？比如是想趁着最近的假期走，还是心里已经有了喜欢的季节，像春暖花开的四五月或者秋高气爽的十月左右？告诉我大概的月份或者日期就好～",
+      "status": "success",
+      "error": "",
+      "llm_calls": [
+        {
+          "model": "deepseek-v4-pro",
+          "prompt_tokens": 101,
+          "completion_tokens": 185,
+          "total_tokens": 286,
+          "timestamp": "2026-04-29T11:51:21.492620"
+        }
+      ],
+      "search_results": [],
+      "reasoning": null
+    },
+    {
+      "step_name": "format_output",
+      "start_time": "2026-04-29T11:51:21.494842",
+      "end_time": "2026-04-29T11:51:21.494877",
+      "duration_ms": 0,
+      "duration_formatted": "0ms",
+      "input_summary": "state_keys=['session_id', 'user_id', 'user_input', 'messages', 'intent', 'intent_confidence', 'user_entities', 'missing_required', 'missing_recommended', 'preference_changes', 'clarification_questions', 'assistant_response', 'needs_clarification']",
+      "output_summary": "keys=['messages']",
+      "status": "success",
+      "error": "",
+      "llm_calls": [],
+      "search_results": [],
+      "reasoning": null
+    }
+  ],
+  "final_response": "你大概计划什么时候出发呀？比如是想趁着最近的假期走，还是心里已经有了喜欢的季节，像春暖花开的四五月或者秋高气爽的十月左右？告诉我大概的月份或者日期就好～",
+  "status": "success"
+}

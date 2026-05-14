@@ -1,0 +1,69 @@
+{
+  "session_id": "test-specific-001",
+  "user_input": "第三天换个景点",
+  "start_time": "2026-04-29T16:24:05.046747",
+  "end_time": "2026-04-29T16:24:12.423683",
+  "total_duration_ms": 7376,
+  "total_duration_formatted": "7.3s",
+  "total_tokens": {
+    "input": 679,
+    "output": 217,
+    "total": 896
+  },
+  "llm_call_count": 1,
+  "search_query_count": 0,
+  "steps": [
+    {
+      "step_name": "intent_node",
+      "start_time": "2026-04-29T16:24:05.052579",
+      "end_time": "2026-04-29T16:24:12.409642",
+      "duration_ms": 7357,
+      "duration_formatted": "7.3s",
+      "input_summary": "user_input: 第三天换个景点",
+      "output_summary": "intent=modify_itinerary, confidence=0.95",
+      "status": "success",
+      "error": "",
+      "llm_calls": [
+        {
+          "model": "deepseek-v4-pro",
+          "prompt_tokens": 679,
+          "completion_tokens": 217,
+          "total_tokens": 896,
+          "timestamp": "2026-04-29T16:24:12.409440"
+        }
+      ],
+      "search_results": [],
+      "reasoning": null
+    },
+    {
+      "step_name": "ask_modification_node",
+      "start_time": "2026-04-29T16:24:12.413297",
+      "end_time": "2026-04-29T16:24:12.413352",
+      "duration_ms": 0,
+      "duration_formatted": "0ms",
+      "input_summary": "state_keys=['session_id', 'user_id', 'user_input', 'messages', 'intent', 'intent_confidence', 'user_entities', 'missing_required', 'missing_recommended', 'preference_changes', 'clarification_questions', 'assistant_response', 'needs_clarification']",
+      "output_summary": "没问题，告诉我你的具体需求，比如：\n• 目的地、天数、预算的变化\n• 想要体验的类型（美食、文化、自然风光等）\n\n请直接说你的想法～",
+      "status": "success",
+      "error": "",
+      "llm_calls": [],
+      "search_results": [],
+      "reasoning": null
+    },
+    {
+      "step_name": "format_output",
+      "start_time": "2026-04-29T16:24:12.414859",
+      "end_time": "2026-04-29T16:24:12.414891",
+      "duration_ms": 0,
+      "duration_formatted": "0ms",
+      "input_summary": "state_keys=['session_id', 'user_id', 'user_input', 'messages', 'intent', 'intent_confidence', 'user_entities', 'missing_required', 'missing_recommended', 'preference_changes', 'clarification_questions', 'assistant_response', 'needs_clarification', 'waiting_for_confirmation']",
+      "output_summary": "keys=['messages']",
+      "status": "success",
+      "error": "",
+      "llm_calls": [],
+      "search_results": [],
+      "reasoning": null
+    }
+  ],
+  "final_response": "没问题，告诉我你的具体需求，比如：\n• 目的地、天数、预算的变化\n• 想要体验的类型（美食、文化、自然风光等）\n\n请直接说你的想法～",
+  "status": "success"
+}

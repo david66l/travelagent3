@@ -1,0 +1,77 @@
+{
+  "session_id": "test-bug-001",
+  "user_input": "成都3天",
+  "start_time": "2026-04-29T11:45:44.957404",
+  "end_time": "2026-04-29T11:45:56.174958",
+  "total_duration_ms": 11217,
+  "total_duration_formatted": "11.2s",
+  "total_tokens": {
+    "input": 709,
+    "output": 287,
+    "total": 996
+  },
+  "llm_call_count": 2,
+  "search_query_count": 0,
+  "steps": [
+    {
+      "step_name": "intent_node",
+      "start_time": "2026-04-29T11:45:44.970913",
+      "end_time": "2026-04-29T11:45:50.909134",
+      "duration_ms": 5938,
+      "duration_formatted": "5.9s",
+      "input_summary": "user_input: 成都3天",
+      "output_summary": "intent=generate_itinerary, confidence=0.90",
+      "status": "success",
+      "error": "",
+      "llm_calls": [
+        {
+          "model": "deepseek-v4-pro",
+          "prompt_tokens": 608,
+          "completion_tokens": 170,
+          "total_tokens": 778,
+          "timestamp": "2026-04-29T11:45:50.908964"
+        }
+      ],
+      "search_results": [],
+      "reasoning": null
+    },
+    {
+      "step_name": "collect_info_node",
+      "start_time": "2026-04-29T11:45:50.911236",
+      "end_time": "2026-04-29T11:45:56.168202",
+      "duration_ms": 5256,
+      "duration_formatted": "5.2s",
+      "input_summary": "state_keys=['session_id', 'user_id', 'user_input', 'messages', 'intent', 'intent_confidence', 'user_entities', 'missing_required', 'missing_recommended', 'preference_changes', 'clarification_questions', 'needs_clarification']",
+      "output_summary": "嘿，咱们先定个大概的出发时间呗？你心里有倾向的季节或者月份吗，比如想赶春天的花季，还是计划着年底前出发？随便说个大概就好，要是还没想好，我就先按下个月初帮你看～",
+      "status": "success",
+      "error": "",
+      "llm_calls": [
+        {
+          "model": "deepseek-v4-pro",
+          "prompt_tokens": 101,
+          "completion_tokens": 117,
+          "total_tokens": 218,
+          "timestamp": "2026-04-29T11:45:56.168159"
+        }
+      ],
+      "search_results": [],
+      "reasoning": null
+    },
+    {
+      "step_name": "format_output",
+      "start_time": "2026-04-29T11:45:56.169943",
+      "end_time": "2026-04-29T11:45:56.169977",
+      "duration_ms": 0,
+      "duration_formatted": "0ms",
+      "input_summary": "state_keys=['session_id', 'user_id', 'user_input', 'messages', 'intent', 'intent_confidence', 'user_entities', 'missing_required', 'missing_recommended', 'preference_changes', 'clarification_questions', 'assistant_response', 'needs_clarification']",
+      "output_summary": "keys=['messages']",
+      "status": "success",
+      "error": "",
+      "llm_calls": [],
+      "search_results": [],
+      "reasoning": null
+    }
+  ],
+  "final_response": "嘿，咱们先定个大概的出发时间呗？你心里有倾向的季节或者月份吗，比如想赶春天的花季，还是计划着年底前出发？随便说个大概就好，要是还没想好，我就先按下个月初帮你看～",
+  "status": "success"
+}

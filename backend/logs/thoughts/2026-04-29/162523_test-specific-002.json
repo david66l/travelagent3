@@ -1,0 +1,77 @@
+{
+  "session_id": "test-specific-002",
+  "user_input": "成都3天，预算3000，喜欢火锅",
+  "start_time": "2026-04-29T16:25:23.287576",
+  "end_time": "2026-04-29T16:25:38.174351",
+  "total_duration_ms": 14886,
+  "total_duration_formatted": "14.8s",
+  "total_tokens": {
+    "input": 723,
+    "output": 393,
+    "total": 1116
+  },
+  "llm_call_count": 2,
+  "search_query_count": 0,
+  "steps": [
+    {
+      "step_name": "intent_node",
+      "start_time": "2026-04-29T16:25:23.295310",
+      "end_time": "2026-04-29T16:25:34.170950",
+      "duration_ms": 10875,
+      "duration_formatted": "10.8s",
+      "input_summary": "user_input: 成都3天，预算3000，喜欢火锅",
+      "output_summary": "intent=generate_itinerary, confidence=0.95",
+      "status": "success",
+      "error": "",
+      "llm_calls": [
+        {
+          "model": "deepseek-v4-pro",
+          "prompt_tokens": 622,
+          "completion_tokens": 300,
+          "total_tokens": 922,
+          "timestamp": "2026-04-29T16:25:34.170785"
+        }
+      ],
+      "search_results": [],
+      "reasoning": null
+    },
+    {
+      "step_name": "collect_info_node",
+      "start_time": "2026-04-29T16:25:34.174939",
+      "end_time": "2026-04-29T16:25:38.166870",
+      "duration_ms": 3991,
+      "duration_formatted": "3.9s",
+      "input_summary": "state_keys=['session_id', 'user_id', 'user_input', 'messages', 'intent', 'intent_confidence', 'user_entities', 'missing_required', 'missing_recommended', 'preference_changes', 'clarification_questions', 'needs_clarification']",
+      "output_summary": "想去玩的话，时间还挺关键的～你大概什么时候出发呀？比如是下个月、暑假前后，还是还没想好？说个大概就行，如果还没定的话，我先按最近一个月帮你看看，到时候再调整也方便~",
+      "status": "success",
+      "error": "",
+      "llm_calls": [
+        {
+          "model": "deepseek-v4-pro",
+          "prompt_tokens": 101,
+          "completion_tokens": 93,
+          "total_tokens": 194,
+          "timestamp": "2026-04-29T16:25:38.166827"
+        }
+      ],
+      "search_results": [],
+      "reasoning": null
+    },
+    {
+      "step_name": "format_output",
+      "start_time": "2026-04-29T16:25:38.169202",
+      "end_time": "2026-04-29T16:25:38.169265",
+      "duration_ms": 0,
+      "duration_formatted": "0ms",
+      "input_summary": "state_keys=['session_id', 'user_id', 'user_input', 'messages', 'intent', 'intent_confidence', 'user_entities', 'missing_required', 'missing_recommended', 'preference_changes', 'clarification_questions', 'assistant_response', 'needs_clarification']",
+      "output_summary": "keys=['messages']",
+      "status": "success",
+      "error": "",
+      "llm_calls": [],
+      "search_results": [],
+      "reasoning": null
+    }
+  ],
+  "final_response": "想去玩的话，时间还挺关键的～你大概什么时候出发呀？比如是下个月、暑假前后，还是还没想好？说个大概就行，如果还没定的话，我先按最近一个月帮你看看，到时候再调整也方便~",
+  "status": "success"
+}

@@ -1,0 +1,453 @@
+{
+  "session_id": "test-run-status-003",
+  "user_input": "成都5天4晚，预算3000元，喜欢火锅和历史文化，5月1号出发",
+  "start_time": "2026-04-29T03:10:51.201612",
+  "end_time": "2026-04-29T03:21:15.588123",
+  "total_duration_ms": 624386,
+  "total_duration_formatted": "10m24s",
+  "total_tokens": {
+    "input": 26043,
+    "output": 28904,
+    "total": 54947
+  },
+  "llm_call_count": 12,
+  "search_query_count": 13,
+  "steps": [
+    {
+      "step_name": "intent_node",
+      "start_time": "2026-04-29T03:10:51.210543",
+      "end_time": "2026-04-29T03:11:10.001840",
+      "duration_ms": 18791,
+      "duration_formatted": "18.7s",
+      "input_summary": "user_input: 成都5天4晚，预算3000元，喜欢火锅和历史文化，5月1号出发",
+      "output_summary": "intent=generate_itinerary, confidence=0.95",
+      "status": "success",
+      "error": "",
+      "llm_calls": [
+        {
+          "model": "deepseek-v4-pro",
+          "prompt_tokens": 644,
+          "completion_tokens": 604,
+          "total_tokens": 1248,
+          "timestamp": "2026-04-29T03:11:09.998013"
+        }
+      ],
+      "search_results": [],
+      "reasoning": null
+    },
+    {
+      "step_name": "prepare_context_node",
+      "start_time": "2026-04-29T03:11:10.006246",
+      "end_time": "2026-04-29T03:11:10.006485",
+      "duration_ms": 0,
+      "duration_formatted": "0ms",
+      "input_summary": "state_keys=['session_id', 'user_id', 'user_input', 'messages', 'intent', 'intent_confidence', 'user_entities', 'missing_required', 'missing_recommended', 'preference_changes', 'clarification_questions', 'needs_clarification']",
+      "output_summary": "keys=['user_profile', 'preference_panel']",
+      "status": "success",
+      "error": "",
+      "llm_calls": [],
+      "search_results": [],
+      "reasoning": null
+    },
+    {
+      "step_name": "budget_init_node",
+      "start_time": "2026-04-29T03:11:10.008374",
+      "end_time": "2026-04-29T03:11:10.008461",
+      "duration_ms": 0,
+      "duration_formatted": "0ms",
+      "input_summary": "state_keys=['session_id', 'user_id', 'user_input', 'messages', 'intent', 'intent_confidence', 'user_entities', 'missing_required', 'missing_recommended', 'preference_changes', 'clarification_questions', 'user_profile', 'preference_panel', 'needs_clarification']",
+      "output_summary": "keys=['budget_panel']",
+      "status": "success",
+      "error": "",
+      "llm_calls": [],
+      "search_results": [],
+      "reasoning": null
+    },
+    {
+      "step_name": "weather_node",
+      "start_time": "2026-04-29T03:11:10.013772",
+      "end_time": "2026-04-29T03:11:12.855320",
+      "duration_ms": 2841,
+      "duration_formatted": "2.8s",
+      "input_summary": "city=成都, dates=2026-05-01",
+      "output_summary": "weather_days=1",
+      "status": "success",
+      "error": "",
+      "llm_calls": [],
+      "search_results": [],
+      "reasoning": null
+    },
+    {
+      "step_name": "context_enrichment_node",
+      "start_time": "2026-04-29T03:11:10.008484",
+      "end_time": "2026-04-29T03:12:51.828828",
+      "duration_ms": 101820,
+      "duration_formatted": "1m41s",
+      "input_summary": "city=成都, days=5",
+      "output_summary": "events=4, foods=17, tips=3",
+      "status": "success",
+      "error": "",
+      "llm_calls": [
+        {
+          "model": "deepseek-v4-pro",
+          "prompt_tokens": 2164,
+          "completion_tokens": 298,
+          "total_tokens": 2462,
+          "timestamp": "2026-04-29T03:11:25.055215"
+        },
+        {
+          "model": "deepseek-v4-pro",
+          "prompt_tokens": 2004,
+          "completion_tokens": 915,
+          "total_tokens": 2919,
+          "timestamp": "2026-04-29T03:11:40.562193"
+        },
+        {
+          "model": "deepseek-v4-pro",
+          "prompt_tokens": 1882,
+          "completion_tokens": 1068,
+          "total_tokens": 2950,
+          "timestamp": "2026-04-29T03:11:46.727550"
+        },
+        {
+          "model": "deepseek-v4-pro",
+          "prompt_tokens": 1948,
+          "completion_tokens": 1200,
+          "total_tokens": 3148,
+          "timestamp": "2026-04-29T03:11:52.891470"
+        },
+        {
+          "model": "deepseek-v4-pro",
+          "prompt_tokens": 2134,
+          "completion_tokens": 1926,
+          "total_tokens": 4060,
+          "timestamp": "2026-04-29T03:12:12.710432"
+        },
+        {
+          "model": "deepseek-v4-pro",
+          "prompt_tokens": 2271,
+          "completion_tokens": 3374,
+          "total_tokens": 5645,
+          "timestamp": "2026-04-29T03:12:51.825387"
+        }
+      ],
+      "search_results": [
+        {
+          "query": "成都 旅游攻略 5天 2026",
+          "result_count": 6,
+          "result_titles": [
+            "2026年成都2日1夜旅遊攻略：用AI行程規劃助手解鎖必玩活動（更新於4月）",
+            "成都旅游攻略 2026｜川西天气、四季穿搭与必访景点全解析 | CITS 中国国旅环球 China2Go",
+            "2026年成都旅游5天4晚自由行攻略，需要导游电话的抓紧收藏_小甜_交通_门票",
+            "成都五一周边自驾五日游路线2026- 成都本地宝",
+            "2026成都旅游怎么玩不踩坑，5-7天景点线路花费全公开|九寨沟|川主寺|成都市|经济型酒店_网易订阅",
+            "【2026年成都旅遊攻略】成都天氣特徵及四季穿搭貼士！- Trip.com"
+          ],
+          "timestamp": "2026-04-29T03:11:14.929925"
+        },
+        {
+          "query": "成都 美食 必吃 餐厅 推荐 2026",
+          "result_count": 6,
+          "result_titles": [
+            "2026年成都美食指南",
+            "成都50大必試美食 [2026] | Trip.Best by Trip.com",
+            "成都50大必試美食 [2026] | Trip.Best by Trip.com",
+            "2026年成都最佳餐廳——頂級美食、獲獎無數的餐廳以及卓越口碑 | Trip.Best by Trip.com",
+            "The best Chengdu Street food 2026 - Free cancellation | GetYourGuide",
+            "成都16大必吃美食推介米芝蓮川菜/麻辣火鍋/地道烤肉/輕食甜品"
+          ],
+          "timestamp": "2026-04-29T03:11:15.234688"
+        },
+        {
+          "query": "成都 旅游 避坑 注意事项 攻略 2026",
+          "result_count": 6,
+          "result_titles": [
+            "2026成都旅游攻略五日游,涉及行程和注意事项,人均1K玩转成都，想知道的都在这!_小杰_Day_路线",
+            "2026成都旅游避坑指南：超实用攻略，写给计划前往的旅行者 - 网易",
+            "2026成都旅游攻略：一年去了6次成都！全都是避坑大实话+超实用攻略！3-4月去成都的存下吧 - 知乎",
+            "成都旅遊完整攻略：2026最新景點美食交通住宿指南 - 夜羽凌",
+            "成都旅遊避坑指南！本地人教你玩轉景點唔使嘥冤枉錢！ - Trip.com",
+            "一年去了5次成都！全都是避坑大实话+超实用攻略！！写给2-3月去 ..."
+          ],
+          "timestamp": "2026-04-29T03:11:16.414869"
+        },
+        {
+          "query": "成都 交通 地铁 出行 2026",
+          "result_count": 6,
+          "result_titles": [
+            "2026成都地铁运营时刻表（最新版）- 成都本地宝",
+            "成都2026年地铁里程将达735公里，城市通勤半径正悄然扩容 🚇 - 好物爆料 - 淘江湖",
+            "成都五一地铁运营首末班车2026- 成都本地宝",
+            "成都地鐵攻略 2026 路線圖、票價、乘搭方法、沿線景點 | Trip.com",
+            "成都地铁app-官方正版软件2026最新版本免费下载 - 应用宝",
+            "四川成都：地铁再添新线 助城市发展绘民生出行新图景-中新网"
+          ],
+          "timestamp": "2026-04-29T03:11:16.528188"
+        },
+        {
+          "query": "成都 最新活动 展览 节日 2026 05月",
+          "result_count": 6,
+          "result_titles": [
+            "成都五一节展览活动汇总2026（更新中）- 成都本地宝",
+            "2026成都五一节免费活动有哪些？（持续更新）- 成都本地宝",
+            "2026成都春节各类型活动一览表- 成都本地宝",
+            "2026成都五一劳动节活动汇总（持续更新）- 成都本地宝",
+            "2026成都青白江五一节活动汇总- 成都本地宝",
+            "超多！超燃！成都最全跨年/元旦活動指南"
+          ],
+          "timestamp": "2026-04-29T03:11:16.551958"
+        },
+        {
+          "query": "成都 住宿 酒店 推荐 区域 2026",
+          "result_count": 6,
+          "result_titles": [
+            "【2026成都住宿推薦】TOP10成都酒店,自由行必住!",
+            "成都住宿指南2026 飯店",
+            "成都酒店10间推介2026｜近太古里/ 宽窄巷子／热门商圈／车站",
+            "Chengdu: лучшие отели с местным колоритом 2026 года — аутентичное жилье, местные развлечения и высокие оценки гостей | Trip.Best от Trip.com",
+            "2026 成都10大最佳酒店排名 | Trip.com酒店攻略",
+            "成都酒店,成都酒店预订查询,成都宾馆住宿【携程酒店】"
+          ],
+          "timestamp": "2026-04-29T03:11:16.677374"
+        }
+      ],
+      "reasoning": null
+    },
+    {
+      "step_name": "poi_search_node",
+      "start_time": "2026-04-29T03:11:10.012293",
+      "end_time": "2026-04-29T03:16:44.647340",
+      "duration_ms": 334635,
+      "duration_formatted": "5m34s",
+      "input_summary": "city=成都, interests=['历史文化']",
+      "output_summary": "found 9 POIs",
+      "status": "success",
+      "error": "",
+      "llm_calls": [
+        {
+          "model": "deepseek-v4-pro",
+          "prompt_tokens": 552,
+          "completion_tokens": 3120,
+          "total_tokens": 3672,
+          "timestamp": "2026-04-29T03:12:47.329289"
+        },
+        {
+          "model": "deepseek-v4-pro",
+          "prompt_tokens": 2277,
+          "completion_tokens": 4096,
+          "total_tokens": 6373,
+          "timestamp": "2026-04-29T03:14:46.727555"
+        },
+        {
+          "model": "deepseek-v4-pro",
+          "prompt_tokens": 2257,
+          "completion_tokens": 4096,
+          "total_tokens": 6353,
+          "timestamp": "2026-04-29T03:16:44.639733"
+        }
+      ],
+      "search_results": [
+        {
+          "query": "成都 历史文化 火锅 推荐 攻略",
+          "result_count": 6,
+          "result_titles": [
+            "走川火鍋城成都必吃推薦｜邊涮火鍋邊看川劇變臉的巴蜀文化火鍋城 - GOCHINA 大陸包車",
+            "#chinatravelcircle \n\n一天玩轉成都：古巷、經典火鍋與迷人城市氛圍｜Trip.com 成都",
+            "成都16大必吃美食推介 米芝蓮川菜/麻辣火鍋/地道烤肉/輕食甜品  | U Travel",
+            "在城市中心讲述城市故事 成都博物馆“花重锦官城——成都历史文化陈列·古代篇” - 成都博物馆",
+            "成都历史 - 维基百科，自由的百科全书",
+            "CCF Bigdata 2022"
+          ],
+          "timestamp": "2026-04-29T03:11:16.975690"
+        },
+        {
+          "query": "成都 美食 餐厅 特色小吃 推荐",
+          "result_count": 6,
+          "result_titles": [
+            "成都热门美食攻略/排行榜单/大全/介绍_必吃特色小吃/菜_推荐/介绍_成都好吃的旅行餐厅【携程美食林】",
+            "成都特色小吃全攻略：10种必吃地道美食推荐 - 淘江湖",
+            "【中国】成都美食自由行推荐｜3天2夜吃遍10大地道美食＋行程表",
+            "【中国】成都美食自由行推荐｜3天2夜吃遍10大地道美食＋行程表",
+            "【中国】成都美食自由行推荐｜3天2夜吃遍10大地道美食＋行程表",
+            "【2026 成都美食】Top 10 成都必吃美食攻略，缽缽雞、兔頭、冒烤鴨一次滿足 | Trip.com"
+          ],
+          "timestamp": "2026-04-29T03:11:17.106146"
+        },
+        {
+          "query": "成都 必去景点 旅游攻略 推荐",
+          "result_count": 6,
+          "result_titles": [
+            "成都市區與周邊郊區有哪些熱門景點？包車導遊精選必去地點總整理 - GOCHINA 大陸包車",
+            "【中国】成都必去景点｜自由行 TOP 10 景点打卡清单全攻略（2025最新）",
+            "四川成都十大必去旅游景点，赶紧收藏起来吧 | 中国之星新闻网 China Star News Chicago",
+            "成都景點排名TOP15：必遊景點推薦 - 域龍旅行社",
+            "成都旅游攻略大全, 成都自助游攻略大全【携程旅游】",
+            "【成都自由行攻略】成都推荐打卡的景点、交通、美食和酒店等全攻略 - Klook客路博客"
+          ],
+          "timestamp": "2026-04-29T03:11:17.469371"
+        }
+      ],
+      "reasoning": null
+    },
+    {
+      "step_name": "planner_node",
+      "start_time": "2026-04-29T03:16:44.653766",
+      "end_time": "2026-04-29T03:19:04.862571",
+      "duration_ms": 140208,
+      "duration_formatted": "2m20s",
+      "input_summary": "pois=9, days=5",
+      "output_summary": "planned 5 days",
+      "status": "success",
+      "error": "",
+      "llm_calls": [
+        {
+          "model": "deepseek-v4-pro",
+          "prompt_tokens": 3411,
+          "completion_tokens": 4702,
+          "total_tokens": 8113,
+          "timestamp": "2026-04-29T03:19:04.860208"
+        }
+      ],
+      "search_results": [],
+      "reasoning": {
+        "text": "Step 1: 用户需求分析。用户独行成都5天（2026.05.01-05.05），预算3000元，偏好火锅，兴趣为历史文化，节奏中等（moderate）。核心需求是深度体验成都的历史文化，同时享受火锅美食。作为独行旅客，需考虑安全、交通便利性和行程舒适度。\n\nStep 2: 季节与活动匹配。5月1日劳动节期间，成都天气阴，17°C-24°C，适合户外活动。关键限定活动包括：世界线动漫展（05.01-05.04，西博城）、成都双年展（至08.30，天府艺术公园）、徐良演唱会（05.01-05.03，五粮液文体中心）、谢霆锋演唱会（05.02-05.03，东郊记忆）。必须将这些活动巧妙融入，以增强行程独特性和价值。\n\nStep 3: 路线框架设计。以市中心（春熙路/天府广场）为住宿和交通枢纽，采用“市区深度+近郊经典”的组合。前三天聚焦市区及近郊，利用地铁高效移动，后两天安排都江堰-青城山，形成“城市人文-自然遗产”的经典闭环，不走回头路。将文化地标（武侯祠、都江堰、成都博物馆）作为核心支柱。\n\nStep 4: 致命错误检查。检查用户未指定但候选列表中的【文化地标】景点：武侯祠、都江堰、成都博物馆必须安排，青城山作为补充。各核心景点时长充足：成都博物馆2-3小时，都江堰2-3小时，大熊猫基地2-3小时，青城山半天。整体节奏中等，避免早晚高峰，每日活动量控制在步行8000-12000步。\n\nStep 5: 每日节奏优化。Day1抵达+双年展+市中心探索；Day2历史文化核心（博物馆、武侯祠、锦里）+火锅；Day3大熊猫+动漫展（年轻活力）；Day4都江堰世界遗产全日游；Day5青城山半日，下午返程。巧妙穿插演唱会作为夜间活动选择，而非强制，保持灵活性。\n\nStep 6: 最终方案确认。在保证历史文化主线的同时，将限定活动“成都双年展”和“世界线动漫展”设为可选项，顺应“小众/独行”顾问身份，提供深度文化体验与本地生活融合的方案。",
+        "timestamp": "2026-04-29T03:19:04.860593"
+      }
+    },
+    {
+      "step_name": "budget_calc_node",
+      "start_time": "2026-04-29T03:19:04.867478",
+      "end_time": "2026-04-29T03:19:04.867746",
+      "duration_ms": 0,
+      "duration_formatted": "0ms",
+      "input_summary": "state_keys=['session_id', 'user_id', 'user_input', 'messages', 'intent', 'intent_confidence', 'user_entities', 'missing_required', 'missing_recommended', 'preference_changes', 'clarification_questions', 'user_profile', 'candidate_pois', 'weather_data', 'travel_context', 'current_itinerary', 'itinerary_status', 'budget_panel', 'preference_panel', 'needs_clarification']",
+      "output_summary": "keys=['budget_panel']",
+      "status": "success",
+      "error": "",
+      "llm_calls": [],
+      "search_results": [],
+      "reasoning": null
+    },
+    {
+      "step_name": "route_node",
+      "start_time": "2026-04-29T03:19:04.867772",
+      "end_time": "2026-04-29T03:19:04.868299",
+      "duration_ms": 0,
+      "duration_formatted": "0ms",
+      "input_summary": "state_keys=['session_id', 'user_id', 'user_input', 'messages', 'intent', 'intent_confidence', 'user_entities', 'missing_required', 'missing_recommended', 'preference_changes', 'clarification_questions', 'user_profile', 'candidate_pois', 'weather_data', 'travel_context', 'current_itinerary', 'itinerary_status', 'budget_panel', 'preference_panel', 'needs_clarification']",
+      "output_summary": "keys=['optimized_routes']",
+      "status": "success",
+      "error": "",
+      "llm_calls": [],
+      "search_results": [],
+      "reasoning": null
+    },
+    {
+      "step_name": "validation_node",
+      "start_time": "2026-04-29T03:19:04.868318",
+      "end_time": "2026-04-29T03:19:28.657387",
+      "duration_ms": 23789,
+      "duration_formatted": "23.7s",
+      "input_summary": "state_keys=['session_id', 'user_id', 'user_input', 'messages', 'intent', 'intent_confidence', 'user_entities', 'missing_required', 'missing_recommended', 'preference_changes', 'clarification_questions', 'user_profile', 'candidate_pois', 'weather_data', 'travel_context', 'current_itinerary', 'itinerary_status', 'budget_panel', 'preference_panel', 'needs_clarification']",
+      "output_summary": "keys=['validation_result']",
+      "status": "success",
+      "error": "",
+      "llm_calls": [],
+      "search_results": [
+        {
+          "query": "成都博物馆 成都 景点",
+          "result_count": 3,
+          "result_titles": [
+            "成都何以成为中国独具魅力的博物馆之城-瞭望周刊社",
+            "Chengdu的33个最佳博物馆",
+            "成都博物館必看攻略｜門票、交通、看展路線與手工藝市集全指南 - GOCHINA 大陸包車"
+          ],
+          "timestamp": "2026-04-29T03:19:11.208995"
+        },
+        {
+          "query": "返回成都市区，晚餐及休息 成都 景点",
+          "result_count": 3,
+          "result_titles": [
+            "成都五日游路线推荐-成都本地宝",
+            "【中國】成都自由行2026｜16個必去成都景點懶人包｜交通、美食",
+            "【中國】成都自由行2026｜16個必去成都景點懶人包｜交通、美食"
+          ],
+          "timestamp": "2026-04-29T03:19:15.988902"
+        },
+        {
+          "query": "【可选夜间活动】徐良“时间折叠”巡回演唱会-成都站 成都 景点",
+          "result_count": 3,
+          "result_titles": [
+            "成都旅游_成都旅游景点大全_成都周边旅游_成都旅游首选网站-成都本地宝",
+            "[PDF] 中央生态环境保护督察群众信访举报转办和边督边 ... - 福建省生态环境厅",
+            "[PDF] World Bank Document"
+          ],
+          "timestamp": "2026-04-29T03:19:23.639734"
+        },
+        {
+          "query": "中国西部国际博览城（世界线动漫展） 成都 景点",
+          "result_count": 3,
+          "result_titles": [
+            "成都·第二十一届世界线动漫展逛展指南（时间+地点+嘉宾+门票）",
+            "DRT SHOW -",
+            "2026中國西部國際博覽城| 成都景點指南與旅客實拍| Trip Moments"
+          ],
+          "timestamp": "2026-04-29T03:19:28.656881"
+        }
+      ],
+      "reasoning": null
+    },
+    {
+      "step_name": "apply_routes_node",
+      "start_time": "2026-04-29T03:19:28.659360",
+      "end_time": "2026-04-29T03:19:28.659829",
+      "duration_ms": 0,
+      "duration_formatted": "0ms",
+      "input_summary": "state_keys=['session_id', 'user_id', 'user_input', 'messages', 'intent', 'intent_confidence', 'user_entities', 'missing_required', 'missing_recommended', 'preference_changes', 'clarification_questions', 'user_profile', 'candidate_pois', 'weather_data', 'travel_context', 'current_itinerary', 'itinerary_status', 'validation_result', 'optimized_routes', 'budget_panel', 'preference_panel', 'needs_clarification']",
+      "output_summary": "planned 5 days",
+      "status": "success",
+      "error": "",
+      "llm_calls": [],
+      "search_results": [],
+      "reasoning": null
+    },
+    {
+      "step_name": "proposal_node",
+      "start_time": "2026-04-29T03:19:28.663582",
+      "end_time": "2026-04-29T03:21:15.575922",
+      "duration_ms": 106912,
+      "duration_formatted": "1m46s",
+      "input_summary": "itinerary_days=5",
+      "output_summary": "好的，朋友。听你说了对成都的向往——火锅的热辣、历史的厚重，还有这次赶上五一假期满满的限定活动，我心里已经有了一幅为你量身打造的画卷。让我为你把这些散落的珍珠串成一条五天四晚的独特记忆，让你一个人的旅程，不赶路、不扎堆，却能深入这座城市的灵魂。\n\n这五天，你不会是走马观花的游客，而更像一个赴约的老友：先去艺术公园用一场顶级的双年展为自己洗尘，在春熙路的繁华中感受城市脉搏；接着沉入博物馆与武侯祠的千",
+      "status": "success",
+      "error": "",
+      "llm_calls": [
+        {
+          "model": "deepseek-v4-pro",
+          "prompt_tokens": 4499,
+          "completion_tokens": 3505,
+          "total_tokens": 8004,
+          "timestamp": "2026-04-29T03:21:15.575756"
+        }
+      ],
+      "search_results": [],
+      "reasoning": null
+    },
+    {
+      "step_name": "format_output",
+      "start_time": "2026-04-29T03:21:15.577351",
+      "end_time": "2026-04-29T03:21:15.577377",
+      "duration_ms": 0,
+      "duration_formatted": "0ms",
+      "input_summary": "state_keys=['session_id', 'user_id', 'user_input', 'messages', 'intent', 'intent_confidence', 'user_entities', 'missing_required', 'missing_recommended', 'preference_changes', 'clarification_questions', 'user_profile', 'candidate_pois', 'weather_data', 'travel_context', 'current_itinerary', 'itinerary_status', 'validation_result', 'optimized_routes', 'budget_panel', 'preference_panel', 'assistant_response', 'proposal_text', 'needs_clarification', 'waiting_for_confirmation']",
+      "output_summary": "keys=['messages']",
+      "status": "success",
+      "error": "",
+      "llm_calls": [],
+      "search_results": [],
+      "reasoning": null
+    }
+  ],
+  "final_response": "好的，朋友。听你说了对成都的向往——火锅的热辣、历史的厚重，还有这次赶上五一假期满满的限定活动，我心里已经有了一幅为你量身打造的画卷。让我为你把这些散落的珍珠串成一条五天四晚的独特记忆，让你一个人的旅程，不赶路、不扎堆，却能深入这座城市的灵魂。\n\n这五天，你不会是走马观花的游客，而更像一个赴约的老友：先去艺术公园用一场顶级的双年展为自己洗尘，在春熙路的繁华中感受城市脉搏；接着沉入博物馆与武侯祠的千年文脉，在锦里的灯火阑珊处尝遍小吃；再去看顶流的熊猫团子打滚，然后一头扎进漫展的二次元世界；之后用一整天时间去朝拜千年水利奇迹都江堰；最后，在青羊宫的清净道韵中，用一顿最地道的川菜说再见。\n\n你提到的火锅心愿，我为你安排了两顿风格迥异的体验，一顿是都市潮人的一人食小锅，一顿是检验勇者的地道九宫格。而所有你在行程中提到的季节限定——**烟火指数·成都双年展**、**第二十三届世界线动漫展**，我都放在了最合适的时间，让你的旅行充满“错过等一年”的独家价值。\n\n---\n\n### **第 1 天：都市初见·以艺术之名，赴烟火之约**\n\n当飞机穿过云层，在五月初夏的微风中降落在蓉城，你的成都故事便开始了。抵达后，入住市中心**春熙路/天府广场**附近的酒店（建议全季或JW万豪，丰俭由人），这里是城市的心脏，地铁网络四通八达，放下行李就能立刻融入成都的节奏。\n\n下午两点，趁着阳光正好，我们先用一场世界级的艺术盛宴为你接风。前往**天府艺术公园内的成都市美术馆**，此刻正举办“**烟火指数·成都双年展**”（展期至8月30日）。这不仅是一场展览，更是全球先锋艺术家对烟火人间的一次深情诠释。你可以在造型独特的展馆间穿行，看那些发人深省的当代艺术作品，建筑本身洒落的光影也是绝佳的背景板。在这里待上两个半小时，不慌不忙，让艺术为你洗去旅途的疲惫，也为这次旅行定下一个充满美学的基调。\n\n傍晚时分，从艺术回归烟火。漫步在**春熙路/IFS/太古里**商圈，那只著名的“爬墙熊猫”是每个来成都的人必拍的证件照。太古里是现代商业与古老建筑融合的典范，大慈寺的红墙衬着时尚品牌的玻璃幕墙，有种奇妙的穿越感。一个人穿梭其间，看人来人往，感受成都“既慢又快”的城市脉搏。\n\n晚餐，必须献给你心心念念的火锅。**Running Hotpot** 是为你这样的独行旅者贴心设计的选择，提供一人食小锅和半份菜，让你不必",
+  "status": "success"
+}

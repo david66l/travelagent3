@@ -1,0 +1,77 @@
+{
+  "session_id": "test-modify-001",
+  "user_input": "继续修改行程",
+  "start_time": "2026-04-29T16:23:18.197686",
+  "end_time": "2026-04-29T16:23:31.006766",
+  "total_duration_ms": 12809,
+  "total_duration_formatted": "12.8s",
+  "total_tokens": {
+    "input": 767,
+    "output": 325,
+    "total": 1092
+  },
+  "llm_call_count": 2,
+  "search_query_count": 0,
+  "steps": [
+    {
+      "step_name": "intent_node",
+      "start_time": "2026-04-29T16:23:18.203423",
+      "end_time": "2026-04-29T16:23:24.819348",
+      "duration_ms": 6615,
+      "duration_formatted": "6.6s",
+      "input_summary": "user_input: 继续修改行程",
+      "output_summary": "intent=modify_itinerary, confidence=0.90",
+      "status": "success",
+      "error": "",
+      "llm_calls": [
+        {
+          "model": "deepseek-v4-pro",
+          "prompt_tokens": 669,
+          "completion_tokens": 182,
+          "total_tokens": 851,
+          "timestamp": "2026-04-29T16:23:24.819108"
+        }
+      ],
+      "search_results": [],
+      "reasoning": null
+    },
+    {
+      "step_name": "collect_info_node",
+      "start_time": "2026-04-29T16:23:24.823023",
+      "end_time": "2026-04-29T16:23:30.993235",
+      "duration_ms": 6170,
+      "duration_formatted": "6.1s",
+      "input_summary": "state_keys=['session_id', 'user_id', 'user_input', 'messages', 'intent', 'intent_confidence', 'user_entities', 'missing_required', 'missing_recommended', 'preference_changes', 'clarification_questions', 'assistant_response', 'needs_clarification']",
+      "output_summary": "嘿，关于行程调整，能再具体聊聊你想怎么改吗？比如是想调整游玩顺序、增加或去掉某个地方、还是改变停留时间？如果一时还没想好，我就按比较经典省力的方案来帮你微调，你看这样行吗？",
+      "status": "success",
+      "error": "",
+      "llm_calls": [
+        {
+          "model": "deepseek-v4-pro",
+          "prompt_tokens": 98,
+          "completion_tokens": 143,
+          "total_tokens": 241,
+          "timestamp": "2026-04-29T16:23:30.993127"
+        }
+      ],
+      "search_results": [],
+      "reasoning": null
+    },
+    {
+      "step_name": "format_output",
+      "start_time": "2026-04-29T16:23:30.997330",
+      "end_time": "2026-04-29T16:23:30.997402",
+      "duration_ms": 0,
+      "duration_formatted": "0ms",
+      "input_summary": "state_keys=['session_id', 'user_id', 'user_input', 'messages', 'intent', 'intent_confidence', 'user_entities', 'missing_required', 'missing_recommended', 'preference_changes', 'clarification_questions', 'assistant_response', 'needs_clarification']",
+      "output_summary": "keys=['messages']",
+      "status": "success",
+      "error": "",
+      "llm_calls": [],
+      "search_results": [],
+      "reasoning": null
+    }
+  ],
+  "final_response": "嘿，关于行程调整，能再具体聊聊你想怎么改吗？比如是想调整游玩顺序、增加或去掉某个地方、还是改变停留时间？如果一时还没想好，我就按比较经典省力的方案来帮你微调，你看这样行吗？",
+  "status": "success"
+}
