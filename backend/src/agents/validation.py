@@ -50,9 +50,7 @@ class ValidationAgent:
             improvement_suggestions=suggestions,
         )
 
-    async def _check_budget(
-        self, itinerary: list[DayPlan], profile: UserProfile
-    ) -> dict:
+    async def _check_budget(self, itinerary: list[DayPlan], profile: UserProfile) -> dict:
         total_cost = sum(day.total_cost for day in itinerary)
         budget = profile.budget_range or float("inf")
         over_ratio = max(0, (total_cost - budget) / budget) if budget > 0 else 0
@@ -110,10 +108,7 @@ class ValidationAgent:
     async def _check_poi_existence(self, itinerary: list[DayPlan], profile: UserProfile) -> dict:
         """Verify POI existence by sampling and searching."""
         city = profile.destination or ""
-        all_pois = [
-            a for day in itinerary for a in day.activities
-            if a.category == "attraction"
-        ]
+        all_pois = [a for day in itinerary for a in day.activities if a.category == "attraction"]
         if not all_pois:
             return {"scores": {"factuality": 1.0}, "critical_failures": [], "suggestions": []}
 
@@ -170,7 +165,12 @@ class ValidationAgent:
         total = 0
         for day in itinerary:
             for activity in day.activities:
-                if activity.open_time and activity.close_time and activity.start_time and activity.end_time:
+                if (
+                    activity.open_time
+                    and activity.close_time
+                    and activity.start_time
+                    and activity.end_time
+                ):
                     total += 1
                     try:
                         open_t = datetime.strptime(activity.open_time, "%H:%M").time()

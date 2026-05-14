@@ -5,7 +5,9 @@ from typing import Literal
 
 # Locate .env relative to this file: backend/src/core/settings.py -> project root
 # settings.py -> core -> src -> backend -> project_root
-_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+_PROJECT_ROOT = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+)
 _ENV_FILE = os.path.join(_PROJECT_ROOT, ".env")
 
 
@@ -17,7 +19,9 @@ class Settings(BaseSettings):
     )
 
     # Database
-    database_url: str = "postgresql+asyncpg://travelagent:travelagent123@localhost:5432/travel_agent"
+    database_url: str = (
+        "postgresql+asyncpg://travelagent:travelagent123@localhost:5432/travel_agent"
+    )
 
     # Redis
     redis_url: str = "redis://localhost:6379/0"

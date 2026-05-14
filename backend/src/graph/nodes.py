@@ -1,13 +1,9 @@
 """LangGraph node functions - each calls an Agent."""
 
-import re
-
 from core.state import ItineraryState
 from core.database import async_session_maker
 from core.thought_logger import log_step, thought_logger
-from schemas import (
-    UserProfile, ScoredPOI, WeatherDay, DayPlan, BudgetPanel, ValidationResult
-)
+from schemas import UserProfile, ScoredPOI, WeatherDay, DayPlan
 from agents.intent_recognition import IntentRecognitionAgent
 from agents.information_collection import InformationCollectionAgent
 from agents.realtime_query import RealtimeQueryAgent
@@ -22,6 +18,7 @@ from skills.memory_store import MemoryStoreSkill
 
 
 # ===== Node Functions =====
+
 
 @log_step("intent_node")
 async def intent_node(state: ItineraryState) -> dict:
@@ -183,12 +180,7 @@ async def route_node(state: ItineraryState) -> dict:
     itinerary = [DayPlan(**d) for d in state.get("current_itinerary", [])]
 
     optimized = await agent.batch_optimize_routes(itinerary)
-    return {
-        "optimized_routes": {
-            k: [a.model_dump() for a in v]
-            for k, v in optimized.items()
-        }
-    }
+    return {"optimized_routes": {k: [a.model_dump() for a in v] for k, v in optimized.items()}}
 
 
 @log_step("apply_routes_node")
@@ -263,9 +255,7 @@ async def update_prefs_node(state: ItineraryState) -> dict:
 
     needs_replan = state.get("current_itinerary") is not None
 
-    change_text = ", ".join(
-        f"{c['field']}改为{c['new_value']}" for c in changes
-    )
+    change_text = ", ".join(f"{c['field']}改为{c['new_value']}" for c in changes)
     response = f"已更新偏好：{change_text}"
     if needs_replan:
         response += "。正在重新规划行程..."
@@ -338,7 +328,7 @@ async def ask_modification_node(state: ItineraryState) -> dict:
         response = (
             "没问题，告诉我你想调整哪些地方？比如：\n"
             "• 某天的景点想换一下\n"
-            "• 预算需要调整\n" 
+            "• 预算需要调整\n"
             "• 增加或减少天数\n"
             "• 换个住宿区域\n\n"
             "请直接说你的想法，比如『第三天换个景点』或者『预算再加500』～"
@@ -387,6 +377,7 @@ async def format_output_node(state: ItineraryState) -> dict:
 
 # ===== Helpers =====
 
+
 def _split_dates(dates: str) -> tuple[str, str]:
     """Split date range string into start and end dates."""
     if not dates:
@@ -401,4 +392,4 @@ def _split_dates(dates: str) -> tuple[str, str]:
     return dates.strip(), dates.strip()
 
 
-from schemas import Activity
+from schemas import Activity  # noqa: E402

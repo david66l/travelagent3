@@ -12,6 +12,8 @@ RUN npm ci
 
 # Copy source and build
 COPY . .
+# Ensure public/ exists (Next.js standalone output expects it)
+RUN mkdir -p public
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
 RUN npm run build
@@ -30,9 +32,9 @@ COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD wget -qO- http://localhost:3000 || exit 1
+# Health check (use node built-in http to avoid busybox wget issues in alpine)
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=5 \
+    CMD node -e "require('http').get('http://127.0.0.1:3000', (r) => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"
 
 EXPOSE 3000
 

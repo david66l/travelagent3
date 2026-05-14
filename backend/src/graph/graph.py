@@ -1,7 +1,5 @@
 """LangGraph StateGraph builder - orchestrates all nodes with conditional edges."""
 
-import re
-
 from langgraph.graph import StateGraph, END
 
 from core.state import ItineraryState
@@ -39,7 +37,21 @@ def _is_vague_modification(user_input: str) -> bool:
     if any(p in user_input for p in vague_phrases):
         return True
     # Specific change keywords make it non-vague
-    specific_keywords = ["换", "改", "增加", "添加", "删掉", "去掉", "调整", "改为", "换成", "删除", "减少", "延长", "缩短"]
+    specific_keywords = [
+        "换",
+        "改",
+        "增加",
+        "添加",
+        "删掉",
+        "去掉",
+        "调整",
+        "改为",
+        "换成",
+        "删除",
+        "减少",
+        "延长",
+        "缩短",
+    ]
     if any(kw in user_input for kw in specific_keywords):
         return False
     # Very short input without any specific action is vague
@@ -56,9 +68,7 @@ def route_after_intent(state: ItineraryState) -> str:
     intent = state.get("intent")
 
     # Vague modification requests should ask user for specifics first
-    if intent == "modify_itinerary" and _is_vague_modification(
-        state.get("user_input", "")
-    ):
+    if intent == "modify_itinerary" and _is_vague_modification(state.get("user_input", "")):
         return "ask_modification"
 
     routing_map = {

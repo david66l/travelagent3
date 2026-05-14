@@ -2,13 +2,12 @@
 
 import asyncio
 import hashlib
-import json
 import logging
 from typing import Optional
 
 from core.llm_client import llm
 from core.redis_client import redis_client
-from schemas import ScoredPOI, Location
+from schemas import ScoredPOI
 from skills.tavily_search import TavilySearchSkill, SearchResult
 
 logger = logging.getLogger(__name__)
@@ -267,9 +266,7 @@ class POISearchSkill:
         # PRIMARY: Extract from Tavily answers (most reliable content source)
         if all_answers:
             combined_answer = "\n\n".join(all_answers)
-            answer_pois = await self._extract_pois_from_answer(
-                combined_answer, city, keywords
-            )
+            answer_pois = await self._extract_pois_from_answer(combined_answer, city, keywords)
             logger.info(f"Extracted {len(answer_pois)} POIs from Tavily answers")
             all_pois.extend(answer_pois)
 

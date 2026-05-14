@@ -1,6 +1,5 @@
 """Intent Recognition Agent - LLM-driven intent classification."""
 
-import json
 import re
 from datetime import datetime, timedelta
 from typing import Optional
@@ -94,9 +93,7 @@ class IntentRecognitionAgent:
 
         # Detect preference changes by comparing with current profile
         if user_profile and result.user_entities:
-            result.preference_changes = self._detect_changes(
-                result.user_entities, user_profile
-            )
+            result.preference_changes = self._detect_changes(result.user_entities, user_profile)
 
         # Add clarifying questions if confidence is low
         if result.confidence < 0.7 and not result.clarification_questions:
@@ -122,17 +119,36 @@ class IntentRecognitionAgent:
 
         # Weekday names
         weekdays = {
-            "一": 0, "周一": 0, "星期一": 0,
-            "二": 1, "周二": 1, "星期二": 1,
-            "三": 2, "周三": 2, "星期三": 2,
-            "四": 3, "周四": 3, "星期四": 3,
-            "五": 4, "周五": 4, "星期五": 4,
-            "六": 5, "周六": 5, "星期六": 5,
-            "日": 6, "周日": 6, "星期日": 6, "天": 6, "周天": 6,
+            "一": 0,
+            "周一": 0,
+            "星期一": 0,
+            "二": 1,
+            "周二": 1,
+            "星期二": 1,
+            "三": 2,
+            "周三": 2,
+            "星期三": 2,
+            "四": 3,
+            "周四": 3,
+            "星期四": 3,
+            "五": 4,
+            "周五": 4,
+            "星期五": 4,
+            "六": 5,
+            "周六": 5,
+            "星期六": 5,
+            "日": 6,
+            "周日": 6,
+            "星期日": 6,
+            "天": 6,
+            "周天": 6,
         }
 
         # Pattern: 下周一、下周二
-        m = re.match(r"下[周\s]*([一二三四五六日天]|周一|周二|周三|周四|周五|周六|周日|周天|星期[一二三四五六日])", date_str)
+        m = re.match(
+            r"下[周\s]*([一二三四五六日天]|周一|周二|周三|周四|周五|周六|周日|周天|星期[一二三四五六日])",
+            date_str,
+        )
         if m:
             wd_name = m.group(1)
             target_wd = weekdays.get(wd_name)
@@ -149,7 +165,10 @@ class IntentRecognitionAgent:
             return next_monday.isoformat()
 
         # Pattern: 本周X / 这周五
-        m = re.match(r"[这本]周\s*([一二三四五六日天]|周一|周二|周三|周四|周五|周六|周日|周天|星期[一二三四五六日])", date_str)
+        m = re.match(
+            r"[这本]周\s*([一二三四五六日天]|周一|周二|周三|周四|周五|周六|周日|周天|星期[一二三四五六日])",
+            date_str,
+        )
         if m:
             wd_name = m.group(1)
             target_wd = weekdays.get(wd_name)
@@ -168,7 +187,10 @@ class IntentRecognitionAgent:
             return (today + timedelta(days=2)).isoformat()
 
         # Pattern: X月X日 到 X月X日 / X月X号-X月X号 (range first!)
-        m = re.search(r"(\d{1,2})\s*月\s*(\d{1,2})\s*[日号]\s*[~\-到至]\s*(\d{1,2})\s*月\s*(\d{1,2})\s*[日号]", date_str)
+        m = re.search(
+            r"(\d{1,2})\s*月\s*(\d{1,2})\s*[日号]\s*[~\-到至]\s*(\d{1,2})\s*月\s*(\d{1,2})\s*[日号]",
+            date_str,
+        )
         if m:
             m1, d1, m2, d2 = int(m.group(1)), int(m.group(2)), int(m.group(3)), int(m.group(4))
             year = today.year
@@ -183,7 +205,9 @@ class IntentRecognitionAgent:
                 pass
 
         # Pattern: X月X日 到 X日（同月）
-        m = re.search(r"(\d{1,2})\s*月\s*(\d{1,2})\s*[日号]\s*[~\-到至]\s*(\d{1,2})\s*[日号]", date_str)
+        m = re.search(
+            r"(\d{1,2})\s*月\s*(\d{1,2})\s*[日号]\s*[~\-到至]\s*(\d{1,2})\s*[日号]", date_str
+        )
         if m:
             month, d1, d2 = int(m.group(1)), int(m.group(2)), int(m.group(3))
             year = today.year
@@ -217,9 +241,7 @@ class IntentRecognitionAgent:
         # If we can't parse but it's not empty, keep original
         return date_str if date_str else None
 
-    def _detect_changes(
-        self, entities: dict, profile: UserProfile
-    ) -> list[dict]:
+    def _detect_changes(self, entities: dict, profile: UserProfile) -> list[dict]:
         """Detect preference changes by comparing new entities with current profile."""
         changes = []
         field_map = {
@@ -237,10 +259,12 @@ class IntentRecognitionAgent:
             if field in entities:
                 new_value = entities[field]
                 if new_value != old_value:
-                    changes.append({
-                        "field": field,
-                        "old_value": str(old_value) if old_value is not None else None,
-                        "new_value": str(new_value) if new_value is not None else None,
-                    })
+                    changes.append(
+                        {
+                            "field": field,
+                            "old_value": str(old_value) if old_value is not None else None,
+                            "new_value": str(new_value) if new_value is not None else None,
+                        }
+                    )
 
         return changes

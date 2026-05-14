@@ -21,6 +21,7 @@ from typing import Any, Callable, Optional
 
 # ===== Data Models =====
 
+
 @dataclass
 class LLMCallRecord:
     model: str
@@ -107,6 +108,7 @@ def get_current_session_id() -> Optional[str]:
 
 # ===== Main Logger =====
 
+
 class ThoughtLogger:
     """Thread-safe thought logger with parallel step isolation.
 
@@ -171,12 +173,8 @@ class ThoughtLogger:
             elapsed = (datetime.now() - session.start_time).total_seconds()
 
         all_steps = session.steps + list(session._active_steps.values())
-        total_input = sum(
-            c.prompt_tokens for s in all_steps for c in s.llm_calls
-        )
-        total_output = sum(
-            c.completion_tokens for s in all_steps for c in s.llm_calls
-        )
+        total_input = sum(c.prompt_tokens for s in all_steps for c in s.llm_calls)
+        total_output = sum(c.completion_tokens for s in all_steps for c in s.llm_calls)
         total_llm_calls = sum(len(s.llm_calls) for s in all_steps)
 
         completed = [s.step_name for s in session.steps]
@@ -192,7 +190,9 @@ class ThoughtLogger:
                 ),
                 "end_offset": round(
                     (datetime.fromisoformat(s.end_time) - session.start_time).total_seconds(), 2
-                ) if s.end_time else None,
+                )
+                if s.end_time
+                else None,
             }
             for s in session.steps
         ]
@@ -207,7 +207,9 @@ class ThoughtLogger:
             "completed_steps": completed,
             "step_details": step_details,
             "elapsed_seconds": round(elapsed, 2),
-            "ttft_seconds": round(session.first_llm_response_time, 2) if session.first_llm_response_time else None,
+            "ttft_seconds": round(session.first_llm_response_time, 2)
+            if session.first_llm_response_time
+            else None,
             "total_tokens": total_input + total_output,
             "prompt_tokens": total_input,
             "completion_tokens": total_output,
@@ -226,7 +228,9 @@ class ThoughtLogger:
 
     # ===== Step Recording =====
 
-    def start_step(self, session_id: str, step_name: str, input_summary: str = "") -> Optional[StepRecord]:
+    def start_step(
+        self, session_id: str, step_name: str, input_summary: str = ""
+    ) -> Optional[StepRecord]:
         """Start recording a step. Each step is isolated by (session, name)."""
         session = self._get_session(session_id)
         if not session:
@@ -268,7 +272,9 @@ class ThoughtLogger:
         session.steps.append(step)
         asyncio.create_task(self.push_status(session_id))
 
-    def log_llm_call(self, session_id: str, model: str, prompt_tokens: int, completion_tokens: int) -> None:
+    def log_llm_call(
+        self, session_id: str, model: str, prompt_tokens: int, completion_tokens: int
+    ) -> None:
         """Record an LLM API call."""
         step_name = get_current_step_name()
         if not step_name:
@@ -349,19 +355,11 @@ class ThoughtLogger:
             self.end_step(session_id, name, output_summary="[auto-ended by save]")
 
         end_time = datetime.now()
-        total_duration_ms = int(
-            (end_time - session.start_time).total_seconds() * 1000
-        )
+        total_duration_ms = int((end_time - session.start_time).total_seconds() * 1000)
 
-        total_input = sum(
-            c.prompt_tokens for s in session.steps for c in s.llm_calls
-        )
-        total_output = sum(
-            c.completion_tokens for s in session.steps for c in s.llm_calls
-        )
-        total_search_queries = sum(
-            len(s.search_results) for s in session.steps
-        )
+        total_input = sum(c.prompt_tokens for s in session.steps for c in s.llm_calls)
+        total_output = sum(c.completion_tokens for s in session.steps for c in s.llm_calls)
+        total_search_queries = sum(len(s.search_results) for s in session.steps)
 
         log_data = {
             "session_id": session.session_id,
@@ -410,7 +408,9 @@ class ThoughtLogger:
                     "reasoning": {
                         "text": s.reasoning.reasoning,
                         "timestamp": s.reasoning.timestamp,
-                    } if s.reasoning else None,
+                    }
+                    if s.reasoning
+                    else None,
                 }
                 for s in session.steps
             ],
@@ -468,7 +468,9 @@ class ThoughtLogger:
         lines.append("")
         lines.append(f"**时间**: {session.start_time.strftime('%Y-%m-%d %H:%M:%S')}  ")
         lines.append(f"**用户输入**: {session.user_input}  ")
-        lines.append(f"**总耗时**: {self._fmt_dur(total_duration_ms)} | **TTFT**: {self._fmt_dur(int((session.first_llm_response_time or 0) * 1000))} | **总 Token**: {total_input + total_output} (prompt: {total_input} + completion: {total_output})  ")
+        lines.append(
+            f"**总耗时**: {self._fmt_dur(total_duration_ms)} | **TTFT**: {self._fmt_dur(int((session.first_llm_response_time or 0) * 1000))} | **总 Token**: {total_input + total_output} (prompt: {total_input} + completion: {total_output})  "
+        )
         lines.append(f"**状态**: {status}")
         lines.append("")
 
@@ -485,7 +487,9 @@ class ThoughtLogger:
                 llm_summary = f"{len(s.llm_calls)} ({total})"
             else:
                 llm_summary = "0"
-            lines.append(f"| {i} | {s.step_name} | {status_icon} | {self._fmt_dur(s.duration_ms)} | {llm_summary} |")
+            lines.append(
+                f"| {i} | {s.step_name} | {status_icon} | {self._fmt_dur(s.duration_ms)} | {llm_summary} |"
+            )
         lines.append("")
 
         # LLM calls detail
@@ -497,7 +501,9 @@ class ThoughtLogger:
             lines.append("|------|----------|--------|------------|-------|")
             for c in all_llm_calls:
                 total = c.prompt_tokens + c.completion_tokens
-                lines.append(f"| {c.model} | {c.step_name} | {c.prompt_tokens} | {c.completion_tokens} | {total} |")
+                lines.append(
+                    f"| {c.model} | {c.step_name} | {c.prompt_tokens} | {c.completion_tokens} | {total} |"
+                )
             lines.append("")
 
         # Search results
@@ -548,7 +554,7 @@ thought_logger = ThoughtLogger()
 
 # ===== Decorator for Graph Nodes =====
 
-from core.state import ItineraryState
+from core.state import ItineraryState  # noqa: E402
 
 
 def log_step(step_name: str):
@@ -575,19 +581,27 @@ def log_step(step_name: str):
                 input_summary = f"user_input: {state.get('user_input', '')[:200]}"
             elif step_name == "poi_search_node":
                 profile = state.get("user_profile", {})
-                input_summary = f"city={profile.get('destination')}, interests={profile.get('interests', [])}"
+                input_summary = (
+                    f"city={profile.get('destination')}, interests={profile.get('interests', [])}"
+                )
             elif step_name == "context_enrichment_node":
                 profile = state.get("user_profile", {})
-                input_summary = f"city={profile.get('destination')}, days={profile.get('travel_days')}"
+                input_summary = (
+                    f"city={profile.get('destination')}, days={profile.get('travel_days')}"
+                )
             elif step_name == "planner_node":
                 pois = state.get("candidate_pois", [])
-                input_summary = f"pois={len(pois)}, days={state.get('user_profile', {}).get('travel_days')}"
+                input_summary = (
+                    f"pois={len(pois)}, days={state.get('user_profile', {}).get('travel_days')}"
+                )
             elif step_name == "proposal_node":
                 itinerary = state.get("current_itinerary", [])
                 input_summary = f"itinerary_days={len(itinerary)}"
             elif step_name == "weather_node":
                 profile = state.get("user_profile", {})
-                input_summary = f"city={profile.get('destination')}, dates={profile.get('travel_dates')}"
+                input_summary = (
+                    f"city={profile.get('destination')}, dates={profile.get('travel_dates')}"
+                )
             else:
                 input_summary = f"state_keys={list(state.keys())}"
 

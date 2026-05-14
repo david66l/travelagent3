@@ -28,7 +28,9 @@ class TavilySearchSkill:
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or settings.tavily_api_key
 
-    async def search(self, query: str, top_n: int = 5, search_depth: str = "advanced") -> list[SearchResult]:
+    async def search(
+        self, query: str, top_n: int = 5, search_depth: str = "advanced"
+    ) -> list[SearchResult]:
         """Search using Tavily API.
 
         Args:
@@ -74,7 +76,9 @@ class TavilySearchSkill:
             except Exception:
                 return []
 
-    async def search_multiple(self, queries: list[str], top_n: int = 5) -> dict[str, list[SearchResult]]:
+    async def search_multiple(
+        self, queries: list[str], top_n: int = 5
+    ) -> dict[str, list[SearchResult]]:
         """Run multiple searches in parallel."""
         tasks = [self.search(q, top_n) for q in queries]
         results = await asyncio.gather(*tasks)
@@ -122,6 +126,7 @@ class TavilySearchSkill:
                 # Log search query and results to thought logger
                 try:
                     from core.thought_logger import thought_logger, get_current_step_name
+
                     if get_current_step_name():
                         thought_logger.log_search_result(
                             query=query,
@@ -137,7 +142,7 @@ class TavilySearchSkill:
 
 # Backward-compatible import for skills that expect WebSearchSkill interface
 # If Tavily key is not set, fallback to DuckDuckGo
-from skills.web_search import WebSearchSkill
+from skills.web_search import WebSearchSkill  # noqa: E402
 
 
 class UnifiedSearchSkill:
@@ -159,6 +164,7 @@ class UnifiedSearchSkill:
         # Log search query and results to thought logger
         try:
             from core.thought_logger import thought_logger, get_current_step_name
+
             if get_current_step_name():
                 thought_logger.log_search_result(
                     query=query,
@@ -169,7 +175,9 @@ class UnifiedSearchSkill:
 
         return results
 
-    async def search_with_context(self, query: str, top_n: int = 5) -> tuple[list[SearchResult], str]:
+    async def search_with_context(
+        self, query: str, top_n: int = 5
+    ) -> tuple[list[SearchResult], str]:
         """Search using preferred engine, return results + answer/context."""
         results: list[SearchResult] = []
         answer = ""
@@ -181,6 +189,7 @@ class UnifiedSearchSkill:
         # Log search query and results to thought logger
         try:
             from core.thought_logger import thought_logger, get_current_step_name
+
             if get_current_step_name():
                 thought_logger.log_search_result(
                     query=query,
@@ -190,4 +199,3 @@ class UnifiedSearchSkill:
             pass
 
         return results, answer
-

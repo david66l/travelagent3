@@ -1,7 +1,6 @@
 """Real-time Query Agent - parallel POI/weather/price queries."""
 
 import asyncio
-from typing import Optional
 
 from schemas import ScoredPOI, WeatherDay, PriceInfo, UserProfile
 from skills.poi_search import POISearchSkill

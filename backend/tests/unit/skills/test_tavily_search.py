@@ -109,10 +109,11 @@ class TestUnifiedSearchSkill:
 
     @pytest.mark.asyncio
     async def test_tavily_returns_results(self):
-        with patch.object(self.skill.tavily, "search", AsyncMock(return_value=["result"])):
-            with patch.object(self.skill.duckduckgo, "search", AsyncMock()):
-                results = await self.skill.search("test")
-                assert results == ["result"]
+        with patch.object(self.skill, "prefer_tavily", True):
+            with patch.object(self.skill.tavily, "search", AsyncMock(return_value=["result"])):
+                with patch.object(self.skill.duckduckgo, "search", AsyncMock()):
+                    results = await self.skill.search("test")
+                    assert results == ["result"]
 
     @pytest.mark.asyncio
     async def test_fallback_to_duckduckgo(self):

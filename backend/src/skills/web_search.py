@@ -1,8 +1,6 @@
 """Web Search Skill - DuckDuckGo search (no API key required)."""
 
-import asyncio
 from dataclasses import dataclass
-from typing import Optional
 
 import httpx
 

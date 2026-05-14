@@ -30,7 +30,7 @@ class WeatherQuerySkill:
 
         # Fallback: search + simulated data (MVP)
         query = f"{city} 天气预报 {start_date} 到 {end_date}"
-        results = await self.search_skill.search(query, top_n=3)
+        _results = await self.search_skill.search(query, top_n=3)
 
         # For MVP, return simulated weather data
         # In production, would crawl weather pages and parse

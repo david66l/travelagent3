@@ -4,20 +4,40 @@ from schemas import UserProfile, BudgetPanel, DayPlan
 
 
 CITY_FACTORS = {
-    "北京": 1.3, "上海": 1.3, "广州": 1.2, "深圳": 1.2,
-    "杭州": 1.2, "南京": 1.1, "苏州": 1.1, "厦门": 1.1,
-    "成都": 1.0, "西安": 1.0, "重庆": 1.0, "武汉": 1.0,
-    "长沙": 1.0, "青岛": 1.0, "昆明": 0.9, "桂林": 0.9,
-    "三亚": 1.2, "大理": 0.9, "丽江": 0.9, "拉萨": 0.9,
+    "北京": 1.3,
+    "上海": 1.3,
+    "广州": 1.2,
+    "深圳": 1.2,
+    "杭州": 1.2,
+    "南京": 1.1,
+    "苏州": 1.1,
+    "厦门": 1.1,
+    "成都": 1.0,
+    "西安": 1.0,
+    "重庆": 1.0,
+    "武汉": 1.0,
+    "长沙": 1.0,
+    "青岛": 1.0,
+    "昆明": 0.9,
+    "桂林": 0.9,
+    "三亚": 1.2,
+    "大理": 0.9,
+    "丽江": 0.9,
+    "拉萨": 0.9,
 }
 
 BUFFER_RATES = {
-    "一线": 0.15, "二线": 0.12, "三线": 0.10,
+    "一线": 0.15,
+    "二线": 0.12,
+    "三线": 0.10,
 }
 
 TIER_MAP = {
-    "北京": "一线", "上海": "一线",
-    "广州": "二线", "深圳": "二线", "杭州": "二线",
+    "北京": "一线",
+    "上海": "一线",
+    "广州": "二线",
+    "深圳": "二线",
+    "杭州": "二线",
 }
 
 
@@ -82,9 +102,7 @@ class PreferenceBudgetAgent:
         meals_cost = meal_per_day * days
 
         # Tickets
-        tickets_cost = sum(
-            (a.ticket_price or 50) for day in itinerary for a in day.activities
-        )
+        tickets_cost = sum((a.ticket_price or 50) for day in itinerary for a in day.activities)
 
         # Transport (between cities/activities)
         transport_cost = 50 * factor * days
@@ -112,7 +130,9 @@ class PreferenceBudgetAgent:
                 "shopping": round(shopping_cost, 2),
                 "buffer": round(buffer, 2),
             },
-            status="within_budget" if (not profile.budget_range or total <= profile.budget_range) else "over_budget",
+            status="within_budget"
+            if (not profile.budget_range or total <= profile.budget_range)
+            else "over_budget",
         )
 
     def init_panel(self, profile: UserProfile) -> BudgetPanel:

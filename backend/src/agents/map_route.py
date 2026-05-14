@@ -1,6 +1,6 @@
 """Map & Route Agent - geographic calculations and route optimization."""
 
-from typing import Literal, Optional
+from typing import Optional
 
 from schemas import Location, DayPlan, Activity
 from skills.route_calculation import RouteCalculationSkill
@@ -121,12 +121,14 @@ class MapRouteAgent:
                 route = self.route_skill.calculate_route(
                     curr.location, next_act.location, "transit"
                 )
-                transit_info.append({
-                    "from": curr.poi_name,
-                    "to": next_act.poi_name,
-                    "distance_m": route.distance_m,
-                    "duration_min": route.duration_min,
-                    "mode": route.mode,
-                })
+                transit_info.append(
+                    {
+                        "from": curr.poi_name,
+                        "to": next_act.poi_name,
+                        "distance_m": route.distance_m,
+                        "duration_min": route.duration_min,
+                        "mode": route.mode,
+                    }
+                )
 
         return transit_info

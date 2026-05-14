@@ -1,10 +1,7 @@
 import uuid
 from datetime import datetime
-from typing import Optional
 
-from sqlalchemy import (
-    Column, String, Integer, Float, DateTime, Text, JSON, Boolean
-)
+from sqlalchemy import Column, String, Integer, DateTime, Text, JSON
 
 from core.database import Base
 

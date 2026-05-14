@@ -1,9 +1,9 @@
-from datetime import datetime
-from typing import Optional, Literal, Any
+from typing import Optional, Literal
 from pydantic import BaseModel, Field, field_validator
 
 
 # ===== User Profile =====
+
 
 class UserProfile(BaseModel):
     destination: Optional[str] = None
@@ -22,6 +22,7 @@ class UserProfile(BaseModel):
 
 # ===== Location =====
 
+
 class Location(BaseModel):
     lat: float
     lng: float
@@ -29,6 +30,7 @@ class Location(BaseModel):
 
 
 # ===== Activity / DayPlan / Itinerary =====
+
 
 class Activity(BaseModel):
     poi_name: str
@@ -72,11 +74,14 @@ class ItineraryRecord(BaseModel):
 
 # ===== Panels =====
 
+
 class BudgetPanel(BaseModel):
     total_budget: Optional[float] = None
     spent: float = 0
     remaining: Optional[float] = None
-    breakdown: dict = Field(default_factory=dict)  # accommodation/meals/transport/tickets/shopping/buffer
+    breakdown: dict = Field(
+        default_factory=dict
+    )  # accommodation/meals/transport/tickets/shopping/buffer
     status: str = "within_budget"  # within_budget / over_budget
 
 
@@ -94,6 +99,7 @@ class PreferencePanel(BaseModel):
 
 
 # ===== Intent Result =====
+
 
 class IntentResult(BaseModel):
     intent: Literal[
@@ -113,13 +119,20 @@ class IntentResult(BaseModel):
     clarification_questions: list[str] = Field(default_factory=list)
     reasoning: str = ""
 
-    @field_validator("preference_changes", "missing_required", "missing_recommended", "clarification_questions", mode="before")
+    @field_validator(
+        "preference_changes",
+        "missing_required",
+        "missing_recommended",
+        "clarification_questions",
+        mode="before",
+    )
     @classmethod
     def _ensure_list(cls, v):
         return v if v is not None else []
 
 
 # ===== Validation =====
+
 
 class ValidationResult(BaseModel):
     passed: bool = False
@@ -131,6 +144,7 @@ class ValidationResult(BaseModel):
 
 # ===== Evaluation =====
 
+
 class EvalResult(BaseModel):
     scores: dict = Field(default_factory=dict)
     total_score: float = 0.0
@@ -139,6 +153,7 @@ class EvalResult(BaseModel):
 
 
 # ===== POI / Weather / Price =====
+
 
 class ScoredPOI(BaseModel):
     name: str
@@ -189,6 +204,7 @@ class RouteInfo(BaseModel):
 
 # ===== Travel Context (enriched from multi-dimensional search) =====
 
+
 class TravelContext(BaseModel):
     """Rich travel context gathered from multi-dimensional web search."""
 
@@ -210,8 +226,7 @@ class TravelContext(BaseModel):
             lines.append("近期活动：")
             for e in self.upcoming_events[:6]:
                 lines.append(
-                    f"  - {e.get('name', '')} ({e.get('date_range', '')})"
-                    f" @ {e.get('location', '')}"
+                    f"  - {e.get('name', '')} ({e.get('date_range', '')}) @ {e.get('location', '')}"
                 )
         if self.route_suggestions:
             lines.append(f"路线参考：{self.route_suggestions}")
@@ -223,8 +238,7 @@ class TravelContext(BaseModel):
             lines.append("美食推荐：")
             for f in self.food_specialties[:6]:
                 lines.append(
-                    f"  - {f.get('name', '')} ({f.get('cuisine_type', '')})"
-                    f" @ {f.get('area', '')}"
+                    f"  - {f.get('name', '')} ({f.get('cuisine_type', '')}) @ {f.get('area', '')}"
                 )
         if self.pitfall_tips:
             lines.append("避坑提醒：")
@@ -244,6 +258,7 @@ class TravelContext(BaseModel):
 
 # ===== Memory =====
 
+
 class UserMemory(BaseModel):
     recent_itineraries: list[dict] = Field(default_factory=list)
     preference_patterns: dict = Field(default_factory=dict)
@@ -251,6 +266,7 @@ class UserMemory(BaseModel):
 
 
 # ===== Seed Data =====
+
 
 class AttractionSeed(BaseModel):
     name: str
@@ -280,6 +296,7 @@ class CitySeedData(BaseModel):
 
 
 # ===== Chat / WebSocket =====
+
 
 class ChatRequest(BaseModel):
     content: str

@@ -49,8 +49,10 @@ class RouteCalculationSkill:
             for j in range(n):
                 if i != j:
                     matrix[i][j] = self._haversine(
-                        points[i].lat, points[i].lng,
-                        points[j].lat, points[j].lng,
+                        points[i].lat,
+                        points[i].lng,
+                        points[j].lat,
+                        points[j].lng,
                     )
         return matrix
 

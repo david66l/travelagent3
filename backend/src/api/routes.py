@@ -2,8 +2,8 @@
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.dependencies import db_session, get_graph
@@ -86,4 +86,5 @@ async def health_check() -> dict:
 
 def _generate_session_id() -> str:
     import uuid
+
     return str(uuid.uuid4())

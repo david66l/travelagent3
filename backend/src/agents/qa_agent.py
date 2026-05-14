@@ -1,7 +1,6 @@
 """Q&A Agent - answer user questions using RAG + web search."""
 
 from core.llm_client import llm
-from schemas import ScoredPOI
 from skills.web_search import WebSearchSkill
 
 
@@ -19,8 +18,7 @@ class QAAgent:
 
         # Build context from search results
         context = "\n".join(
-            f"[{i+1}] {r.title}: {r.snippet}"
-            for i, r in enumerate(search_results[:3])
+            f"[{i + 1}] {r.title}: {r.snippet}" for i, r in enumerate(search_results[:3])
         )
 
         prompt = f"""你是旅行顾问。基于以下搜索结果回答用户问题。

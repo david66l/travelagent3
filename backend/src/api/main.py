@@ -13,13 +13,13 @@ _src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _src_dir not in sys.path:
     sys.path.insert(0, _src_dir)
 
-from core.database import init_db
-from core.settings import settings
-from core.checkpointer import create_checkpointer
-from core.redis_client import redis_client
-from graph.graph import build_graph
-from api.routes import router as api_router
-from api.websocket import router as ws_router
+from core.database import init_db  # noqa: E402
+from core.settings import settings  # noqa: E402
+from core.checkpointer import create_checkpointer  # noqa: E402
+from core.redis_client import redis_client  # noqa: E402
+from graph.graph import build_graph  # noqa: E402
+from api.routes import router as api_router  # noqa: E402
+from api.websocket import router as ws_router  # noqa: E402
 
 
 @asynccontextmanager

@@ -1,7 +1,6 @@
 """WebSocket endpoint for real-time chat with the TravelAgent graph."""
 
 import json
-from typing import Optional
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
@@ -52,16 +51,12 @@ async def chat_websocket(websocket: WebSocket, session_id: str):
             try:
                 msg = json.loads(raw)
             except json.JSONDecodeError:
-                await manager.send_json(
-                    session_id, {"error": "Invalid JSON", "type": "error"}
-                )
+                await manager.send_json(session_id, {"error": "Invalid JSON", "type": "error"})
                 continue
 
             content = msg.get("content", "").strip()
             if not content:
-                await manager.send_json(
-                    session_id, {"error": "Empty message", "type": "error"}
-                )
+                await manager.send_json(session_id, {"error": "Empty message", "type": "error"})
                 continue
 
             # Sanitize user input

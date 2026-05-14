@@ -2,7 +2,6 @@
 
 import asyncio
 from datetime import datetime, timedelta
-from typing import Optional
 
 from core.llm_client import llm
 from core.redis_client import redis_client
@@ -70,9 +69,7 @@ class ContextEnrichmentAgent:
 
         return merged
 
-    async def _search_and_extract(
-        self, query: str, dimension: str
-    ) -> TravelContext:
+    async def _search_and_extract(self, query: str, dimension: str) -> TravelContext:
         """Search one query and extract relevant dimension."""
         search_results = await self.search_skill.search(query, top_n=6)
         if not search_results:
@@ -90,9 +87,7 @@ class ContextEnrichmentAgent:
 
         return await self._extract_dimension(combined_text, dimension)
 
-    async def _extract_dimension(
-        self, text: str, dimension: str
-    ) -> TravelContext:
+    async def _extract_dimension(self, text: str, dimension: str) -> TravelContext:
         """Extract one dimension from search text using LLM."""
         dimension_prompts = {
             "route": """从以下搜索结果中提取经典路线建议。
@@ -103,7 +98,6 @@ class ContextEnrichmentAgent:
 - 提取行程起始点建议
 
 返回JSON格式：{"route_suggestions": "提取的路线建议文本"}""",
-
             "food": """从以下搜索结果中提取推荐的特色美食/餐厅信息。
 
 要求：
@@ -113,7 +107,6 @@ class ContextEnrichmentAgent:
 
 返回JSON格式：
 {"food_specialties": [{"name":"...","cuisine_type":"...","area":"...","price_range":"...","note":"..."}]}""",
-
             "transport": """从以下搜索结果中提取交通出行提示。
 
 要求：
@@ -123,7 +116,6 @@ class ContextEnrichmentAgent:
 - 打车/网约车提示
 
 返回JSON格式：{"transport_tips": "提取的交通提示文本"}""",
-
             "accommodation": """从以下搜索结果中提取住宿推荐信息。
 
 要求：
@@ -132,7 +124,6 @@ class ContextEnrichmentAgent:
 - 住宿类型建议（酒店/民宿/青旅）
 
 返回JSON格式：{"accommodation_areas": "提取的住宿建议文本"}""",
-
             "events": """从以下搜索结果中提取近期活动/展览/节日信息。
 
 要求：
@@ -145,7 +136,6 @@ class ContextEnrichmentAgent:
   "upcoming_events": [{"name":"...","date_range":"...","location":"...","description":"...","type":"..."}],
   "seasonal_highlights": "季节限定亮点描述"
 }""",
-
             "tips": """从以下搜索结果中提取避坑提醒和本地实用信息。
 
 要求：
@@ -200,11 +190,17 @@ class ContextEnrichmentAgent:
         # String fields: append if new and not already contained
         if source.route_suggestions and source.route_suggestions not in target.route_suggestions:
             target.route_suggestions += source.route_suggestions + "\n"
-        if source.accommodation_areas and source.accommodation_areas not in target.accommodation_areas:
+        if (
+            source.accommodation_areas
+            and source.accommodation_areas not in target.accommodation_areas
+        ):
             target.accommodation_areas += source.accommodation_areas + "\n"
         if source.transport_tips and source.transport_tips not in target.transport_tips:
             target.transport_tips += source.transport_tips + "\n"
-        if source.seasonal_highlights and source.seasonal_highlights not in target.seasonal_highlights:
+        if (
+            source.seasonal_highlights
+            and source.seasonal_highlights not in target.seasonal_highlights
+        ):
             target.seasonal_highlights += source.seasonal_highlights + "\n"
         if source.local_customs and source.local_customs not in target.local_customs:
             target.local_customs += source.local_customs + "\n"

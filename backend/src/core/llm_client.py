@@ -78,7 +78,11 @@ class LLMClient:
         """Log LLM token usage to the current step via contextvar."""
         try:
             if response.usage:
-                from core.thought_logger import thought_logger, get_current_step_name, get_current_session_id
+                from core.thought_logger import (
+                    thought_logger,
+                    get_current_step_name,
+                    get_current_session_id,
+                )
 
                 step_name = get_current_step_name()
                 session_id = get_current_session_id()

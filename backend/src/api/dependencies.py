@@ -6,7 +6,6 @@ from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_db
-from core.settings import settings
 
 
 async def db_session() -> AsyncGenerator[AsyncSession, None]:
