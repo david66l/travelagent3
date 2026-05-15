@@ -10,7 +10,6 @@ from graph.nodes import (
     poi_search_node,
     weather_node,
     budget_init_node,
-    context_enrichment_node,
     planner_node,
     validation_node,
     route_node,
@@ -109,7 +108,6 @@ def build_graph() -> StateGraph:
     builder.add_node("poi_search_node", poi_search_node)
     builder.add_node("weather_node", weather_node)
     builder.add_node("budget_init_node", budget_init_node)
-    builder.add_node("context_enrichment_node", context_enrichment_node)
     builder.add_node("planner_node", planner_node)
     builder.add_node("validation_node", validation_node)
     builder.add_node("route_node", route_node)
@@ -158,13 +156,11 @@ def build_graph() -> StateGraph:
     builder.add_edge("prepare_context_node", "poi_search_node")
     builder.add_edge("prepare_context_node", "weather_node")
     builder.add_edge("prepare_context_node", "budget_init_node")
-    builder.add_edge("prepare_context_node", "context_enrichment_node")
 
     # Fan-in: all parallel nodes converge to planner
     builder.add_edge("poi_search_node", "planner_node")
     builder.add_edge("weather_node", "planner_node")
     builder.add_edge("budget_init_node", "planner_node")
-    builder.add_edge("context_enrichment_node", "planner_node")
 
     # Fan-out: parallel validation, route optimization, budget calculation
     builder.add_edge("planner_node", "validation_node")

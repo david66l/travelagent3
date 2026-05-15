@@ -161,6 +161,11 @@ export interface ChatState {
 
   runStatus: RunStatus | null;
 
+  // Job-based planning state (Phase 2)
+  jobId: string | null;
+  currentStage: string | null;
+  jobStatus: string | null;
+
   setSessionId: (id: string) => void;
   addMessage: (msg: Message) => void;
   setConnected: (v: boolean) => void;
@@ -188,6 +193,11 @@ export interface ChatState {
 
   setRunStatus: (v: RunStatus | null) => void;
   clearRunStatus: () => void;
+
+  // Job state setters
+  setJobId: (id: string | null) => void;
+  setCurrentStage: (stage: string | null) => void;
+  setJobStatus: (status: string | null) => void;
 
   clear: () => void;
 }
@@ -230,6 +240,10 @@ export const useChatStore = create<ChatState>()(
       currentTrip: null,
 
       runStatus: null,
+
+      jobId: null,
+      currentStage: null,
+      jobStatus: null,
 
       setSessionId: (id) => set({ sessionId: id }),
 

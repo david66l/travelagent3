@@ -17,7 +17,11 @@ class WeatherQuerySkill:
         start_date: str,
         end_date: str,
     ) -> list[WeatherDay]:
-        """Query weather for the given date range with Redis caching."""
+        """Query weather for the given date range with Redis caching.
+
+        Strategy: return simulated data quickly (<100ms).
+        Search is enhancement only, wrapped in timeout to never block.
+        """
         cache_key = f"weather:{city}:{start_date}:{end_date}"
 
         # Try cache first
@@ -28,12 +32,7 @@ class WeatherQuerySkill:
         except Exception:
             pass
 
-        # Fallback: search + simulated data (MVP)
-        query = f"{city} 天气预报 {start_date} 到 {end_date}"
-        _results = await self.search_skill.search(query, top_n=3)
-
-        # For MVP, return simulated weather data
-        # In production, would crawl weather pages and parse
+        # Generate simulated weather immediately — no blocking external calls
         import random
         from datetime import datetime, timedelta
 
@@ -61,7 +60,14 @@ class WeatherQuerySkill:
             )
             current += timedelta(days=1)
 
-        # Cache result
+        # Optional: background search for real data (fire-and-forget, never block)
+        # The search result is ignored for now; in future could enrich the simulation
+        try:
+            asyncio.create_task(self._background_search(city, start_date, end_date))
+        except Exception:
+            pass
+
+        # Cache simulated result
         try:
             await redis_client.set_json(
                 cache_key,
@@ -72,6 +78,17 @@ class WeatherQuerySkill:
             pass
 
         return weather_days
+
+    async def _background_search(self, city: str, start_date: str, end_date: str) -> None:
+        """Optional background search for real weather data. Never blocks main flow."""
+        try:
+            query = f"{city} 天气预报 {start_date} 到 {end_date}"
+            await asyncio.wait_for(
+                self.search_skill.search(query, top_n=3),
+                timeout=5.0,
+            )
+        except Exception:
+            pass
 
     def _recommend(self, condition: str, high: int, low: int) -> str:
         if "雨" in condition:

@@ -19,7 +19,6 @@ core.llm_client.llm = _llm_mock
 
 # Patch every module that already imported llm locally
 for _mod_name in [
-    "agents.context_enrichment",
     "agents.information_collection",
     "agents.intent_recognition",
     "agents.itinerary_planner",
@@ -60,7 +59,6 @@ import core.redis_client
 core.redis_client.redis_client = _redis_mock
 
 for _mod_name in [
-    "agents.context_enrichment",
     "api.main",
     "skills.poi_search",
     "skills.weather_query",

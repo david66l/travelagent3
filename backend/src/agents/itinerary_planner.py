@@ -12,7 +12,6 @@ from schemas import (
     DayPlan,
     Activity,
     Location,
-    TravelContext,
 )
 from skills.route_calculation import RouteCalculationSkill
 
@@ -2413,11 +2412,22 @@ Step 6: 输出最终高质量方案
 
     @staticmethod
     def _build_travel_context_section(travel_context: Optional[dict]) -> str:
-        """Build the travel context section for the planner prompt."""
-        if not travel_context:
-            return "【当地实用信息】\n暂无"
-        tc = TravelContext.from_dict(travel_context)
-        return f"【当地实用信息】\n{tc.to_prompt_text()}"
+        """Build the travel context section for the planner prompt.
+
+        Travel context is no longer fetched via external search (too slow).
+        Instead, the LLM uses its own knowledge to supplement local info.
+        """
+        return (
+            "【当地实用信息】\n"
+            "请根据你的知识补充以下信息（如不了解可省略）：\n"
+            "- 路线建议：推荐的游玩顺序和区域集中方案\n"
+            "- 季节限定：当前季节的限定活动、花海、美食季等\n"
+            "- 交通提示：地铁/公交便利性、机场/高铁站位置\n"
+            "- 住宿建议：推荐的住宿区域及优缺点\n"
+            "- 美食推荐：当地必吃特色菜和口碑餐厅\n"
+            "- 避坑提醒：宰客陷阱、消费陷阱、预约要求等\n"
+            "- 本地习俗：文化礼仪、禁忌等"
+        )
 
     def _build_day_plans(
         self,

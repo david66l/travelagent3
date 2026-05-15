@@ -9,7 +9,6 @@ from graph.nodes import (
     poi_search_node,
     weather_node,
     budget_init_node,
-    context_enrichment_node,
     planner_node,
     validation_node,
     route_node,
@@ -166,21 +165,6 @@ class TestBudgetInitNode:
         result = await budget_init_node(state)
         assert "budget_panel" in result
         assert result["budget_panel"]["total_budget"] == 5000
-
-
-class TestContextEnrichmentNode:
-    """Test context enrichment node."""
-
-    @pytest.mark.asyncio
-    async def test_enrich(self):
-        state = ItineraryState(
-            session_id="s1",
-            user_id="u1",
-            user_input="test",
-            user_profile={"destination": "北京", "travel_days": 3, "travel_dates": "2026-05-01"},
-        )
-        result = await context_enrichment_node(state)
-        assert "travel_context" in result
 
 
 class TestPlannerNode:

@@ -13,7 +13,6 @@ from agents.qa_agent import QAAgent
 from agents.proposal_generation import ProposalGenerationAgent
 from agents.validation import ValidationAgent
 from agents.map_route import MapRouteAgent
-from agents.context_enrichment import ContextEnrichmentAgent
 from skills.memory_store import MemoryStoreSkill
 
 
@@ -114,20 +113,6 @@ async def budget_init_node(state: ItineraryState) -> dict:
     profile = UserProfile(**state.get("user_profile", {}))
     panel = agent.init_panel(profile)
     return {"budget_panel": panel.model_dump()}
-
-
-@log_step("context_enrichment_node")
-async def context_enrichment_node(state: ItineraryState) -> dict:
-    """Gather rich travel context from multi-dimensional search."""
-    agent = ContextEnrichmentAgent()
-    profile = state.get("user_profile", {})
-
-    context = await agent.enrich(
-        city=profile.get("destination", ""),
-        travel_days=profile.get("travel_days", 3),
-        travel_dates=profile.get("travel_dates", ""),
-    )
-    return {"travel_context": context.model_dump()}
 
 
 @log_step("planner_node")

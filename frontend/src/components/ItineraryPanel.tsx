@@ -6,7 +6,7 @@ import { DayCard } from "./DayCard";
 
 export function ItineraryPanel() {
   const store = useChatStore();
-  const { itinerary, currentTrip } = store;
+  const { itinerary, currentTrip, currentStage, isLoading } = store;
   const [activeDay, setActiveDay] = useState(0);
 
   const tripTitle = currentTrip
@@ -35,6 +35,14 @@ export function ItineraryPanel() {
           </button>
         )}
       </div>
+
+      {/* Stage indicator */}
+      {isLoading && currentStage && (
+        <div className="flex items-center gap-2 rounded-lg bg-blue-50 px-3 py-1.5 text-xs text-blue-600">
+          <div className="h-3 w-3 animate-spin rounded-full border-2 border-blue-300 border-t-blue-600" />
+          {currentStage}
+        </div>
+      )}
 
       {!itinerary || itinerary.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center text-center">

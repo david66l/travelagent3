@@ -584,11 +584,6 @@ def log_step(step_name: str):
                 input_summary = (
                     f"city={profile.get('destination')}, interests={profile.get('interests', [])}"
                 )
-            elif step_name == "context_enrichment_node":
-                profile = state.get("user_profile", {})
-                input_summary = (
-                    f"city={profile.get('destination')}, days={profile.get('travel_days')}"
-                )
             elif step_name == "planner_node":
                 pois = state.get("candidate_pois", [])
                 input_summary = (

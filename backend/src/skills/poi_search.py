@@ -201,6 +201,23 @@ CITY_FALLBACK_POIS: dict[str, list[dict]] = {
         {"name": "海鲜大咖", "category": "restaurant"},
         {"name": "鲅鱼饺子", "category": "restaurant"},
     ],
+    "济南": [
+        {"name": "趵突泉", "category": "attraction", "tags": ["泉水", "园林"], "ticket_price": 40, "area": "历下区", "recommended_hours": "2-3小时", "best_time": "上午", "indoor_outdoor": "outdoor"},
+        {"name": "大明湖", "category": "attraction", "tags": ["湖泊", "园林"], "ticket_price": 0, "area": "历下区", "recommended_hours": "2-3小时", "best_time": "傍晚", "indoor_outdoor": "outdoor"},
+        {"name": "千佛山", "category": "attraction", "tags": ["登山", "佛教"], "ticket_price": 30, "area": "历下区", "recommended_hours": "2-3小时", "best_time": "上午", "indoor_outdoor": "outdoor"},
+        {"name": "芙蓉街", "category": "attraction", "tags": ["美食街", "老街"], "ticket_price": 0, "area": "历下区", "recommended_hours": "1-2小时", "best_time": "晚上", "indoor_outdoor": "outdoor"},
+        {"name": "山东省博物馆", "category": "attraction", "tags": ["历史", "文化"], "ticket_price": 0, "area": "历城区", "recommended_hours": "2-3小时", "best_time": "上午", "indoor_outdoor": "indoor"},
+        {"name": "五龙潭", "category": "attraction", "tags": ["泉水", "园林"], "ticket_price": 5, "area": "天桥区", "recommended_hours": "1-2小时", "best_time": "上午", "indoor_outdoor": "outdoor"},
+        {"name": "黑虎泉", "category": "attraction", "tags": ["泉水", "免费"], "ticket_price": 0, "area": "历下区", "recommended_hours": "1小时", "best_time": "上午", "indoor_outdoor": "outdoor"},
+        {"name": "曲水亭街", "category": "attraction", "tags": ["老街", "泉水"], "ticket_price": 0, "area": "历下区", "recommended_hours": "1-2小时", "best_time": "下午", "indoor_outdoor": "outdoor"},
+        {"name": "宽厚里", "category": "attraction", "tags": ["美食", "商业"], "ticket_price": 0, "area": "历下区", "recommended_hours": "1-2小时", "best_time": "晚上", "indoor_outdoor": "outdoor"},
+        {"name": "泉城广场", "category": "attraction", "tags": ["地标", "夜景"], "ticket_price": 0, "area": "历下区", "recommended_hours": "1小时", "best_time": "晚上", "indoor_outdoor": "outdoor"},
+        {"name": "把子肉", "category": "restaurant", "tags": ["鲁菜", "特色"]},
+        {"name": "油旋", "category": "restaurant", "tags": ["小吃", "传统"]},
+        {"name": "甜沫", "category": "restaurant", "tags": ["早餐", "传统"]},
+        {"name": "草包包子", "category": "restaurant", "tags": ["包子", "老字号"]},
+        {"name": "孟家扒蹄", "category": "restaurant", "tags": ["卤味", "特色"]},
+    ],
 }
 
 
@@ -218,13 +235,19 @@ class POISearchSkill:
         keywords: list[str],
         category: Optional[str] = None,
     ) -> list[ScoredPOI]:
-        """Search POIs for a city with given keywords."""
-        # Build cache key
+        """Search POIs for a city with given keywords.
+
+        Strategy:
+        1. Built-in fallback first (zero latency)
+        2. Redis cache second (sub-10ms)
+        3. Tavily + LLM extraction with 15s hard timeout (enhancement)
+        4. Timeout/failure → empty list (don't block planner)
+        """
         keywords_str = "|".join(sorted(keywords)) if keywords else "_"
         keywords_hash = hashlib.md5(keywords_str.encode()).hexdigest()[:12]
         cache_key = f"pois:{city}:{keywords_hash}"
 
-        # Try cache first
+        # Step 1: Redis cache (lazy cache from prior searches)
         try:
             cached = await redis_client.get_json(cache_key)
             if cached:
@@ -233,7 +256,46 @@ class POISearchSkill:
         except Exception:
             pass
 
-        # Build multiple queries for broader coverage
+        # Step 2: Built-in fallback (fastest, zero external dependency)
+        fallback = self._get_fallback_pois(city)
+        if fallback:
+            logger.info(f"POI fallback hit for {city}: {len(fallback)} POIs")
+            return fallback
+
+        # Step 3: External search with hard timeout
+        # LLM extraction is enhancement only, never a blocking dependency
+        try:
+            pois = await asyncio.wait_for(
+                self._search_and_extract_pois(city, keywords, category),
+                timeout=15.0,
+            )
+            if pois:
+                # Write to lazy cache for next time
+                try:
+                    await redis_client.set_json(
+                        cache_key,
+                        [p.model_dump() for p in pois[:40]],
+                        ttl=3600,
+                    )
+                except Exception:
+                    pass
+                return pois
+        except asyncio.TimeoutError:
+            logger.warning(f"POI search timeout for {city} after 15s")
+        except Exception as e:
+            logger.warning(f"POI search failed for {city}: {e}")
+
+        # Step 4: Return empty — planner has fallback algorithms
+        logger.info(f"POI search returned empty for {city}")
+        return []
+
+    async def _search_and_extract_pois(
+        self,
+        city: str,
+        keywords: list[str],
+        category: Optional[str] = None,
+    ) -> list[ScoredPOI]:
+        """Tavily search + LLM extraction. May be slow, always wrapped in timeout."""
         queries = [
             f"{city} 必去景点 旅游攻略 推荐",
             f"{city} 美食 餐厅 特色小吃 推荐",
@@ -243,7 +305,6 @@ class POISearchSkill:
         if category:
             queries.append(f"{city} {category} 推荐")
 
-        # Search all queries with Tavily context (results + answer)
         all_results: list[SearchResult] = []
         all_answers: list[str] = []
         search_tasks = [self.tavily.search_with_context(q, top_n=6) for q in queries]
@@ -253,7 +314,7 @@ class POISearchSkill:
             if answer:
                 all_answers.append(answer)
 
-        # Deduplicate results by URL
+        # Deduplicate by URL
         seen_urls: set[str] = set()
         unique_results: list[SearchResult] = []
         for r in all_results:
@@ -263,25 +324,19 @@ class POISearchSkill:
 
         all_pois: list[ScoredPOI] = []
 
-        # PRIMARY: Extract from Tavily answers (most reliable content source)
+        # PRIMARY: Extract from Tavily answers
         if all_answers:
             combined_answer = "\n\n".join(all_answers)
             answer_pois = await self._extract_pois_from_answer(combined_answer, city, keywords)
             logger.info(f"Extracted {len(answer_pois)} POIs from Tavily answers")
             all_pois.extend(answer_pois)
 
-        # SECONDARY: Extract from search snippets (no crawl needed)
+        # SECONDARY: Extract from snippets
         snippets = [r.snippet for r in unique_results if r.snippet]
         if snippets and len(all_pois) < 10:
             snippet_pois = await self._extract_from_snippets(snippets, city, keywords)
             logger.info(f"Extracted {len(snippet_pois)} POIs from snippets")
             all_pois.extend(snippet_pois)
-
-        # FALLBACK: Built-in city default POIs if still too few
-        if len(all_pois) < 8:
-            fallback = self._get_fallback_pois(city)
-            logger.info(f"Using {len(fallback)} fallback POIs for {city}")
-            all_pois.extend(fallback)
 
         # Deduplicate by name
         seen_names: set[str] = set()
@@ -296,17 +351,6 @@ class POISearchSkill:
         scored = self._score_pois(unique_pois, keywords)
         scored.sort(key=lambda x: x.score, reverse=True)
         logger.info(f"Final POI count for {city}: {len(scored)}")
-
-        # Cache result
-        try:
-            await redis_client.set_json(
-                cache_key,
-                [p.model_dump() for p in scored[:40]],
-                ttl=3600,  # 1 hour
-            )
-        except Exception:
-            pass
-
         return scored[:40]
 
     async def _extract_pois_from_answer(
@@ -411,15 +455,22 @@ class POISearchSkill:
     def _get_fallback_pois(self, city: str) -> list[ScoredPOI]:
         """Return built-in fallback POIs when extraction fails."""
         fallback_data = CITY_FALLBACK_POIS.get(city, [])
+        if not fallback_data:
+            return []
         pois = []
         for item in fallback_data:
             pois.append(
                 ScoredPOI(
                     name=item["name"],
                     category=item["category"],
-                    description="",
-                    score=0.5,
-                    tags=[],
+                    description=item.get("description", ""),
+                    score=item.get("score", 0.5),
+                    tags=item.get("tags", []),
+                    ticket_price=item.get("ticket_price"),
+                    area=item.get("area", ""),
+                    recommended_hours=item.get("recommended_hours", "1-2小时"),
+                    best_time=item.get("best_time", "上午"),
+                    indoor_outdoor=item.get("indoor_outdoor", "mixed"),
                 )
             )
         return pois

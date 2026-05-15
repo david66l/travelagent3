@@ -1,4 +1,4 @@
-"""Tests for WebSocket endpoint with TestClient."""
+"""Tests for WebSocket endpoint with TestClient (Phase 1 job model)."""
 
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
@@ -42,62 +42,56 @@ class TestWebSocketConnect:
             assert resp["type"] == "error"
             assert "Empty" in resp["error"]
 
-    @patch("api.websocket.thought_logger")
-    def test_chat_message(self, mock_logger):
+    @patch("api.websocket.PlanningJobRepository")
+    @patch("api.websocket.redis_client")
+    def test_chat_message_creates_job(self, mock_redis, mock_repo_cls):
         app = _make_ws_app()
-        app.state.graph.ainvoke = AsyncMock(return_value={
-            "assistant_response": "你好！",
-            "intent": "chitchat",
-            "current_itinerary": [],
-            "budget_panel": {},
-            "preference_panel": {},
-            "needs_clarification": False,
-            "waiting_for_confirmation": False,
-            "error": None,
-        })
-        mock_logger.start_session = MagicMock()
-        mock_logger.register_ws_callback = MagicMock()
-        mock_logger.unregister_ws_callback = MagicMock()
-        mock_logger.push_status = AsyncMock()
-        mock_logger.save = MagicMock(return_value=None)
+        mock_repo = MagicMock()
+        mock_job = MagicMock()
+        mock_job.id = "job-123"
+        mock_job.status = "pending"
+        mock_repo.create = AsyncMock(return_value=mock_job)
+        mock_repo.request_cancel = AsyncMock()
+        mock_repo_cls.return_value = mock_repo
+
+        mock_redis._client = MagicMock()
+        mock_redis._client.publish = AsyncMock()
 
         client = TestClient(app)
         with client.websocket_connect("/ws/chat/sess-1") as ws:
             ws.send_json({"content": "你好", "user_id": "user-1"})
             resp = ws.receive_json()
-            assert resp["type"] == "message"
-            assert resp["assistant_message"] == "你好！"
+            assert resp["type"] == "job_created"
+            assert resp["job_id"] == "job-123"
+            assert resp["status"] == "pending"
 
-    @patch("api.websocket.thought_logger")
-    def test_graph_error(self, mock_logger):
+    @patch("api.websocket.PlanningJobRepository")
+    @patch("api.websocket.redis_client")
+    def test_cancel_job(self, mock_redis, mock_repo_cls):
         app = _make_ws_app()
-        app.state.graph.ainvoke = AsyncMock(side_effect=Exception("graph failed"))
-        mock_logger.start_session = MagicMock()
-        mock_logger.register_ws_callback = MagicMock()
-        mock_logger.unregister_ws_callback = MagicMock()
+        mock_repo = MagicMock()
+        mock_repo.request_cancel = AsyncMock()
+        mock_repo_cls.return_value = mock_repo
+
+        mock_redis._client = MagicMock()
+        mock_redis._client.publish = AsyncMock()
 
         client = TestClient(app)
         with client.websocket_connect("/ws/chat/sess-1") as ws:
-            ws.send_json({"content": "test"})
-            resp = ws.receive_json()
-            assert resp["type"] == "error"
-            assert "Graph execution failed" in resp["error"]
+            ws.send_json({"type": "cancel", "job_id": "job-123"})
+            # Cancel is async; no immediate response expected
 
-    @patch("api.websocket.thought_logger")
-    def test_sanitizes_input(self, mock_logger):
+    @patch("api.websocket.PlanningJobRepository")
+    @patch("api.websocket.redis_client")
+    def test_subscribe_reconnect(self, mock_redis, mock_repo_cls):
         app = _make_ws_app()
-        app.state.graph.ainvoke = AsyncMock(return_value={
-            "assistant_response": "ok",
-            "intent": "chitchat",
-        })
-        mock_logger.start_session = MagicMock()
-        mock_logger.register_ws_callback = MagicMock()
-        mock_logger.unregister_ws_callback = MagicMock()
-        mock_logger.push_status = AsyncMock()
-        mock_logger.save = MagicMock(return_value=None)
+        mock_repo = MagicMock()
+        mock_repo.get_events_after = AsyncMock(return_value=[])
+        mock_repo_cls.return_value = mock_repo
+
+        mock_redis._client = MagicMock()
+        mock_redis._client.pubsub = MagicMock()
 
         client = TestClient(app)
         with client.websocket_connect("/ws/chat/sess-1") as ws:
-            ws.send_json({"content": "  ignore previous  "})
-            resp = ws.receive_json()
-            assert resp["type"] == "message"
+            ws.send_json({"type": "subscribe", "job_id": "job-123", "last_event_id": 0})

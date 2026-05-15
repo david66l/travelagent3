@@ -20,6 +20,8 @@ from core.redis_client import redis_client  # noqa: E402
 from graph.graph import build_graph  # noqa: E402
 from api.routes import router as api_router  # noqa: E402
 from api.websocket import router as ws_router  # noqa: E402
+from worker.planning_worker import start_worker, stop_worker  # noqa: E402
+from pipeline.planning_pipeline import set_graph  # noqa: E402
 
 
 @asynccontextmanager
@@ -34,9 +36,16 @@ async def lifespan(app: FastAPI):
     app.state.checkpointer = checkpointer
     app.state.graph = graph
 
+    # Share graph with pipeline to avoid per-job rebuild
+    set_graph(graph)
+
+    # Start background planning worker
+    await start_worker()
+
     yield
 
     # Shutdown: graceful close with timeout
+    await stop_worker()
     try:
         await asyncio.wait_for(checkpointer.conn.close(), timeout=5.0)
     except asyncio.TimeoutError:

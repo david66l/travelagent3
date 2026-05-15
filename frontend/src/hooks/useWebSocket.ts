@@ -94,6 +94,63 @@ export function useWebSocket() {
   );
 
   const handleMessage = (data: any) => {
+    // Phase 2: job-based event handling
+    if (data.type === "job_created") {
+      store.setJobId(data.job_id);
+      store.setJobStatus("pending");
+      store.setCurrentStage("等待处理");
+      store.setLoading(true);
+      return;
+    }
+
+    if (data.type === "stage" || data.stage) {
+      const stage = data.stage;
+      store.setJobStatus(stage);
+
+      if (stage === "running") {
+        store.setCurrentStage("正在规划...");
+      } else if (stage === "draft_ready") {
+        store.setCurrentStage("行程草稿已生成");
+        if (data.payload?.itinerary_draft) {
+          store.setItinerary(data.payload.itinerary_draft);
+        }
+      } else if (stage === "itinerary_final") {
+        store.setCurrentStage("行程已优化");
+        if (data.payload?.itinerary_final) {
+          store.setItinerary(data.payload.itinerary_final);
+        }
+      } else if (stage === "writing") {
+        store.setCurrentStage("正在润色文案...");
+      } else if (stage === "completed") {
+        store.setCurrentStage("完成");
+        store.setLoading(false);
+        if (data.payload?.proposal_text) {
+          const currentRunStatus = useChatStore.getState().runStatus;
+          store.addMessage({
+            role: "assistant",
+            content: data.payload.proposal_text,
+            timestamp: Date.now(),
+            runStatus: currentRunStatus ?? undefined,
+          });
+        }
+        if (data.payload?.itinerary) {
+          store.setItinerary(data.payload.itinerary);
+        }
+        store.saveChatSnapshot();
+      } else if (stage === "failed" || stage === "cancelled") {
+        store.setCurrentStage(stage === "failed" ? "处理失败" : "已取消");
+        store.setLoading(false);
+        store.addMessage({
+          role: "assistant",
+          content: stage === "failed"
+            ? `错误: ${data.error || "处理失败"}`
+            : "行程规划已取消",
+          timestamp: Date.now(),
+        });
+      }
+      return;
+    }
+
     if (data.type === "error") {
       store.addMessage({
         role: "assistant",
