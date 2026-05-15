@@ -159,19 +159,37 @@ class PlanningPipeline:
             return
 
         # ------------------------------------------------------------------ #
-        # 4. Rule Validator
+        # 4. Rule Validator + Repair Executor (Phase 2B)
         # ------------------------------------------------------------------ #
         from planner.core import validate as validate_itinerary
+        from planner.core import run_repair_loop
 
         report = validate_itinerary(itinerary_draft, profile, strategy.must_see)
+        repair_result = None
+        needs_human = False
 
         if report.hard_violations:
             logger.warning(
-                "Job %s has %d hard violations",
+                "Job %s has %d hard violations — running repair loop",
                 job.id,
                 len(report.hard_violations),
             )
-            # Phase 2B will handle repair; for 2A we emit with warnings
+            repair_result = run_repair_loop(
+                itinerary_draft, profile, strategy.must_see, pois,
+            )
+            logger.info(
+                "Repair loop: success=%s applied=%d rejected=%d needs_human=%s",
+                repair_result.success,
+                len(repair_result.applied_plans),
+                len(repair_result.rejected_plans),
+                repair_result.needs_human,
+            )
+
+        if repair_result and repair_result.success:
+            # Re-validate to get the clean report
+            report = validate_itinerary(itinerary_draft, profile, strategy.must_see)
+        elif repair_result and repair_result.needs_human:
+            needs_human = True
 
         # Stream final itinerary (with validation metadata)
         final_payload = {
@@ -187,12 +205,22 @@ class PlanningPipeline:
             return
 
         # ------------------------------------------------------------------ #
-        # 5. Writer (placeholder for Phase 2C)
+        # 5. Writer (Phase 2C — enrich prose, never mutate facts)
         # ------------------------------------------------------------------ #
-        # Simple proposal text generation without LLM for 2A
-        proposal_text = _generate_simple_proposal(itinerary_draft, profile)
+        from planner.core import enrich, verify_checksum
 
-        writing_payload = {"proposal_text_preview": proposal_text}
+        checksum_before = verify_checksum(itinerary_draft, itinerary_draft)  # always True
+        enriched_itinerary, proposal_text = enrich(itinerary_draft, profile)
+
+        # If checksum fails, writer already returned original; log and proceed
+        if not verify_checksum(itinerary_draft, enriched_itinerary):
+            logger.error("Writer mutated protected facts — falling back to original")
+            enriched_itinerary = itinerary_draft
+
+        writing_payload = {
+            "proposal_text_preview": proposal_text,
+            "itinerary_enriched": [day.model_dump() for day in enriched_itinerary],
+        }
         if not await self._record_stage(job, "writing", writing_payload):
             logger.warning("Job %s lost ownership before writing", job.id)
             return
@@ -208,10 +236,10 @@ class PlanningPipeline:
             "completed",
             payload={
                 "proposal_text": proposal_text,
-                "itinerary": [day.model_dump() for day in itinerary_draft],
+                "itinerary_final": [day.model_dump() for day in enriched_itinerary],
                 "strategy": strategy.model_dump(),
                 "warnings": [w.message for w in report.soft_warnings],
-                "needs_human": bool(report.hard_violations),
+                "needs_human": needs_human,
             },
         )
 
@@ -320,37 +348,3 @@ class PlanningPipeline:
         return True
 
 
-def _generate_simple_proposal(itinerary: list, profile) -> str:
-    """Generate a simple proposal text without LLM (Phase 2A placeholder)."""
-    lines = []
-    lines.append(f"# {profile.destination} {profile.travel_days}日游行程方案\n")
-
-    if profile.travel_dates:
-        lines.append(f"**出行日期**: {profile.travel_dates}")
-    if profile.travelers_type:
-        lines.append(f"**出行类型**: {profile.travelers_type}")
-    lines.append("")
-
-    total_cost = sum(day.total_cost for day in itinerary)
-    lines.append(f"**预估总费用**: ¥{total_cost:.0f}")
-    if profile.budget_range:
-        lines.append(f"**预算范围**: ¥{profile.budget_range:.0f}")
-    lines.append("")
-
-    for day in itinerary:
-        lines.append(f"## 第{day.day_number}天")
-        if day.date:
-            lines.append(f"**日期**: {day.date}")
-        if day.theme:
-            lines.append(f"**主题**: {day.theme}")
-        lines.append("")
-        for act in day.activities:
-            time_str = ""
-            if act.start_time and act.end_time:
-                time_str = f" ({act.start_time}-{act.end_time})"
-            lines.append(f"- **{act.poi_name}**{time_str}")
-            if act.recommendation_reason:
-                lines.append(f"  {act.recommendation_reason}")
-        lines.append("")
-
-    return "\n".join(lines)

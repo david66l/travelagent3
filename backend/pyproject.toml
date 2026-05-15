@@ -60,6 +60,7 @@ addopts = "-v --tb=short"
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "integration: marks tests as integration tests",
+    "performance: timing-sensitive benchmarks (not in standard CI)",
 ]
 
 [tool.coverage.run]
