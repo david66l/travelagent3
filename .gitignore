@@ -1,73 +1,16 @@
-# ===== Secrets / Env =====
-.env
-.env.local
-.env.development
-.env.production
-.env.*.local
-!.env.example
-*.pem
-*.key
-*.p12
-*.pfx
-
-# ===== Logs / Runtime =====
-*.log
-*.pid
-*.pid.lock
-*.out
-*.err
-backend/src/logs/
-
-# ===== Local DB / Cache =====
-*.db
-*.sqlite
-*.sqlite3
-*.dump
-*.rdb
-
-# ===== Python =====
+*.pyc
 __pycache__/
-*.py[cod]
-*$py.class
-*.so
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.coverage
-.coverage.*
-coverage.xml
-htmlcov/
 *.egg-info/
-.eggs/
-*.whl
-
-# ===== Python Virtual Envs =====
-.venv/
-venv/
-env/
-ENV/
-
-# ===== Node / Frontend =====
-node_modules/
+.pytest_cache/
+*.tsbuildinfo
+logs/
+.env
+*.egg
 dist/
 build/
-.next/
-out/
-
-# ===== OS / IDE =====
+.venv/
+venv/
+node_modules/
+.coverage
+htmlcov/
 .DS_Store
-Thumbs.db
-desktop.ini
-.idea/
-.vscode/
-*.swp
-*.swo
-*.swn
-*~
-*.bak
-
-# ===== Claude IDE =====
-.claude/
-
-# ===== Security Scan Reports =====
-bandit-report.json
