@@ -52,6 +52,7 @@ class TestWebSocketConnect:
         mock_job.status = "pending"
         mock_repo.create = AsyncMock(return_value=mock_job)
         mock_repo.request_cancel = AsyncMock()
+        mock_repo.get_by_session = AsyncMock(return_value=[])  # P1: load_state
         mock_repo_cls.return_value = mock_repo
 
         mock_redis._client = MagicMock()
@@ -59,7 +60,7 @@ class TestWebSocketConnect:
 
         client = TestClient(app)
         with client.websocket_connect("/ws/chat/sess-1") as ws:
-            ws.send_json({"content": "你好", "user_id": "user-1"})
+            ws.send_json({"content": "北京3天", "user_id": "user-1"})
             resp = ws.receive_json()
             assert resp["type"] == "job_created"
             assert resp["job_id"] == "job-123"
@@ -87,6 +88,8 @@ class TestWebSocketConnect:
         app = _make_ws_app()
         mock_repo = MagicMock()
         mock_repo.get_events_after = AsyncMock(return_value=[])
+        mock_repo.get = AsyncMock(return_value=None)  # P1: subscribe→get job
+        mock_repo.get_by_session = AsyncMock(return_value=[])  # P1: load_state
         mock_repo_cls.return_value = mock_repo
 
         mock_redis._client = MagicMock()

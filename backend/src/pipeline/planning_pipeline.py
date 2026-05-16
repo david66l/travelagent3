@@ -60,24 +60,37 @@ class PlanningPipeline:
             from agents.intent_recognition import IntentRecognitionAgent
             from schemas import UserProfile
 
+            # Load accumulated conversation state (P1 — multi-turn memory)
+            fb = job.user_feedback or {}
+            saved_profile = fb.get("profile", {})
+            saved_messages = fb.get("recent_messages", [])
+
             intent_agent = IntentRecognitionAgent()
             intent_result = await intent_agent.recognize(
                 user_input=job.user_input,
-                messages=[{"role": "user", "content": job.user_input}],
+                messages=saved_messages
+                + [{"role": "user", "content": job.user_input}],
+                user_profile=UserProfile(**{k: v for k, v in saved_profile.items() if v})
+                if any(saved_profile.values())
+                else None,
             )
             entities = intent_result.user_entities
+            # Merge: accumulated profile as base, current entities as override
+            def _pick(key, default=None):
+                return entities.get(key) or saved_profile.get(key) or default
+
             profile = UserProfile(
-                destination=entities.get("destination"),
-                travel_days=entities.get("travel_days"),
-                travel_dates=entities.get("travel_dates"),
-                travelers_count=entities.get("travelers_count", 1),
-                travelers_type=entities.get("travelers_type"),
-                budget_range=entities.get("budget_range"),
-                food_preferences=entities.get("food_preferences", []),
-                interests=entities.get("interests", []),
-                pace=entities.get("pace", "moderate"),
-                accommodation_preference=entities.get("accommodation_preference"),
-                special_requests=entities.get("special_requests", []),
+                destination=_pick("destination"),
+                travel_days=_pick("travel_days"),
+                travel_dates=_pick("travel_dates"),
+                travelers_count=_pick("travelers_count", 1),
+                travelers_type=_pick("travelers_type"),
+                budget_range=_pick("budget_range"),
+                food_preferences=_pick("food_preferences") or [],
+                interests=_pick("interests") or [],
+                pace=_pick("pace") or "moderate",
+                accommodation_preference=_pick("accommodation_preference"),
+                special_requests=_pick("special_requests") or [],
             )
         except asyncio.CancelledError:
             raise
