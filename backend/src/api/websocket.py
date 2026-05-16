@@ -186,24 +186,27 @@ async def chat_websocket(websocket: WebSocket, session_id: str):
                 )
 
             elif msg_type == "subscribe":
-                # Reconnect: restore state + subscribe to existing job
+                # Reconnect: restore state from session's latest job
                 job_id = msg.get("job_id")
                 last_event_id = msg.get("last_event_id", 0)
                 if job_id:
-                    # Restore conversation state from DB
+                    # Restore conversation state from the *latest* job for
+                    # this session — not the specific job_id, which may
+                    # belong to an earlier revision with stale state.
                     async with async_session_maker() as db:
                         repo = PlanningJobRepository(db)
-                        job = await repo.get(job_id)
-                        if job and job.user_feedback:
-                            state = dict(job.user_feedback)
+                        latest_jobs = await repo.get_by_session(session_id, limit=1)
+                        if latest_jobs and latest_jobs[0].user_feedback:
+                            state = dict(latest_jobs[0].user_feedback)
                             manager._states[session_id] = state
                             await manager.send_json(session_id, {
                                 "type": "state_restored",
                                 "profile": state.get("profile", {}),
                                 "phase": state.get("phase", "gathering"),
+                                "revision": state.get("revision", 1),
                                 "recent_messages": state.get("recent_messages", [])[-3:],
                             })
-                    # Resume status push
+                    # Resume status push for the specified job
                     asyncio.create_task(
                         push_job_status(job_id, session_id, from_event_id=last_event_id)
                     )
