@@ -222,16 +222,24 @@ async def chat_websocket(websocket: WebSocket, session_id: str):
 async def push_job_status(
     job_id: str, session_id: str, from_event_id: int = 0
 ):
-    """Push job status events to frontend via DB polling + Redis fallback."""
+    """Push job status events to frontend via DB polling + Redis pub/sub.
+
+    Strategy:
+    1. Drain any historical events already in the DB.
+    2. Subscribe to Redis ``job:status:{job_id}`` for fast wake-up.
+    3. Poll every *poll_interval* seconds as a safety net.
+    4. When either mechanism detects a terminal state, do one final
+       drain and return.
+    """
     last_event_id = from_event_id
 
-    async def is_terminal(db: AsyncSession) -> bool:
+    async def _is_done(db: AsyncSession) -> bool:
         repo = PlanningJobRepository(db)
         job = await repo.get(job_id)
         return bool(job and job.status in ("completed", "failed", "cancelled"))
 
-    async def poll_and_push(db: AsyncSession) -> bool:
-        """Fetch new events from DB and push to frontend."""
+    async def _drain(db: AsyncSession) -> bool:
+        """Fetch and push new events; return True if anything was sent."""
         nonlocal last_event_id
         repo = PlanningJobRepository(db)
         events = await repo.get_events_after(job_id, last_event_id)
@@ -246,57 +254,69 @@ async def push_job_status(
             })
         return len(events) > 0
 
-    # Push historical events first
+    # 1. Drain historical events
     async with async_session_maker() as db:
-        while await poll_and_push(db):
+        while await _drain(db):
             pass
-        if await is_terminal(db):
+        if await _is_done(db):
             return
 
-    # Redis pub/sub + periodic polling
-    poll_interval = 2.0
-
-    async def redis_listener():
-        pubsub = redis_client._client.pubsub()
-        await pubsub.subscribe(f"job:status:{job_id}")
+    # 2. Redis listener
+    async def _redis_sub():
         try:
-            async for message in pubsub.listen():
-                if message["type"] == "message":
+            pubsub = redis_client._client.pubsub()
+            await pubsub.subscribe(f"job:status:{job_id}")
+            try:
+                async for message in pubsub.listen():
+                    if message["type"] == "message":
+                        async with async_session_maker() as db:
+                            await _drain(db)
                     async with async_session_maker() as db:
-                        await poll_and_push(db)
-                # Check terminal state
-                async with async_session_maker() as db:
-                    if await is_terminal(db):
-                        break
-        finally:
-            await pubsub.unsubscribe(f"job:status:{job_id}")
+                        if await _is_done(db):
+                            return
+            finally:
+                await pubsub.unsubscribe(f"job:status:{job_id}")
+        except Exception:
+            logger.debug("Redis listener for %s exited", job_id, exc_info=True)
 
-    async def periodic_poll():
-        while True:
-            await asyncio.sleep(poll_interval)
+    # 3. Periodic poll — start with an immediate probe then sleep-loop
+    async def _poll():
+        try:
+            # Immediate first poll to catch events that landed during setup
             async with async_session_maker() as db:
-                await poll_and_push(db)
-                if await is_terminal(db):
-                    break
+                await _drain(db)
+                if await _is_done(db):
+                    return
 
-    redis_task = asyncio.create_task(redis_listener())
-    poll_task = asyncio.create_task(periodic_poll())
+            while True:
+                await asyncio.sleep(2.0)
+                async with async_session_maker() as db:
+                    await _drain(db)
+                    if await _is_done(db):
+                        return
+        except Exception:
+            logger.debug("Periodic poll for %s exited", job_id, exc_info=True)
+
+    redis_task = asyncio.create_task(_redis_sub())
+    poll_task = asyncio.create_task(_poll())
 
     done, pending = await asyncio.wait(
         [redis_task, poll_task],
         return_when=asyncio.FIRST_COMPLETED,
     )
 
-    if redis_task in done and poll_task not in done:
-        await poll_task
+    # Let the other task finish naturally if it is already on its way out
+    for task in pending:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
-    for task in (redis_task, poll_task):
-        if not task.done():
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
+    # 4. Final drain — push any events that landed between the last poll
+    #    and the moment the job was marked terminal
+    async with async_session_maker() as db:
+        await _drain(db)
 
 
 def _build_response(state: dict) -> dict:
