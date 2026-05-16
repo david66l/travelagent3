@@ -26,12 +26,15 @@ class PlanningJobRepository:
         session_id: str,
         user_id: str,
         user_input: str,
+        *,
+        user_feedback: Optional[dict] = None,
     ) -> PlanningJob:
         job = PlanningJob(
             session_id=session_id,
             user_id=user_id,
             user_input=user_input,
             status="pending",
+            user_feedback=user_feedback if user_feedback is not None else dict(),
         )
         self.db.add(job)
         await self.db.flush()
@@ -277,3 +280,24 @@ class PlanningJobRepository:
             .order_by(PlanningJobEvent.id)
         )
         return list(result.scalars().all())
+
+    # ------------------------------------------------------------------ #
+    # Conversation state
+    # ------------------------------------------------------------------ #
+
+    async def update_user_feedback(
+        self, job_id: str, state: dict
+    ) -> bool:
+        """Persist conversation state into ``user_feedback``."""
+        from sqlalchemy import update
+
+        import time as _time
+
+        state["updated_at"] = int(_time.time())
+        stmt = (
+            update(PlanningJob)
+            .where(PlanningJob.id == job_id)
+            .values(user_feedback=state)
+        )
+        result = await self.db.execute(stmt)
+        return result.rowcount > 0

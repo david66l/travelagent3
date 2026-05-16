@@ -101,6 +101,21 @@ class PreferencePanel(BaseModel):
 # ===== Intent Result =====
 
 
+class ProfilePatch(BaseModel):
+    """Structured preference delta from a single user message.
+
+    ``set``    – overwrite scalar fields (budget_range, pace, …)
+    ``add``    – append to list fields (interests, food_preferences, …)
+    ``remove`` – drop specific values from list fields
+    ``clear``  – reset a field entirely
+    """
+
+    set: dict = Field(default_factory=dict)
+    add: dict = Field(default_factory=dict)
+    remove: dict = Field(default_factory=dict)
+    clear: list[str] = Field(default_factory=list)
+
+
 class IntentResult(BaseModel):
     intent: Literal[
         "generate_itinerary",
@@ -113,6 +128,7 @@ class IntentResult(BaseModel):
     ]
     confidence: float = Field(ge=0.0, le=1.0)
     user_entities: dict = Field(default_factory=dict)
+    patch: ProfilePatch = Field(default_factory=ProfilePatch)
     missing_required: list[str] = Field(default_factory=list)
     missing_recommended: list[str] = Field(default_factory=list)
     preference_changes: list[dict] = Field(default_factory=list)
