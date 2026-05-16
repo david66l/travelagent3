@@ -150,9 +150,18 @@ async def chat_websocket(websocket: WebSocket, session_id: str):
                     })
                     continue
 
-                # 5. Create job with accumulated state
+                # 5. Create job — bump revision if modifying after completion
+                was_completed = state.get("phase") == "completed"
                 state["phase"] = "planning"
-                state["revision"] = state.get("revision", 1) + 1
+                if was_completed:
+                    state["revision"] = state.get("revision", 1) + 1
+                    await manager.send_json(session_id, {
+                        "type": "revision_created",
+                        "revision": state["revision"],
+                        "profile": state["profile"],
+                    })
+                else:
+                    state.setdefault("revision", 1)
                 async with async_session_maker() as db:
                     repo = PlanningJobRepository(db)
                     job = await repo.create(
@@ -317,6 +326,17 @@ async def push_job_status(
     #    and the moment the job was marked terminal
     async with async_session_maker() as db:
         await _drain(db)
+
+    # 5. Mark conversation state as completed (P2 — revision tracking)
+    state = await manager.load_state(session_id)
+    if state.get("phase") == "planning":
+        state["phase"] = "completed"
+        # Append a lightweight assistant acknowledgement
+        append_message(state, "assistant", "行程已生成")
+        # Note: the full proposal text is already in the completed event payload.
+        # We deliberately do *not* store the itinerary in the conversation
+        # state here — that belongs in the job record (planning_jobs table).
+        await manager.save_state(job_id, session_id, state)
 
 
 def _build_response(state: dict) -> dict:
