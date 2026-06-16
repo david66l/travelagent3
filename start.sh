@@ -229,7 +229,25 @@ for i in $(seq 1 20); do
     sleep 1
 done
 
-# ===== 8. 启动前端 =====
+# ===== 8. 启动 Celery Worker / Beat =====
+log_step "启动 Celery worker + beat..."
+
+cd "$PROJECT_ROOT/backend/src"
+
+python3 -m celery -A worker.memory_tasks.celery_app worker \
+    -Q default,memory -l info \
+    > "$PROJECT_ROOT/logs/celery_worker.log" 2>&1 &
+CELERY_WORKER_PID=$!
+
+python3 -m celery -A worker.memory_tasks.celery_app beat \
+    -l info \
+    > "$PROJECT_ROOT/logs/celery_beat.log" 2>&1 &
+CELERY_BEAT_PID=$!
+
+log_info "Celery worker 启动成功 (PID: $CELERY_WORKER_PID)"
+log_info "Celery beat 启动成功 (PID: $CELERY_BEAT_PID)"
+
+# ===== 9. 启动前端 =====
 log_step "启动前端服务 (port 3000)..."
 
 if lsof -ti:3000 >/dev/null 2>&1; then
@@ -244,9 +262,11 @@ FRONTEND_PID=$!
 
 log_info "前端启动成功 (PID: $FRONTEND_PID)"
 
-# ===== 9. 保存 PID 文件 =====
+# ===== 10. 保存 PID 文件 =====
 echo "$BACKEND_PID" > "$PROJECT_ROOT/logs/backend.pid"
 echo "$FRONTEND_PID" > "$PROJECT_ROOT/logs/frontend.pid"
+echo "$CELERY_WORKER_PID" > "$PROJECT_ROOT/logs/celery_worker.pid"
+echo "$CELERY_BEAT_PID" > "$PROJECT_ROOT/logs/celery_beat.pid"
 
 # ===== 10. 输出访问信息 =====
 sleep 2
@@ -279,6 +299,8 @@ cleanup() {
     log_step "正在停止服务..."
     kill $FRONTEND_PID 2>/dev/null || true
     kill $BACKEND_PID 2>/dev/null || true
+    kill $CELERY_WORKER_PID 2>/dev/null || true
+    kill $CELERY_BEAT_PID 2>/dev/null || true
     wait 2>/dev/null || true
     rm -f "$PROJECT_ROOT/logs/"*.pid
     log_info "所有服务已停止"

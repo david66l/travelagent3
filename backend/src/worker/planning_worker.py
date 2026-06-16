@@ -19,8 +19,8 @@ class PlanningWorker:
     """Lease-based worker that executes planning jobs asynchronously."""
 
     HEARTBEAT_INTERVAL = 10  # seconds
-    LEASE_DURATION = 60      # seconds
-    POLL_INTERVAL = 1        # seconds when no jobs
+    LEASE_DURATION = 60  # seconds
+    POLL_INTERVAL = 1  # seconds when no jobs
 
     def __init__(self, worker_id: str):
         self.worker_id = worker_id
@@ -62,12 +62,37 @@ class PlanningWorker:
                 logger.exception(f"Job {job.id} failed: {e}")
                 async with async_session_maker() as db:
                     repo = PlanningJobRepository(db)
-                    await repo.release(
-                        job.id, self.worker_id, "failed", str(e)
-                    )
+                    await repo.release(job.id, self.worker_id, "failed", str(e))
                     await db.commit()
 
             self._current_job_id = None
+
+    async def execute_job_by_id(self, job_id: str) -> bool:
+        """Claim and run a single job (used by Celery executor)."""
+        async with async_session_maker() as db:
+            repo = PlanningJobRepository(db)
+            job = await repo.acquire_job_by_id(
+                job_id,
+                self.worker_id,
+                lease_seconds=self.LEASE_DURATION,
+            )
+            if job is None:
+                return False
+            await db.commit()
+
+        self._current_job_id = job.id
+        logger.info("Worker %s executing job %s (direct)", self.worker_id, job.id)
+        try:
+            await self._execute_job(job)
+        except Exception as e:
+            logger.exception("Job %s failed: %s", job.id, e)
+            async with async_session_maker() as db:
+                repo = PlanningJobRepository(db)
+                await repo.release(job.id, self.worker_id, "failed", str(e))
+                await db.commit()
+        finally:
+            self._current_job_id = None
+        return True
 
     def stop(self):
         """Signal the worker to stop after current job."""
@@ -120,9 +145,7 @@ class PlanningWorker:
                     lease_seconds=self.LEASE_DURATION,
                 )
                 if not ok:
-                    logger.warning(
-                        f"Worker {self.worker_id} lost lease for job {job_id}"
-                    )
+                    logger.warning(f"Worker {self.worker_id} lost lease for job {job_id}")
                     event = self._cancel_events.get(job_id)
                     if event:
                         event.set()

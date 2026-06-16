@@ -1,7 +1,5 @@
 """Unit tests for heuristic strategy engine."""
 
-import pytest
-
 from schemas import ScoredPOI, UserProfile
 from planner.core.heuristic_strategy import build_strategy
 
@@ -51,7 +49,7 @@ class TestHeuristicStrategy:
         strategy = build_strategy(pois, profile)
         assert "故宫" in strategy.must_see
 
-    def test_detects_landmark_must_see(self):
+    def test_landmarks_are_not_hard_must_see_without_user_mention(self):
         pois = [
             ScoredPOI(
                 name="博物馆",
@@ -63,7 +61,7 @@ class TestHeuristicStrategy:
         ]
         profile = UserProfile(destination="北京", travel_days=1)
         strategy = build_strategy(pois, profile)
-        assert "博物馆" in strategy.must_see
+        assert strategy.must_see == []
 
     def test_no_llm_dependency(self):
         """Strategy generation must not use LLM."""

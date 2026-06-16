@@ -10,7 +10,7 @@ interface SidebarProps {
 
 export function Sidebar({ onNewChat }: SidebarProps) {
   const store = useChatStore();
-  const { chatSnapshots, trips, activeView, setActiveView, loadTrip, restoreChat, clearRunStatus } = store;
+  const { chatSnapshots, trips, activeView, setActiveView, loadTrip, restoreChat } = store;
 
   const [dialogExpanded, setDialogExpanded] = useState(true);
   const [tripExpanded, setTripExpanded] = useState(true);
@@ -57,7 +57,7 @@ export function Sidebar({ onNewChat }: SidebarProps) {
           "w-full rounded-[10px] px-2.5 py-2 text-[13px] font-medium transition-colors",
           activeView === "itinerary"
             ? "bg-[#111111] text-white"
-            : "bg-[#111111] text-white hover:bg-[#333333]"
+            : "bg-white text-[#111111] hover:bg-[#f2f2f2]"
         )}
       >
         当前行程

@@ -22,23 +22,52 @@ CURRENT_SCHEMA_VERSION = 1
 MAX_RECENT_MESSAGES = 10
 
 # Fields that hold a single value (overwrite on ``set``).
-SCALAR_FIELDS = frozenset({
-    "destination",
-    "travel_days",
-    "travel_dates",
-    "travelers_count",
-    "travelers_type",
-    "pace",
-    "budget_range",
-})
+SCALAR_FIELDS = frozenset(
+    {
+        "destination",
+        "travel_days",
+        "travel_dates",
+        "travelers_count",
+        "travelers_type",
+        "pace",
+        "budget_range",
+        "accommodation_preference",
+    }
+)
 
 # Fields that hold lists (append / remove / clear).
-LIST_FIELDS = frozenset({
-    "interests",
-    "food_preferences",
-    "avoid",
-    "special_requests",
-})
+LIST_FIELDS = frozenset(
+    {
+        "interests",
+        "food_preferences",
+        "avoid",
+        "special_requests",
+    }
+)
+
+# Fields that belong to the user's long-term personal profile (carry across trips).
+PERSONAL_FIELDS = frozenset(
+    {
+        "food_preferences",
+        "interests",
+        "pace",
+        "avoid",
+        "accommodation_preference",
+    }
+)
+
+# Fields that are scoped to the current trip (reset per trip).
+TRIP_FIELDS = frozenset(
+    {
+        "destination",
+        "travel_days",
+        "travel_dates",
+        "travelers_count",
+        "travelers_type",
+        "budget_range",
+        "special_requests",
+    }
+)
 
 
 # --------------------------------------------------------------------------- #
@@ -52,17 +81,24 @@ def default_conversation_state() -> dict[str, Any]:
         "schema_version": CURRENT_SCHEMA_VERSION,
         "recent_messages": [],
         "profile": {
-            "destination": None,
-            "travel_days": None,
-            "travel_dates": None,
-            "travelers_count": None,
-            "travelers_type": None,
-            "budget_range": None,
-            "pace": None,
-            "interests": [],
-            "food_preferences": [],
-            "avoid": [],
-            "special_requests": [],
+            # Long-term personal preferences — carry across trips, rarely reset.
+            "personal": {
+                "food_preferences": [],
+                "interests": [],
+                "pace": "moderate",
+                "avoid": [],
+                "accommodation_preference": None,
+            },
+            # Trip-scoped preferences — reset when starting a new trip.
+            "trip": {
+                "destination": None,
+                "travel_days": None,
+                "travel_dates": None,
+                "travelers_count": 1,
+                "travelers_type": None,
+                "budget_range": None,
+                "special_requests": [],
+            },
         },
         "phase": "gathering",
         "turn": 0,
@@ -81,6 +117,9 @@ def default_conversation_state() -> dict[str, Any]:
 def merge_profile(profile: dict[str, Any], patch: ProfilePatch) -> dict[str, Any]:
     """Apply a structured preference delta to *profile* and return a new dict.
 
+    Each field is automatically routed to ``profile.personal`` or
+    ``profile.trip`` based on :data:`PERSONAL_FIELDS` / :data:`TRIP_FIELDS`.
+
     ``patch.set``    → overwrite scalar / list values
     ``patch.add``    → append to list values (deduplicated, order-preserving)
     ``patch.remove`` → remove specific items from list values
@@ -88,28 +127,60 @@ def merge_profile(profile: dict[str, Any], patch: ProfilePatch) -> dict[str, Any
     """
     merged = deepcopy(profile)
 
+    # Ensure personal / trip sub-objects exist (schema migration from flat profile)
+    if "personal" not in merged:
+        merged["personal"] = {
+            "food_preferences": merged.get("food_preferences") or [],
+            "interests": merged.get("interests") or [],
+            "pace": merged.get("pace") or "moderate",
+            "avoid": merged.get("avoid") or [],
+            "accommodation_preference": merged.get("accommodation_preference"),
+        }
+    if "trip" not in merged:
+        merged["trip"] = {
+            "destination": merged.get("destination"),
+            "travel_days": merged.get("travel_days"),
+            "travel_dates": merged.get("travel_dates"),
+            "travelers_count": merged.get("travelers_count", 1),
+            "travelers_type": merged.get("travelers_type"),
+            "budget_range": merged.get("budget_range"),
+            "special_requests": merged.get("special_requests") or [],
+        }
+
+    def _target(key: str) -> dict:
+        if key in PERSONAL_FIELDS:
+            return merged["personal"]
+        if key in TRIP_FIELDS:
+            return merged["trip"]
+        # Unknown fields fall back to trip scope
+        return merged["trip"]
+
     for key, value in patch.set.items():
+        target = _target(key)
         if key in SCALAR_FIELDS and value is not None:
-            merged[key] = value
+            target[key] = value
         elif key in LIST_FIELDS and isinstance(value, list):
-            merged[key] = list(value)
+            target[key] = list(value)
 
     for key, values in patch.add.items():
         if key in LIST_FIELDS and isinstance(values, list):
-            existing: list = merged.get(key, [])
-            merged[key] = _dedupe_keep_order(existing + values)
+            target = _target(key)
+            existing: list = target.get(key, [])
+            target[key] = _dedupe_keep_order(existing + values)
 
     for key, values in patch.remove.items():
         if key in LIST_FIELDS and isinstance(values, list):
-            existing: list = merged.get(key, [])
+            target = _target(key)
+            existing: list = target.get(key, [])
             remove_set = {v.strip() for v in values}
-            merged[key] = [x for x in existing if x not in remove_set]
+            target[key] = [x for x in existing if x not in remove_set]
 
     for key in patch.clear:
+        target = _target(key)
         if key in LIST_FIELDS:
-            merged[key] = []
+            target[key] = []
         elif key in SCALAR_FIELDS:
-            merged[key] = None
+            target[key] = None
 
     return merged
 
@@ -138,11 +209,13 @@ def append_message(
     max_messages: int = MAX_RECENT_MESSAGES,
 ) -> None:
     """Append a message and trim the history to *max_messages*."""
-    state.setdefault("recent_messages", []).append({
-        "role": role,
-        "content": content,
-        "ts": int(time.time()),
-    })
+    state.setdefault("recent_messages", []).append(
+        {
+            "role": role,
+            "content": content,
+            "ts": int(time.time()),
+        }
+    )
     if len(state["recent_messages"]) > max_messages:
         state["recent_messages"] = state["recent_messages"][-max_messages:]
 
@@ -153,5 +226,16 @@ def append_message(
 
 
 def is_profile_ready(profile: dict[str, Any]) -> bool:
-    """True when the minimum required fields are present."""
-    return bool(profile.get("destination") and profile.get("travel_days"))
+    """True when the minimum required trip fields are present."""
+    trip = profile.get("trip", profile)  # tolerate flat pre-migration profiles
+    return bool(trip.get("destination") and trip.get("travel_days"))
+
+
+def flatten_profile(profile: dict[str, Any]) -> dict[str, Any]:
+    """Merge personal + trip into a flat dict for downstream consumers (Pipeline, LLM).
+
+    Trip fields take precedence over personal fields when both exist.
+    """
+    personal = profile.get("personal", {})
+    trip = profile.get("trip", {})
+    return {**personal, **trip}  # trip overwrites same-key personal fields (shouldn't overlap)

@@ -1,93 +1,33 @@
-"""Phase 2C Writer — enrich itinerary with prose without mutating facts.
+"""Phase 2C Writer — enrich itinerary with LLM-generated prose.
 
-Every enrichment runs through fact_checksum.verify_checksum() before
-being accepted.  Writer can only decorate; never alter structural fields.
+Phase 2C uses a day-batch enrichment strategy: one LLM call generates the day
+theme and all activity recommendation reasons for that day.  This is cheaper
+than per-activity calls because the shared context (system prompt, user
+profile) is paid for once per day.
+
+If the day-batch call fails or returns invalid data, the pipeline falls back to
+per-activity LLM enrichment (with per-activity validation and retry).  If a
+single activity still cannot be enriched, a template fallback is used for that
+activity only — other activities keep their enriched prose.
+
+Protected fields (poi_name, start_time, end_time, duration_min, ticket_price,
+location lat/lng) can never be mutated by enrichment.
 """
 
+import asyncio
+import logging
 from copy import deepcopy
 from typing import Optional
 
-from schemas import DayPlan, UserProfile
-from planner.core.fact_checksum import compute_checksum, verify_checksum
+from core.llm_client import llm
+from schemas import Activity, DayPlan, UserProfile
+from planner.core.fact_guard import activity_fields_match, protected_field_differences
 
-
-# --------------------------------------------------------------------------- #
-# Public API
-# --------------------------------------------------------------------------- #
-
-
-def enrich(
-    itinerary: list[DayPlan],
-    profile: UserProfile,
-) -> tuple[list[DayPlan], str]:
-    """Enrich itinerary with themes and recommendation reasons.
-
-    Returns (enriched_itinerary, proposal_text).  If enrichment would
-    alter any protected field, the original itinerary is returned
-    unchanged with a fallback proposal.
-    """
-    checksum_before = compute_checksum(itinerary)
-    enriched = deepcopy(itinerary)
-
-    try:
-        _assign_day_themes(enriched, profile)
-        _enrich_reasons(enriched, profile)
-    except Exception:
-        return itinerary, _fallback_proposal(itinerary, profile)
-
-    if not verify_checksum(itinerary, enriched):
-        return itinerary, _fallback_proposal(itinerary, profile)
-
-    proposal = _build_proposal(enriched, profile)
-    return enriched, proposal
-
-
-def enrich_safe(
-    itinerary: list[DayPlan],
-    profile: UserProfile,
-) -> tuple[list[DayPlan], str]:
-    """Same as enrich() but guaranteed to never alter itinerary facts."""
-    enriched, proposal = enrich(itinerary, profile)
-    return enriched, proposal
-
+logger = logging.getLogger(__name__)
 
 # --------------------------------------------------------------------------- #
-# Day themes
+# Template fallback (single-activity, formerly _REASON_TEMPLATES)
 # --------------------------------------------------------------------------- #
-
-
-def _assign_day_themes(itinerary: list[DayPlan], profile: UserProfile) -> None:
-    """Assign a human-readable theme to each day based on its activities."""
-    for day in itinerary:
-        if day.theme:
-            continue
-
-        categories = {a.category for a in day.activities}
-        tags = {t for a in day.activities for t in (a.tags or [])}
-        area = {a.poi_name for a in day.activities if a.category == "attraction"}
-
-        if "历史" in tags and "文化" in tags:
-            day.theme = "历史文化之旅"
-        elif "园林" in tags or "湖景" in tags:
-            day.theme = "园林湖景休闲"
-        elif "登山" in tags:
-            day.theme = "户外探索"
-        elif "文艺" in tags or "艺术" in tags:
-            day.theme = "文艺漫游"
-        elif "美食" in tags:
-            day.theme = "美食寻味"
-        elif "夜景" in tags:
-            day.theme = "都市夜色"
-        elif "购物" in tags:
-            day.theme = "购物休闲"
-        else:
-            day.theme = f"{profile.destination or '目的地'}探索"
-
-
-# --------------------------------------------------------------------------- #
-# Activity reasons
-# --------------------------------------------------------------------------- #
-
 
 _REASON_TEMPLATES: dict[str, str] = {
     "故宫": "世界文化遗产，明清两代皇宫，中华文明的象征",
@@ -108,27 +48,337 @@ _REASON_TEMPLATES: dict[str, str] = {
 }
 
 
-def _enrich_reasons(itinerary: list[DayPlan], profile: UserProfile) -> None:
-    """Add recommendation_reason to activities that lack one."""
-    food_hint = (
-        f"品尝{','.join(profile.food_preferences)}的好去处"
-        if profile.food_preferences
-        else "口碑推荐"
+def _template_reason(poi_name: str, category: str) -> str:
+    """Single-activity fallback when LLM enrichment fails."""
+    if poi_name in _REASON_TEMPLATES:
+        return _REASON_TEMPLATES[poi_name]
+    if category == "restaurant":
+        return "口碑推荐"
+    if category == "attraction":
+        return f"推荐游览{poi_name}"
+    return f"体验{poi_name}"
+
+
+def _template_theme(day_activities: list[Activity]) -> str:
+    """Rule-based day theme when LLM is unavailable."""
+    tags: set[str] = set()
+    for a in day_activities:
+        for t in a.tags or []:
+            tags.add(t)
+
+    if "历史" in tags and "文化" in tags:
+        return "历史文化之旅"
+    if "园林" in tags or "湖景" in tags:
+        return "园林湖景休闲"
+    if "登山" in tags:
+        return "户外探索"
+    if "文艺" in tags or "艺术" in tags:
+        return "文艺漫游"
+    if "美食" in tags:
+        return "美食寻味"
+    if "夜景" in tags:
+        return "都市夜色"
+    if "购物" in tags:
+        return "购物休闲"
+    return "精彩探索"
+
+
+# --------------------------------------------------------------------------- #
+# Day-batch LLM enrichment
+# --------------------------------------------------------------------------- #
+
+_BATCH_ENRICHMENT_TIMEOUT = 30.0  # seconds — batch output is longer
+
+_BUILD_DAY_ENRICHMENT_PROMPT = """请为以下一日行程生成主题和每个景点的推荐语。
+
+用户画像：{travelers_type}，兴趣是{interests}，节奏偏好{pace}
+
+一日行程：
+{activities}
+
+要求：
+1. theme: 4-8个字的中文主题名，能概括当天行程特色
+2. 每个景点必须原样返回 poi_name，并给出 recommendation_reason（20-40字推荐语）和 tags（2-3个标签）
+3. 推荐语根据用户画像个性化——比如亲子游强调"适合带孩子"，情侣游强调"浪漫"，历史爱好者强调"文化底蕴"
+4. 仅输出 JSON，不要其他内容
+
+返回 JSON 格式：
+{{
+  "theme": "...",
+  "activities": [
+    {{"poi_name": "...", "recommendation_reason": "...", "tags": ["...", "..."]}},
+    {{"poi_name": "...", "recommendation_reason": "...", "tags": ["...", "..."]}}
+  ]
+}}"""
+
+
+async def _llm_enrich_day_batch(
+    day: DayPlan,
+    profile: UserProfile,
+) -> Optional[dict]:
+    """Call LLM to enrich a whole day (theme + all activities). Returns parsed JSON dict or None."""
+    if not day.activities:
+        return None
+
+    interests = "、".join(profile.interests) if profile.interests else "无特殊偏好"
+    travelers_type = profile.travelers_type or "普通游客"
+    pace = profile.pace or "适中"
+
+    activity_lines = []
+    for act in day.activities:
+        time_str = f" {act.start_time}-{act.end_time}" if act.start_time and act.end_time else ""
+        activity_lines.append(f"- {time_str} {act.poi_name} [{act.category}]")
+
+    prompt = _BUILD_DAY_ENRICHMENT_PROMPT.format(
+        travelers_type=travelers_type,
+        interests=interests,
+        pace=pace,
+        activities="\n".join(activity_lines),
     )
 
-    for day in itinerary:
-        for act in day.activities:
-            if act.recommendation_reason:
-                continue
+    try:
+        result = await asyncio.wait_for(
+            llm.json_chat(
+                messages=[
+                    {"role": "system", "content": "你是一个专业旅行文案写手，只输出 JSON。"},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.7,
+                max_tokens=1024,
+            ),
+            timeout=_BATCH_ENRICHMENT_TIMEOUT,
+        )
+        if not isinstance(result, dict):
+            return None
+        return result
+    except asyncio.TimeoutError:
+        logger.warning("LLM day-batch enrichment timeout for day %d", day.day_number)
+        return None
+    except Exception as exc:
+        logger.warning("LLM day-batch enrichment failed for day %d: %s", day.day_number, exc)
+        return None
 
-            if act.poi_name in _REASON_TEMPLATES:
-                act.recommendation_reason = _REASON_TEMPLATES[act.poi_name]
-            elif act.category == "restaurant":
-                act.recommendation_reason = food_hint
-            elif act.category == "attraction":
-                act.recommendation_reason = f"推荐游览{act.poi_name}"
-            else:
-                act.recommendation_reason = f"体验{act.poi_name}"
+
+async def _enrich_day_batch(
+    day: DayPlan,
+    profile: UserProfile,
+) -> bool:
+    """Try to enrich an entire day with one LLM call.
+
+    On success, mutates ``day`` in place and returns True.
+    On failure, leaves ``day`` unchanged and returns False so the caller can
+    fall back to per-activity enrichment.
+    """
+    batch_result = await _llm_enrich_day_batch(day, profile)
+    if not batch_result:
+        return False
+
+    # Theme
+    theme = str(batch_result.get("theme", "")).strip()
+    if theme and 2 <= len(theme) <= 12:
+        day.theme = theme
+
+    # Map results by poi_name so LLM reordering does not break matching
+    raw_items = batch_result.get("activities", [])
+    if not isinstance(raw_items, list):
+        return False
+
+    result_by_name: dict[str, dict] = {}
+    for item in raw_items:
+        if isinstance(item, dict) and item.get("poi_name"):
+            result_by_name[str(item["poi_name"]).strip()] = item
+
+    new_activities: list[Activity] = []
+    batch_valid = True
+
+    for activity in day.activities:
+        item = result_by_name.get(activity.poi_name)
+        if not item:
+            batch_valid = False
+            # Missing enrichment for this POI — fall back to per-activity
+            new_activities.append(await _enrich_activity_with_retry(activity, profile))
+            continue
+
+        reason = str(item.get("recommendation_reason", "")).strip()
+        raw_tags = item.get("tags", [])
+        tags = list(raw_tags) if isinstance(raw_tags, list) else []
+
+        if not reason:
+            batch_valid = False
+            new_activities.append(await _enrich_activity_with_retry(activity, profile))
+            continue
+
+        candidate = deepcopy(activity)
+        candidate.recommendation_reason = reason
+        candidate.tags = list(set((activity.tags or []) + tags))
+
+        # Fact Guard: LLM must not mutate protected fields
+        if not activity_fields_match(activity, candidate):
+            changed_fields = protected_field_differences(activity, candidate)
+            logger.warning(
+                "Day-batch Fact Guard failed for %s fields=%s",
+                activity.poi_name,
+                ",".join(changed_fields) or "unknown",
+            )
+            batch_valid = False
+            new_activities.append(await _enrich_activity_with_retry(activity, profile))
+            continue
+
+        new_activities.append(candidate)
+
+    if new_activities:
+        day.activities = new_activities
+
+    return batch_valid
+
+
+# --------------------------------------------------------------------------- #
+# Per-activity LLM enrichment (fallback)
+# --------------------------------------------------------------------------- #
+
+_ENRICHMENT_TIMEOUT = 10.0  # seconds — single-activity fallback
+
+_BUILD_ENRICHMENT_PROMPT = """请为以下景点写一句简短的中文推荐语。
+
+景点：{poi_name}
+类型：{category}
+用户画像：{travelers_type}，兴趣是{interests}，节奏偏好{pace}
+
+要求：
+1. 仅输出一句推荐语（20-40字），不提价格或具体时间
+2. 根据用户画像个性化——比如亲子游强调"适合带孩子"，情侣游强调"浪漫"
+3. 如果该景点适合特定时间段（如夜景、早茶），可在推荐语中自然提及
+
+返回 JSON 格式：
+{{"recommendation_reason": "...", "tags": ["标签1", "标签2"]}}"""
+
+
+async def _llm_enrich_activity(
+    activity: Activity,
+    profile: UserProfile,
+) -> Optional[tuple[str, list[str]]]:
+    """Call LLM to enrich a single activity.  Returns (reason, tags) or None on failure."""
+    interests = "、".join(profile.interests) if profile.interests else "无特殊偏好"
+    travelers_type = profile.travelers_type or "普通游客"
+    pace = profile.pace or "适中"
+
+    prompt = _BUILD_ENRICHMENT_PROMPT.format(
+        poi_name=activity.poi_name,
+        category=activity.category,
+        travelers_type=travelers_type,
+        interests=interests,
+        pace=pace,
+    )
+
+    try:
+        result = await asyncio.wait_for(
+            llm.json_chat(
+                messages=[
+                    {"role": "system", "content": "你是一个专业旅行文案写手，只输出 JSON。"},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.7,
+                max_tokens=256,
+            ),
+            timeout=_ENRICHMENT_TIMEOUT,
+        )
+        reason = str(result.get("recommendation_reason", "")).strip()
+        tags = list(result.get("tags", [])) if isinstance(result.get("tags"), list) else []
+        if not reason:
+            return None
+        return reason, tags
+    except asyncio.TimeoutError:
+        logger.warning("LLM enrichment timeout for %s", activity.poi_name)
+        return None
+    except Exception as exc:
+        logger.warning("LLM enrichment failed for %s: %s", activity.poi_name, exc)
+        return None
+
+
+async def _enrich_activity_with_retry(
+    activity: Activity,
+    profile: UserProfile,
+    max_retries: int = 2,
+) -> Activity:
+    """Enrich a single activity with LLM, validate, retry on mutation, fallback."""
+    # LLM not available or enrichment skipped — use template
+    enriched = deepcopy(activity)
+
+    for attempt in range(max_retries + 1):
+        llm_result = await _llm_enrich_activity(activity, profile)
+        if llm_result is None:
+            # LLM call failed — try again or fallback
+            if attempt < max_retries:
+                continue
+            enriched.recommendation_reason = _template_reason(activity.poi_name, activity.category)
+            return enriched
+
+        reason, tags = llm_result
+        enriched.recommendation_reason = reason
+        enriched.tags = list(set((activity.tags or []) + tags))
+
+        # Validate: LLM must not mutate protected fields
+        if activity_fields_match(activity, enriched):
+            return enriched
+
+        changed_fields = protected_field_differences(activity, enriched)
+        logger.warning(
+            "Fact Guard failed for %s fields=%s (attempt %d/%d)",
+            activity.poi_name,
+            ",".join(changed_fields) or "unknown",
+            attempt + 1,
+            max_retries + 1,
+        )
+        # Reset for retry
+        enriched = deepcopy(activity)
+
+    # All retries exhausted — single-activity template fallback
+    enriched.recommendation_reason = _template_reason(activity.poi_name, activity.category)
+    return enriched
+
+
+# --------------------------------------------------------------------------- #
+# Public API
+# --------------------------------------------------------------------------- #
+
+
+async def enrich(
+    itinerary: list[DayPlan],
+    profile: UserProfile,
+) -> tuple[list[DayPlan], str]:
+    """Enrich itinerary with LLM-generated themes and recommendation reasons.
+
+    Strategy:
+    1. Try to enrich each day with a single LLM call (theme + all activities).
+       This is cheaper because the shared context is paid for once per day.
+    2. If the day-batch call fails for a day, fall back to per-activity LLM
+       enrichment with per-activity validation and retry.
+    3. If a single activity still cannot be enriched, use a template fallback
+       for that activity only.
+
+    Returns (enriched_itinerary, proposal_text).  If the entire enrichment
+    process fails, returns the original itinerary with a fallback proposal.
+    """
+    try:
+        enriched = deepcopy(itinerary)
+
+        for day in enriched:
+            # Primary path: one LLM call per day
+            batch_ok = await _enrich_day_batch(day, profile)
+
+            if not batch_ok:
+                # Fallback path: per-activity LLM + rule-based theme
+                if not day.theme:
+                    day.theme = _template_theme(day.activities)
+                for i, activity in enumerate(day.activities):
+                    day.activities[i] = await _enrich_activity_with_retry(activity, profile)
+
+        proposal = _build_proposal(enriched, profile)
+        return enriched, proposal
+
+    except Exception:
+        logger.exception("Enrichment failed — returning original itinerary")
+        return itinerary, _fallback_proposal(itinerary, profile)
 
 
 # --------------------------------------------------------------------------- #
@@ -136,9 +386,7 @@ def _enrich_reasons(itinerary: list[DayPlan], profile: UserProfile) -> None:
 # --------------------------------------------------------------------------- #
 
 
-def _build_proposal(
-    itinerary: list[DayPlan], profile: UserProfile
-) -> str:
+def _build_proposal(itinerary: list[DayPlan], profile: UserProfile) -> str:
     """Build a rich markdown proposal from the enriched itinerary."""
     lines: list[str] = []
     dest = profile.destination or "目的地"
@@ -199,10 +447,8 @@ def _build_proposal(
     return "\n".join(lines)
 
 
-def _fallback_proposal(
-    itinerary: list[DayPlan], profile: UserProfile
-) -> str:
-    """Minimal proposal used when enrichment fails checksum validation."""
+def _fallback_proposal(itinerary: list[DayPlan], profile: UserProfile) -> str:
+    """Minimal proposal used when enrichment fails entirely."""
     dest = profile.destination or "目的地"
     days = profile.travel_days or len(itinerary)
     lines = [

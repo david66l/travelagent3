@@ -18,7 +18,6 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Callable, Optional
 
-
 # ===== Data Models =====
 
 
@@ -116,7 +115,7 @@ class ThoughtLogger:
     from different sessions do not interfere with each other.
 
     New capabilities:
-    - Real-time WebSocket status push via registered callbacks
+    - Optional real-time push via register_ws_callback (legacy; WS uses job stage events)
     - TTFT (Time To First Token) tracking
     - Markdown log export alongside JSON
     """
@@ -188,11 +187,13 @@ class ThoughtLogger:
                 "start_offset": round(
                     (datetime.fromisoformat(s.start_time) - session.start_time).total_seconds(), 2
                 ),
-                "end_offset": round(
-                    (datetime.fromisoformat(s.end_time) - session.start_time).total_seconds(), 2
-                )
-                if s.end_time
-                else None,
+                "end_offset": (
+                    round(
+                        (datetime.fromisoformat(s.end_time) - session.start_time).total_seconds(), 2
+                    )
+                    if s.end_time
+                    else None
+                ),
             }
             for s in session.steps
         ]
@@ -201,15 +202,17 @@ class ThoughtLogger:
         # Otherwise "running" — even if _active_steps is briefly empty between nodes.
         is_done = session.is_finished
         status_data = {
-            "type": "run_status",
+            "type": "thought_status",
             "status": "completed" if is_done else "running",
             "current_step": running[0] if running else None,
             "completed_steps": completed,
             "step_details": step_details,
             "elapsed_seconds": round(elapsed, 2),
-            "ttft_seconds": round(session.first_llm_response_time, 2)
-            if session.first_llm_response_time
-            else None,
+            "ttft_seconds": (
+                round(session.first_llm_response_time, 2)
+                if session.first_llm_response_time
+                else None
+            ),
             "total_tokens": total_input + total_output,
             "prompt_tokens": total_input,
             "completion_tokens": total_output,
@@ -405,12 +408,14 @@ class ThoughtLogger:
                         }
                         for sr in s.search_results
                     ],
-                    "reasoning": {
-                        "text": s.reasoning.reasoning,
-                        "timestamp": s.reasoning.timestamp,
-                    }
-                    if s.reasoning
-                    else None,
+                    "reasoning": (
+                        {
+                            "text": s.reasoning.reasoning,
+                            "timestamp": s.reasoning.timestamp,
+                        }
+                        if s.reasoning
+                        else None
+                    ),
                 }
                 for s in session.steps
             ],
@@ -550,99 +555,3 @@ class ThoughtLogger:
 
 # Global singleton
 thought_logger = ThoughtLogger()
-
-
-# ===== Decorator for Graph Nodes =====
-
-from core.state import ItineraryState  # noqa: E402
-
-
-def log_step(step_name: str):
-    """Decorator to auto-log a graph node execution.
-
-    Each decorated node gets its own step context via contextvars,
-    so parallel nodes don't overwrite each other.
-    """
-
-    def decorator(func):
-        async def wrapper(state: ItineraryState) -> dict:
-            logger = thought_logger
-            session_id = state.get("session_id", "unknown")
-
-            # Auto-start session on first step if not exists
-            if session_id not in logger._sessions:
-                logger.start_session(
-                    session_id=session_id,
-                    user_input=state.get("user_input", "")[:300],
-                )
-
-            # Build input summary
-            if step_name == "intent_node":
-                input_summary = f"user_input: {state.get('user_input', '')[:200]}"
-            elif step_name == "poi_search_node":
-                profile = state.get("user_profile", {})
-                input_summary = (
-                    f"city={profile.get('destination')}, interests={profile.get('interests', [])}"
-                )
-            elif step_name == "planner_node":
-                pois = state.get("candidate_pois", [])
-                input_summary = (
-                    f"pois={len(pois)}, days={state.get('user_profile', {}).get('travel_days')}"
-                )
-            elif step_name == "proposal_node":
-                itinerary = state.get("current_itinerary", [])
-                input_summary = f"itinerary_days={len(itinerary)}"
-            elif step_name == "weather_node":
-                profile = state.get("user_profile", {})
-                input_summary = (
-                    f"city={profile.get('destination')}, dates={profile.get('travel_dates')}"
-                )
-            else:
-                input_summary = f"state_keys={list(state.keys())}"
-
-            logger.start_step(session_id, step_name, input_summary=input_summary)
-            set_current_step_name(step_name)
-            set_current_session_id(session_id)
-
-            try:
-                result = await func(state)
-
-                # Build output summary
-                if isinstance(result, dict):
-                    if "assistant_response" in result:
-                        output_summary = result["assistant_response"][:200]
-                    elif "intent" in result:
-                        output_summary = f"intent={result.get('intent')}, confidence={result.get('intent_confidence', 0):.2f}"
-                    elif "current_itinerary" in result:
-                        days = result.get("current_itinerary", [])
-                        output_summary = f"planned {len(days)} days"
-                    elif "candidate_pois" in result:
-                        pois = result.get("candidate_pois", [])
-                        output_summary = f"found {len(pois)} POIs"
-                    elif "travel_context" in result:
-                        ctx = result.get("travel_context", {})
-                        events = len(ctx.get("upcoming_events", []))
-                        foods = len(ctx.get("food_specialties", []))
-                        output_summary = f"events={events}, foods={foods}, tips={len(ctx.get('pitfall_tips', []))}"
-                    elif "weather_data" in result:
-                        wd = result.get("weather_data", [])
-                        output_summary = f"weather_days={len(wd)}"
-                    else:
-                        output_summary = f"keys={list(result.keys())}"
-                else:
-                    output_summary = str(result)[:200]
-
-                logger.end_step(session_id, step_name, output_summary=output_summary)
-                return result
-
-            except Exception as e:
-                logger.end_step(session_id, step_name, status="error", error=str(e))
-                raise
-
-            finally:
-                set_current_step_name(None)
-                set_current_session_id("")
-
-        return wrapper
-
-    return decorator

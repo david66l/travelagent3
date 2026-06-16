@@ -1,6 +1,5 @@
 """FastAPI application entry point."""
 
-import asyncio
 import os
 import sys
 from contextlib import asynccontextmanager
@@ -15,41 +14,27 @@ if _src_dir not in sys.path:
 
 from core.database import init_db  # noqa: E402
 from core.settings import settings  # noqa: E402
-from core.checkpointer import create_checkpointer  # noqa: E402
 from core.redis_client import redis_client  # noqa: E402
-from graph.graph import build_graph  # noqa: E402
-from api.routes import router as api_router  # noqa: E402
+from api.health import router as health_router  # noqa: E402
 from api.websocket import router as ws_router  # noqa: E402
+from api.v1 import v1_router  # noqa: E402
+from middleware import setup_exception_handlers  # noqa: E402
+from middleware.rate_limit import setup_rate_limit  # noqa: E402
 from worker.planning_worker import start_worker, stop_worker  # noqa: E402
-from pipeline.planning_pipeline import set_graph  # noqa: E402
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan: startup and shutdown."""
-    # Startup
     await init_db()
     await redis_client.connect()
-    checkpointer = await create_checkpointer()
-    graph = build_graph().compile(checkpointer=checkpointer)
-
-    app.state.checkpointer = checkpointer
-    app.state.graph = graph
-
-    # Share graph with pipeline to avoid per-job rebuild
-    set_graph(graph)
-
-    # Start background planning worker
-    await start_worker()
+    if settings.planning_executor == "embedded":
+        await start_worker()
 
     yield
 
-    # Shutdown: graceful close with timeout
-    await stop_worker()
-    try:
-        await asyncio.wait_for(checkpointer.conn.close(), timeout=5.0)
-    except asyncio.TimeoutError:
-        pass
+    if settings.planning_executor == "embedded":
+        await stop_worker()
     await redis_client.disconnect()
 
 
@@ -57,7 +42,7 @@ def create_app() -> FastAPI:
     """Create and configure FastAPI application."""
     app = FastAPI(
         title="TravelAgent API",
-        description="AI Travel Planning Agent powered by LangGraph",
+        description="AI Travel Planning Agent",
         version="2.0.0",
         lifespan=lifespan,
     )
@@ -71,9 +56,16 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    # Rate limiting
+    setup_rate_limit(app)
+
+    # Global exception handlers
+    setup_exception_handlers(app)
+
     # Routers
-    app.include_router(api_router)
+    app.include_router(health_router)
     app.include_router(ws_router)
+    app.include_router(v1_router)
 
     return app
 

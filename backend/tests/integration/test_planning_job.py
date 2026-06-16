@@ -11,6 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.database import async_session_maker
 from models.planning_job import PlanningJob
 from repositories.planning_job import PlanningJobRepository
+from tests.support.planning_feedback import feedback_with_trip
+
 
 class TestPlanningJobRepository:
     """Real DB tests for PlanningJobRepository."""
@@ -31,9 +33,7 @@ class TestPlanningJobRepository:
         assert job.user_input == "北京3天"
 
         # Verify in DB
-        result = await db.execute(
-            select(PlanningJob).where(PlanningJob.id == job.id)
-        )
+        result = await db.execute(select(PlanningJob).where(PlanningJob.id == job.id))
         fetched = result.scalar_one()
         assert fetched.status == "pending"
 
@@ -72,6 +72,28 @@ class TestPlanningJobRepository:
         assert acquired.attempt_count == 1
 
     @pytest.mark.asyncio
+    async def test_acquire_job_by_id(self, db: AsyncSession):
+        """Worker can claim a specific pending job."""
+        repo = PlanningJobRepository(db)
+        job = await repo.create(
+            session_id="sess-by-id",
+            user_id="user-1",
+            user_input="上海2天",
+        )
+        await db.commit()
+
+        acquired = await repo.acquire_job_by_id(job.id, "worker-2", lease_seconds=60)
+        await db.commit()
+
+        assert acquired is not None
+        assert acquired.id == job.id
+        assert acquired.locked_by == "worker-2"
+
+        # Second claim on same job should fail while running
+        again = await repo.acquire_job_by_id(job.id, "worker-3", lease_seconds=60)
+        assert again is None
+
+    @pytest.mark.asyncio
     async def test_acquire_no_pending_jobs(self, db: AsyncSession):
         """Returns None when no pending jobs."""
         repo = PlanningJobRepository(db)
@@ -102,9 +124,7 @@ class TestPlanningJobRepository:
 
         # Expire cache to get fresh data from DB
         db.expire_all()
-        result = await db.execute(
-            select(PlanningJob).where(PlanningJob.id == acquired.id)
-        )
+        result = await db.execute(select(PlanningJob).where(PlanningJob.id == acquired.id))
         updated = result.scalar_one()
         assert updated.lock_expires_at > old_expires
 
@@ -123,15 +143,9 @@ class TestPlanningJobRepository:
         await db.commit()
 
         # Simulate another worker taking over (manual update)
+        await db.execute(select(PlanningJob).where(PlanningJob.id == acquired.id).with_for_update())
         await db.execute(
-            select(PlanningJob)
-            .where(PlanningJob.id == acquired.id)
-            .with_for_update()
-        )
-        await db.execute(
-            update(PlanningJob)
-            .where(PlanningJob.id == acquired.id)
-            .values(locked_by="worker-2")
+            update(PlanningJob).where(PlanningJob.id == acquired.id).values(locked_by="worker-2")
         )
         await db.commit()
 
@@ -159,9 +173,7 @@ class TestPlanningJobRepository:
         assert ok is True
 
         db.expire_all()
-        result = await db.execute(
-            select(PlanningJob).where(PlanningJob.id == acquired.id)
-        )
+        result = await db.execute(select(PlanningJob).where(PlanningJob.id == acquired.id))
         updated = result.scalar_one()
         assert updated.status == "completed"
         assert updated.locked_by is None
@@ -183,9 +195,7 @@ class TestPlanningJobRepository:
 
         # Another worker takes over
         await db.execute(
-            update(PlanningJob)
-            .where(PlanningJob.id == acquired.id)
-            .values(locked_by="worker-2")
+            update(PlanningJob).where(PlanningJob.id == acquired.id).values(locked_by="worker-2")
         )
         await db.commit()
 
@@ -208,9 +218,7 @@ class TestPlanningJobRepository:
         await db.commit()
 
         await db.execute(
-            update(PlanningJob)
-            .where(PlanningJob.id == acquired.id)
-            .values(locked_by="worker-2")
+            update(PlanningJob).where(PlanningJob.id == acquired.id).values(locked_by="worker-2")
         )
         await db.commit()
 
@@ -224,9 +232,7 @@ class TestPlanningJobRepository:
 
         assert ok is False
         db.expire_all()
-        result = await db.execute(
-            select(PlanningJob).where(PlanningJob.id == acquired.id)
-        )
+        result = await db.execute(select(PlanningJob).where(PlanningJob.id == acquired.id))
         updated = result.scalar_one()
         assert updated.status == "running"
         assert updated.locked_by == "worker-2"
@@ -374,71 +380,84 @@ class TestWorkerE2E:
     async def test_worker_acquires_and_completes_job(self, db: AsyncSession):
         """Worker picks up a pending job and runs it to completion."""
         from worker.planning_worker import PlanningWorker
-        from schemas import IntentResult, ScoredPOI, WeatherDay
+        from schemas import ScoredPOI, WeatherDay
 
         repo = PlanningJobRepository(db)
         job = await repo.create(
             session_id="sess-e2e",
             user_id="user-1",
             user_input="北京3天",
+            user_feedback=feedback_with_trip("北京", 3, "2026-05-01"),
         )
         await db.commit()
 
-        # Mock intent recognition and data collection
-        mock_intent = AsyncMock(return_value=IntentResult(
-            intent="generate_itinerary",
-            confidence=0.95,
-            user_entities={
-                "destination": "北京",
-                "travel_days": 3,
-                "travel_dates": "2026-05-01",
-            },
-        ))
-        mock_pois = AsyncMock(return_value=[
-            ScoredPOI(name="故宫", category="attraction", score=0.9, area="东城区"),
-            ScoredPOI(name="天坛", category="attraction", score=0.85, area="东城区"),
-            ScoredPOI(name="颐和园", category="attraction", score=0.85, area="海淀区"),
-        ])
-        mock_weather = AsyncMock(return_value=[
-            WeatherDay(date="2026-05-01", condition="晴", temp_high=25, temp_low=15, precipitation_chance=0),
-            WeatherDay(date="2026-05-02", condition="多云", temp_high=24, temp_low=14, precipitation_chance=10),
-            WeatherDay(date="2026-05-03", condition="晴", temp_high=26, temp_low=16, precipitation_chance=0),
-        ])
+        # Mock data collection
+        mock_pois = AsyncMock(
+            return_value=[
+                ScoredPOI(name="故宫", category="attraction", score=0.9, area="东城区"),
+                ScoredPOI(name="天坛", category="attraction", score=0.85, area="东城区"),
+                ScoredPOI(name="颐和园", category="attraction", score=0.85, area="海淀区"),
+            ]
+        )
+        mock_weather = AsyncMock(
+            return_value=[
+                WeatherDay(
+                    date="2026-05-01",
+                    condition="晴",
+                    temp_high=25,
+                    temp_low=15,
+                    precipitation_chance=0,
+                ),
+                WeatherDay(
+                    date="2026-05-02",
+                    condition="多云",
+                    temp_high=24,
+                    temp_low=14,
+                    precipitation_chance=10,
+                ),
+                WeatherDay(
+                    date="2026-05-03",
+                    condition="晴",
+                    temp_high=26,
+                    temp_low=16,
+                    precipitation_chance=0,
+                ),
+            ]
+        )
 
         # Mock Redis publish
         with patch("core.redis_client.redis_client._client.publish", AsyncMock()):
-            with patch("agents.intent_recognition.IntentRecognitionAgent.recognize", mock_intent):
-                with patch("agents.realtime_query.RealtimeQueryAgent.query_pois", mock_pois):
-                    with patch("agents.realtime_query.RealtimeQueryAgent.query_weather", mock_weather):
-                        worker = PlanningWorker("test-worker")
-                        # Run one iteration manually
-                        acquired = await repo.acquire_job("test-worker", lease_seconds=60)
-                        await db.commit()
+            with patch("agents.realtime_query.RealtimeQueryAgent.query_pois", mock_pois):
+                with patch(
+                    "agents.realtime_query.RealtimeQueryAgent.query_weather", mock_weather
+                ):
+                    worker = PlanningWorker("test-worker")
+                    acquired = await repo.acquire_job("test-worker", lease_seconds=60)
+                    await db.commit()
 
-                        assert acquired is not None
-                        assert acquired.id == job.id
+                    assert acquired is not None
+                    assert acquired.id == job.id
 
-                        # Run pipeline
-                        from pipeline.planning_pipeline import PlanningPipeline
-                        pipeline = PlanningPipeline(worker=worker)
-                        await pipeline.run(acquired)
+                    from pipeline.planning_pipeline import PlanningPipeline
 
-                        # Verify job completed (use fresh session to avoid identity map cache)
-                        job_id = job.id
-                        db.expire_all()
-                        result = await db.execute(
-                            select(PlanningJob).where(PlanningJob.id == job_id)
-                        )
-                        updated = result.scalar_one()
-                        assert updated.status == "completed"
-                        assert updated.locked_by is None
-                        assert updated.proposal_text is not None
-                        assert "北京" in updated.proposal_text
+                    pipeline = PlanningPipeline(worker=worker)
+                    await pipeline.run(acquired)
 
-                        events = await repo.get_events_after(job_id, 0)
-                        assert events[0].stage == "running"
-                        assert events[-1].stage == "completed"
-                        assert "北京" in events[-1].payload["proposal_text"]
+                    job_id = job.id
+                    db.expire_all()
+                    result = await db.execute(
+                        select(PlanningJob).where(PlanningJob.id == job_id)
+                    )
+                    updated = result.scalar_one()
+                    assert updated.status == "completed"
+                    assert updated.locked_by is None
+                    assert updated.proposal_text is not None
+                    assert "北京" in updated.proposal_text
+
+                    events = await repo.get_events_after(job_id, 0)
+                    assert events[0].stage == "running"
+                    assert events[-1].stage == "completed"
+                    assert "北京" in events[-1].payload["proposal_text"]
 
     @pytest.mark.asyncio
     async def test_worker_cancels_job(self, db: AsyncSession):
@@ -470,9 +489,7 @@ class TestWorkerE2E:
         await db.commit()
         job_id = job.id
         db.expire_all()
-        result = await db.execute(
-            select(PlanningJob).where(PlanningJob.id == job_id)
-        )
+        result = await db.execute(select(PlanningJob).where(PlanningJob.id == job_id))
         updated = result.scalar_one()
         assert updated.status == "cancelled"
 
@@ -481,24 +498,19 @@ class TestWorkerE2E:
         """A cancellation request interrupts a long-running pipeline task."""
         from pipeline.planning_pipeline import PlanningPipeline
         from worker.planning_worker import PlanningWorker
-        from schemas import IntentResult
 
-        intent_started = asyncio.Event()
+        poi_started = asyncio.Event()
 
-        async def slow_intent(*args, **kwargs):
-            intent_started.set()
+        async def slow_pois(*args, **kwargs):
+            poi_started.set()
             await asyncio.Event().wait()
-            return IntentResult(
-                intent="generate_itinerary",
-                confidence=0.95,
-                user_entities={"destination": "北京", "travel_days": 3},
-            )
 
         repo = PlanningJobRepository(db)
         job = await repo.create(
             session_id="sess-cancel-running",
             user_id="user-1",
             user_input="北京3天",
+            user_feedback=feedback_with_trip("北京", 3),
         )
         await db.commit()
 
@@ -507,12 +519,12 @@ class TestWorkerE2E:
         job_id = job.id
 
         with patch("core.redis_client.redis_client._client.publish", AsyncMock()):
-            with patch("agents.intent_recognition.IntentRecognitionAgent.recognize", slow_intent):
+            with patch("agents.realtime_query.RealtimeQueryAgent.query_pois", slow_pois):
                 worker = PlanningWorker("test-worker")
                 pipeline = PlanningPipeline(worker=worker)
                 task = asyncio.create_task(pipeline.run(acquired))
 
-                await asyncio.wait_for(intent_started.wait(), timeout=2)
+                await asyncio.wait_for(poi_started.wait(), timeout=2)
                 task.cancel()
 
                 try:
@@ -521,9 +533,7 @@ class TestWorkerE2E:
                     pass
 
         db.expire_all()
-        result = await db.execute(
-            select(PlanningJob).where(PlanningJob.id == job_id)
-        )
+        result = await db.execute(select(PlanningJob).where(PlanningJob.id == job_id))
         updated = result.scalar_one()
         assert updated.status == "cancelled"
 

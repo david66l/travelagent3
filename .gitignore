@@ -11,6 +11,9 @@ build/
 .venv/
 venv/
 node_modules/
+frontend/.next/
+celerybeat-schedule
+backend/src/celerybeat-schedule
 .coverage
 htmlcov/
 .DS_Store

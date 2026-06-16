@@ -1,12 +1,12 @@
 """Unit tests for deterministic Repair Executor (Phase 2B)."""
+
 import pytest
 from copy import deepcopy
 
 from schemas import Activity, DayPlan, Location, ScoredPOI, UserProfile
-from planner.core.models import RepairPlan, RuleViolation
+from planner.core.models import RepairPlan
 from planner.core.rule_validator import validate
 from planner.core.repair import generate_repairs, apply_repair, run_repair_loop
-
 
 # --------------------------------------------------------------------------- #
 # Fixtures
@@ -208,6 +208,7 @@ class TestBudgetRepair:
     def test_remove_expensive_for_budget(self, profile_shanghai, sample_pois):
         """Over-budget itinerary should remove expensive non-must-see activities."""
         from planner.core.repair import _rebuild_times
+
         profile = profile_shanghai.model_copy(update={"budget_range": 100})
         day = DayPlan(
             day_number=1,
@@ -240,10 +241,13 @@ class TestProtectedFacts:
         """Move repair must not alter poi_name, location, ticket_price, duration_min."""
         act = make_activity("豫园", "10:00", "12:00", 120, 40)
         original = act.model_copy(deep=True)
-        day = DayPlan(day_number=1, activities=[
-            make_activity("外滩", "09:00", "11:00", 120),
-            act,
-        ])
+        day = DayPlan(
+            day_number=1,
+            activities=[
+                make_activity("外滩", "09:00", "11:00", 120),
+                act,
+            ],
+        )
         itinerary = [day]
         report = validate(itinerary, profile_shanghai, [])
         plans = generate_repairs(report.hard_violations, itinerary, sample_pois, profile_shanghai)
@@ -339,7 +343,11 @@ class TestNeedsHuman:
         )
         itinerary = [day]
         result = run_repair_loop(
-            itinerary, profile_shanghai, [], sample_pois, max_iterations=1,
+            itinerary,
+            profile_shanghai,
+            [],
+            sample_pois,
+            max_iterations=1,
         )
         # Should terminate, not hang
         assert result.success or not result.success

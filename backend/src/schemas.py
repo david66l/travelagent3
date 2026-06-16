@@ -1,6 +1,5 @@
-from typing import Optional, Literal
+from typing import Any, Optional, Literal
 from pydantic import BaseModel, Field, field_validator
-
 
 # ===== User Profile =====
 
@@ -189,6 +188,11 @@ class ScoredPOI(BaseModel):
     area: Optional[str] = None  # 所在区域/商圈，如"外滩","朝阳区"
     recommended_hours: Optional[str] = None  # 建议游玩时长，如"2-3小时","半天"
     indoor_outdoor: Optional[str] = None  # indoor / outdoor / mixed
+    data_source: Literal["api", "built_in", "fallback", "unavailable"] = "built_in"
+    confidence: float = 0.8
+    is_fallback: bool = True
+    fallback_reason: Optional[str] = "built-in fallback data"
+    priority: Literal["P0", "P1", "P2", "P3"] = "P2"
 
 
 class WeatherDay(BaseModel):
@@ -199,6 +203,10 @@ class WeatherDay(BaseModel):
     precipitation_chance: int
     wind_speed: Optional[int] = None
     recommendation: Optional[str] = None
+    data_source: Literal["api", "built_in", "fallback", "unavailable"] = "fallback"
+    confidence: float = 0.7
+    is_fallback: bool = True
+    fallback_reason: Optional[str] = "simulated weather fallback"
 
 
 class PriceInfo(BaseModel):
@@ -207,6 +215,10 @@ class PriceInfo(BaseModel):
     price_range: Optional[str] = None
     currency: str = "CNY"
     source: str = ""
+    data_source: Literal["api", "built_in", "fallback", "unavailable"] = "fallback"
+    confidence: float = 0.6
+    is_fallback: bool = True
+    fallback_reason: Optional[str] = "static price estimate"
 
 
 class RouteInfo(BaseModel):
@@ -216,6 +228,10 @@ class RouteInfo(BaseModel):
     duration_min: int
     mode: str  # walk / transit / taxi
     polyline: Optional[str] = None
+    data_source: Literal["api", "built_in", "fallback", "unavailable"] = "fallback"
+    confidence: float = 0.7
+    is_fallback: bool = True
+    fallback_reason: Optional[str] = "heuristic distance estimate"
 
 
 # ===== Travel Context (enriched from multi-dimensional search) =====
@@ -266,7 +282,7 @@ class TravelContext(BaseModel):
 
     @classmethod
     def from_dict(cls, data: dict | None) -> "TravelContext":
-        """Safely create from a dict (e.g. from ItineraryState)."""
+        """Safely create from a persisted dict."""
         if not data:
             return cls()
         return cls(**data)
@@ -279,6 +295,18 @@ class UserMemory(BaseModel):
     recent_itineraries: list[dict] = Field(default_factory=list)
     preference_patterns: dict = Field(default_factory=dict)
     recent_conversations: list[dict] = Field(default_factory=list)
+
+
+class ToolResult(BaseModel):
+    """Unified result wrapper for all external tools."""
+
+    data: Any
+    data_source: Literal["api", "built_in", "fallback", "unavailable"] = "unavailable"
+    confidence: float = 1.0
+    is_fallback: bool = False
+    fallback_reason: Optional[str] = None
+    latency_ms: int = 0
+    retries: int = 0
 
 
 # ===== Seed Data =====

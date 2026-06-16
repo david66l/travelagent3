@@ -1,22 +1,7 @@
 """Deterministic heuristic strategy engine — zero LLM dependency."""
 
-from collections import Counter
-
 from schemas import ScoredPOI, UserProfile
 from planner.core.models import Strategy, DayTheme, AreaGroup
-
-
-# Landmark keywords for must-see detection
-_LANDMARK_TAGS = {
-    "博物馆",
-    "世界遗产",
-    "地标",
-    "历史",
-    "文化",
-    "古迹",
-    "标志性建筑",
-    "全国重点文物保护单位",
-}
 
 
 def build_strategy(pois: list[ScoredPOI], profile: UserProfile) -> Strategy:
@@ -92,12 +77,8 @@ def _build_day_themes(
         if day_idx < len(assigned_groups):
             group = assigned_groups[day_idx]
             area_focus = group.area
-            # Use overflow names to fill empty days
-            names = group.poi_names[:]
         else:
             area_focus = "综合"
-            names = overflow_names[:5]
-            overflow_names = overflow_names[5:]
 
         # Theme = most frequent tag among these POIs (placeholder; scheduler fills details)
         theme = f"{area_focus}探索"
@@ -115,20 +96,13 @@ def _build_day_themes(
 
 
 def _detect_must_see(pois: list[ScoredPOI], profile: UserProfile) -> list[str]:
-    """Detect must-see POIs: user mentions + high-score landmarks."""
+    """Detect hard must-see POIs from explicit user mentions only."""
     must_see: set[str] = set()
 
     # User-mentioned POIs (from special_requests or interests)
     user_text = " ".join(profile.special_requests + profile.interests).lower()
     for poi in pois:
         if poi.name.lower() in user_text:
-            must_see.add(poi.name)
-
-    # High-score landmarks
-    for poi in pois:
-        if poi.score >= 0.85 and (
-            poi.category == "museum" or (set(poi.tags) & _LANDMARK_TAGS)
-        ):
             must_see.add(poi.name)
 
     return list(must_see)

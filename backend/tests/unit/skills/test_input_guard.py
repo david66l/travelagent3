@@ -1,6 +1,5 @@
 """Tests for input_guard module."""
 
-import pytest
 from core.input_guard import sanitize_user_input, wrap_user_input
 
 

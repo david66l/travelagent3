@@ -19,7 +19,8 @@ def make_intent_result(
         intent=intent,
         user_entities=entities or {},
         missing_required=missing_required or [],
-        clarification_questions=clarification_questions or ([] if (entities or missing_required) else ["能再说一下吗？"]),
+        clarification_questions=clarification_questions
+        or ([] if (entities or missing_required) else ["能再说一下吗？"]),
         preference_changes=preference_changes or [],
         confidence=confidence,
     )
@@ -35,7 +36,6 @@ class TestIntentRecognition:
 
     @pytest.mark.asyncio
     async def test_generate_itinerary_intent(self, mock_llm):
-        import agents.intent_recognition as ir
         mock_llm.structured_call = AsyncMock(
             return_value=make_intent_result(
                 "generate_itinerary",
@@ -48,9 +48,7 @@ class TestIntentRecognition:
 
     @pytest.mark.asyncio
     async def test_modify_itinerary_intent(self, mock_llm):
-        mock_llm.structured_call = AsyncMock(
-            return_value=make_intent_result("modify_itinerary")
-        )
+        mock_llm.structured_call = AsyncMock(return_value=make_intent_result("modify_itinerary"))
         result = await self.agent.recognize("第三天换个景点", messages=[])
         assert result.intent == "modify_itinerary"
 
@@ -68,25 +66,19 @@ class TestIntentRecognition:
 
     @pytest.mark.asyncio
     async def test_query_info_intent(self, mock_llm):
-        mock_llm.structured_call = AsyncMock(
-            return_value=make_intent_result("query_info")
-        )
+        mock_llm.structured_call = AsyncMock(return_value=make_intent_result("query_info"))
         result = await self.agent.recognize("成都什么好吃？", messages=[])
         assert result.intent == "query_info"
 
     @pytest.mark.asyncio
     async def test_confirm_itinerary_intent(self, mock_llm):
-        mock_llm.structured_call = AsyncMock(
-            return_value=make_intent_result("confirm_itinerary")
-        )
+        mock_llm.structured_call = AsyncMock(return_value=make_intent_result("confirm_itinerary"))
         result = await self.agent.recognize("确认行程", messages=[])
         assert result.intent == "confirm_itinerary"
 
     @pytest.mark.asyncio
     async def test_chitchat_intent(self, mock_llm):
-        mock_llm.structured_call = AsyncMock(
-            return_value=make_intent_result("chitchat")
-        )
+        mock_llm.structured_call = AsyncMock(return_value=make_intent_result("chitchat"))
         result = await self.agent.recognize("你好", messages=[])
         assert result.intent == "chitchat"
 
@@ -121,6 +113,25 @@ class TestIntentRecognition:
         result = await self.agent.recognize("西安5天，爱吃面食和羊肉，喜欢历史博物馆", messages=[])
         assert "面食" in result.user_entities["food_preferences"]
         assert "历史" in result.user_entities["interests"]
+
+    @pytest.mark.asyncio
+    async def test_falls_back_when_structured_llm_returns_empty_payload(self, mock_llm):
+        mock_llm.structured_call = AsyncMock(return_value={})
+
+        result = await self.agent.recognize(
+            "北京3日游，预算2000，喜欢历史和美食，不要太赶",
+            messages=[],
+        )
+
+        assert result.intent == "generate_itinerary"
+        assert result.confidence < 0.7
+        assert result.user_entities["destination"] == "北京"
+        assert result.user_entities["travel_days"] == 3
+        assert result.user_entities["budget_range"] == 2000
+        assert result.user_entities["pace"] == "relaxed"
+        assert "历史" in result.user_entities["interests"]
+        assert "美食" in result.user_entities["interests"]
+        assert result.missing_required == []
 
     @pytest.mark.asyncio
     async def test_missing_required_fields(self, mock_llm):
@@ -178,12 +189,14 @@ class TestIntentRecognition:
 
     def test_resolve_date_relative_tomorrow(self):
         from datetime import datetime, timedelta
+
         result = self.agent._resolve_date("明天")
         expected = (datetime.now().date() + timedelta(days=1)).isoformat()
         assert result == expected
 
     def test_resolve_date_relative_day_after(self):
         from datetime import datetime, timedelta
+
         result = self.agent._resolve_date("后天")
         expected = (datetime.now().date() + timedelta(days=2)).isoformat()
         assert result == expected

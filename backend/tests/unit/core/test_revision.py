@@ -1,10 +1,9 @@
 """Unit tests for P2 revision mechanism."""
-import time
+
 from core.conversation_state import (
     default_conversation_state,
     merge_profile,
     append_message,
-    is_profile_ready,
 )
 from schemas import ProfilePatch
 

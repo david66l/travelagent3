@@ -5,7 +5,6 @@ export interface Message {
   role: "user" | "assistant";
   content: string;
   timestamp: number;
-  runStatus?: RunStatus;
 }
 
 export interface Activity {
@@ -98,31 +97,7 @@ export interface BriefDayPlan {
   highlights: string[];
 }
 
-// === AI 运行状态 ===
-export interface StepDetail {
-  name: string;
-  status: string;
-  duration_ms: number;
-  start_offset: number;
-  end_offset: number | null;
-}
-
-export interface RunStatus {
-  status: "running" | "completed" | "error";
-  current_step: string | null;
-  completed_steps: string[];
-  step_details: StepDetail[];
-  elapsed_seconds: number;
-  ttft_seconds: number | null;
-  total_tokens: number;
-  prompt_tokens: number;
-  completion_tokens: number;
-  llm_calls: number;
-  step_count: number;
-  completed_count: number;
-}
-
-// === 新增：对话快照 ===
+// === 对话快照 ===
 export interface ChatSnapshot {
   id: string;
   title: string;
@@ -159,9 +134,7 @@ export interface ChatState {
   trips: TripRecord[];
   currentTrip: TripRecord | null;
 
-  runStatus: RunStatus | null;
-
-  // Job-based planning state (Phase 2)
+  // Job-based planning state
   jobId: string | null;
   currentStage: string | null;
   jobStatus: string | null;
@@ -190,9 +163,6 @@ export interface ChatState {
   saveChatSnapshot: () => void;
   restoreChat: (snapshotId: string) => void;
   refreshTripStatuses: () => void;
-
-  setRunStatus: (v: RunStatus | null) => void;
-  clearRunStatus: () => void;
 
   // Job state setters
   setJobId: (id: string | null) => void;
@@ -238,8 +208,6 @@ export const useChatStore = create<ChatState>()(
       pendingSuggestions: [],
       trips: [],
       currentTrip: null,
-
-      runStatus: null,
 
       jobId: null,
       currentStage: null,
@@ -365,7 +333,6 @@ export const useChatStore = create<ChatState>()(
             endDate: trip.endDate,
           },
           isLoading: false,
-          runStatus: null,
         });
       },
 
@@ -385,8 +352,9 @@ export const useChatStore = create<ChatState>()(
         }));
       },
 
-      setRunStatus: (v) => set({ runStatus: v }),
-      clearRunStatus: () => set({ runStatus: null }),
+      setJobId: (id) => set({ jobId: id }),
+      setCurrentStage: (stage) => set({ currentStage: stage }),
+      setJobStatus: (status) => set({ jobStatus: status }),
 
       // 保存当前对话快照
       saveChatSnapshot: () => {
@@ -444,7 +412,6 @@ export const useChatStore = create<ChatState>()(
             },
           ],
           isLoading: false,
-          runStatus: null,
         });
       },
 
@@ -470,12 +437,22 @@ export const useChatStore = create<ChatState>()(
           currentTrip: null,
           chatHistory: [],
           isLoading: false,
-          runStatus: null,
+          jobId: null,
+          currentStage: null,
+          jobStatus: null,
         });
       },
     }),
     {
       name: "travel-agent-chat-storage",
+      merge: (persistedState, currentState) => {
+        const persisted = persistedState as Partial<ChatState> | undefined;
+        return {
+          ...currentState,
+          chatSnapshots: persisted?.chatSnapshots ?? [],
+          trips: persisted?.trips ?? [],
+        };
+      },
       partialize: (state) => ({
         chatSnapshots: state.chatSnapshots,
         trips: state.trips,

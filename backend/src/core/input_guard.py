@@ -2,7 +2,6 @@
 
 import re
 
-
 # Common prompt injection patterns
 _INJECTION_PATTERNS = [
     r"(?i)ignore\s+(all\s+)?previous\s+instructions",

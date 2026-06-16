@@ -20,8 +20,16 @@ class TestDailyScheduler:
         profile = UserProfile(destination="北京", travel_days=2)
         strategy = build_strategy(pois, profile)
         weather = [
-            WeatherDay(date="2026-05-01", condition="晴", temp_high=25, temp_low=15, precipitation_chance=0),
-            WeatherDay(date="2026-05-02", condition="多云", temp_high=24, temp_low=14, precipitation_chance=10),
+            WeatherDay(
+                date="2026-05-01", condition="晴", temp_high=25, temp_low=15, precipitation_chance=0
+            ),
+            WeatherDay(
+                date="2026-05-02",
+                condition="多云",
+                temp_high=24,
+                temp_low=14,
+                precipitation_chance=10,
+            ),
         ]
         schedule = build_schedule(strategy, pois, weather, profile)
 
@@ -152,13 +160,9 @@ class TestDailyScheduler:
         schedule = build_schedule(strategy, pois, [], profile)
 
         wall_day = next(
-            day for day in schedule
-            if any(a.poi_name == "长城" for a in day.activities)
+            day for day in schedule if any(a.poi_name == "长城" for a in day.activities)
         )
-        non_meal_names = [
-            a.poi_name for a in wall_day.activities
-            if a.category != "restaurant"
-        ]
+        non_meal_names = [a.poi_name for a in wall_day.activities if a.category != "restaurant"]
         assert non_meal_names == ["长城"]
 
     def test_remote_excursion_is_detected_without_area_metadata(self):
@@ -194,13 +198,9 @@ class TestDailyScheduler:
         schedule = build_schedule(strategy, pois, [], profile)
 
         wall_day = next(
-            day for day in schedule
-            if any(a.poi_name == "远郊山线" for a in day.activities)
+            day for day in schedule if any(a.poi_name == "远郊山线" for a in day.activities)
         )
-        non_meal_names = [
-            a.poi_name for a in wall_day.activities
-            if a.category != "restaurant"
-        ]
+        non_meal_names = [a.poi_name for a in wall_day.activities if a.category != "restaurant"]
         # Remote excursion is placed on a dedicated day; the day *may*
         # contain a small number of non-remote POIs when the remote
         # leaves enough remaining daylight (dynamic effective_max).
@@ -250,9 +250,7 @@ class TestDailyScheduler:
         schedule = build_schedule(strategy, pois, [], profile)
 
         assert all(
-            activity.end_time <= "21:00"
-            for activity in schedule[0].activities
-            if activity.end_time
+            activity.end_time <= "21:00" for activity in schedule[0].activities if activity.end_time
         )
 
     def test_restaurants_fairly_compete_with_attractions(self):
@@ -285,19 +283,21 @@ class TestDailyScheduler:
 
     def test_assign_days_stops_when_all_days_reach_capacity(self):
         """Overflow POIs are dropped once all days reach the feasible daily cap."""
-        pois = [
-            ScoredPOI(name=f"A{i}", category="attraction", score=0.9, area="A")
-            for i in range(5)
-        ] + [
-            ScoredPOI(name=f"B{i}", category="attraction", score=0.8, area="B")
-            for i in range(5)
-        ] + [
-            ScoredPOI(name=f"C{i}", category="attraction", score=0.7, area="C")
-            for i in range(5)
-        ] + [
-            ScoredPOI(name=f"D{i}", category="attraction", score=0.6, area="D")
-            for i in range(2)
-        ]
+        pois = (
+            [ScoredPOI(name=f"A{i}", category="attraction", score=0.9, area="A") for i in range(5)]
+            + [
+                ScoredPOI(name=f"B{i}", category="attraction", score=0.8, area="B")
+                for i in range(5)
+            ]
+            + [
+                ScoredPOI(name=f"C{i}", category="attraction", score=0.7, area="C")
+                for i in range(5)
+            ]
+            + [
+                ScoredPOI(name=f"D{i}", category="attraction", score=0.6, area="D")
+                for i in range(2)
+            ]
+        )
         groups: dict[str, list[ScoredPOI]] = {}
         for poi in pois:
             groups.setdefault(poi.area or "其他", []).append(poi)

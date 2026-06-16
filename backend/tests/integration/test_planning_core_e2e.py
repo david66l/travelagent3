@@ -9,7 +9,8 @@ from sqlalchemy import select
 
 from models.planning_job import PlanningJob
 from repositories.planning_job import PlanningJobRepository
-from schemas import IntentResult, ScoredPOI, WeatherDay
+from schemas import ScoredPOI, WeatherDay
+from tests.support.planning_feedback import feedback_with_trip
 
 
 class TestPlanningCoreE2E:
@@ -26,39 +27,54 @@ class TestPlanningCoreE2E:
             session_id="sess-core-e2e",
             user_id="user-1",
             user_input="上海3天",
+            user_feedback=feedback_with_trip("上海", 3, "2026-05-01"),
         )
         await db.commit()
 
-        mock_intent = AsyncMock(return_value=IntentResult(
-            intent="generate_itinerary",
-            confidence=0.95,
-            user_entities={
-                "destination": "上海",
-                "travel_days": 3,
-                "travel_dates": "2026-05-01",
-            },
-        ))
-        mock_pois = AsyncMock(return_value=[
-            ScoredPOI(name="外滩", category="attraction", score=0.9, area="外滩"),
-            ScoredPOI(name="东方明珠", category="attraction", score=0.9, area="陆家嘴"),
-            ScoredPOI(name="豫园", category="attraction", score=0.85, area="城隍庙"),
-        ])
-        mock_weather = AsyncMock(return_value=[
-            WeatherDay(date="2026-05-01", condition="晴", temp_high=25, temp_low=15, precipitation_chance=0),
-            WeatherDay(date="2026-05-02", condition="多云", temp_high=24, temp_low=14, precipitation_chance=10),
-            WeatherDay(date="2026-05-03", condition="晴", temp_high=26, temp_low=16, precipitation_chance=0),
-        ])
+        mock_pois = AsyncMock(
+            return_value=[
+                ScoredPOI(name="外滩", category="attraction", score=0.9, area="外滩"),
+                ScoredPOI(name="东方明珠", category="attraction", score=0.9, area="陆家嘴"),
+                ScoredPOI(name="豫园", category="attraction", score=0.85, area="城隍庙"),
+            ]
+        )
+        mock_weather = AsyncMock(
+            return_value=[
+                WeatherDay(
+                    date="2026-05-01",
+                    condition="晴",
+                    temp_high=25,
+                    temp_low=15,
+                    precipitation_chance=0,
+                ),
+                WeatherDay(
+                    date="2026-05-02",
+                    condition="多云",
+                    temp_high=24,
+                    temp_low=14,
+                    precipitation_chance=10,
+                ),
+                WeatherDay(
+                    date="2026-05-03",
+                    condition="晴",
+                    temp_high=26,
+                    temp_low=16,
+                    precipitation_chance=0,
+                ),
+            ]
+        )
 
         with patch("core.redis_client.redis_client._client.publish", AsyncMock()):
-            with patch("agents.intent_recognition.IntentRecognitionAgent.recognize", mock_intent):
-                with patch("agents.realtime_query.RealtimeQueryAgent.query_pois", mock_pois):
-                    with patch("agents.realtime_query.RealtimeQueryAgent.query_weather", mock_weather):
-                        worker = PlanningWorker("test-worker")
-                        acquired = await repo.acquire_job("test-worker", lease_seconds=60)
-                        await db.commit()
+            with patch("agents.realtime_query.RealtimeQueryAgent.query_pois", mock_pois):
+                with patch(
+                    "agents.realtime_query.RealtimeQueryAgent.query_weather", mock_weather
+                ):
+                    worker = PlanningWorker("test-worker")
+                    acquired = await repo.acquire_job("test-worker", lease_seconds=60)
+                    await db.commit()
 
-                        pipeline = PlanningPipeline(worker=worker)
-                        await pipeline.run(acquired)
+                    pipeline = PlanningPipeline(worker=worker)
+                    await pipeline.run(acquired)
 
         job_id = job.id
         db.expire_all()
@@ -91,35 +107,27 @@ class TestPlanningCoreE2E:
             session_id="sess-fallback",
             user_id="user-1",
             user_input="上海3天",
+            user_feedback=feedback_with_trip("上海", 3, "2026-05-01"),
         )
         await db.commit()
 
-        mock_intent = AsyncMock(return_value=IntentResult(
-            intent="generate_itinerary",
-            confidence=0.95,
-            user_entities={
-                "destination": "上海",
-                "travel_days": 3,
-                "travel_dates": "2026-05-01",
-            },
-        ))
-
         async def _slow_pois(*args, **kwargs):
             await asyncio.sleep(10)
-        slow_pois = AsyncMock(side_effect=_slow_pois)
 
+        slow_pois = AsyncMock(side_effect=_slow_pois)
         mock_weather = AsyncMock(return_value=[])
 
         with patch("core.redis_client.redis_client._client.publish", AsyncMock()):
-            with patch("agents.intent_recognition.IntentRecognitionAgent.recognize", mock_intent):
-                with patch("agents.realtime_query.RealtimeQueryAgent.query_pois", slow_pois):
-                    with patch("agents.realtime_query.RealtimeQueryAgent.query_weather", mock_weather):
-                        worker = PlanningWorker("test-worker")
-                        acquired = await repo.acquire_job("test-worker", lease_seconds=60)
-                        await db.commit()
+            with patch("agents.realtime_query.RealtimeQueryAgent.query_pois", slow_pois):
+                with patch(
+                    "agents.realtime_query.RealtimeQueryAgent.query_weather", mock_weather
+                ):
+                    worker = PlanningWorker("test-worker")
+                    acquired = await repo.acquire_job("test-worker", lease_seconds=60)
+                    await db.commit()
 
-                        pipeline = PlanningPipeline(worker=worker)
-                        await pipeline.run(acquired)
+                    pipeline = PlanningPipeline(worker=worker)
+                    await pipeline.run(acquired)
 
         job_id = job.id
         db.expire_all()
@@ -127,7 +135,6 @@ class TestPlanningCoreE2E:
         updated = result.scalar_one()
 
         assert updated.status == "completed"
-        # Fallback should use CITY_DEFAULTS
         assert updated.itinerary_draft is not None
         draft = updated.itinerary_draft
         assert isinstance(draft, list)
@@ -144,37 +151,46 @@ class TestPlanningCoreE2E:
             session_id="sess-events",
             user_id="user-1",
             user_input="北京2天",
+            user_feedback=feedback_with_trip("北京", 2, "2026-05-01"),
         )
         await db.commit()
 
-        mock_intent = AsyncMock(return_value=IntentResult(
-            intent="generate_itinerary",
-            confidence=0.95,
-            user_entities={
-                "destination": "北京",
-                "travel_days": 2,
-                "travel_dates": "2026-05-01",
-            },
-        ))
-        mock_pois = AsyncMock(return_value=[
-            ScoredPOI(name="故宫", category="attraction", score=0.9, area="东城区"),
-            ScoredPOI(name="天坛", category="attraction", score=0.85, area="东城区"),
-        ])
-        mock_weather = AsyncMock(return_value=[
-            WeatherDay(date="2026-05-01", condition="晴", temp_high=25, temp_low=15, precipitation_chance=0),
-            WeatherDay(date="2026-05-02", condition="多云", temp_high=24, temp_low=14, precipitation_chance=10),
-        ])
+        mock_pois = AsyncMock(
+            return_value=[
+                ScoredPOI(name="故宫", category="attraction", score=0.9, area="东城区"),
+                ScoredPOI(name="天坛", category="attraction", score=0.85, area="东城区"),
+            ]
+        )
+        mock_weather = AsyncMock(
+            return_value=[
+                WeatherDay(
+                    date="2026-05-01",
+                    condition="晴",
+                    temp_high=25,
+                    temp_low=15,
+                    precipitation_chance=0,
+                ),
+                WeatherDay(
+                    date="2026-05-02",
+                    condition="多云",
+                    temp_high=24,
+                    temp_low=14,
+                    precipitation_chance=10,
+                ),
+            ]
+        )
 
         with patch("core.redis_client.redis_client._client.publish", AsyncMock()):
-            with patch("agents.intent_recognition.IntentRecognitionAgent.recognize", mock_intent):
-                with patch("agents.realtime_query.RealtimeQueryAgent.query_pois", mock_pois):
-                    with patch("agents.realtime_query.RealtimeQueryAgent.query_weather", mock_weather):
-                        worker = PlanningWorker("test-worker")
-                        acquired = await repo.acquire_job("test-worker", lease_seconds=60)
-                        await db.commit()
+            with patch("agents.realtime_query.RealtimeQueryAgent.query_pois", mock_pois):
+                with patch(
+                    "agents.realtime_query.RealtimeQueryAgent.query_weather", mock_weather
+                ):
+                    worker = PlanningWorker("test-worker")
+                    acquired = await repo.acquire_job("test-worker", lease_seconds=60)
+                    await db.commit()
 
-                        pipeline = PlanningPipeline(worker=worker)
-                        await pipeline.run(acquired)
+                    pipeline = PlanningPipeline(worker=worker)
+                    await pipeline.run(acquired)
 
         events = await repo.get_events_after(job.id, 0)
         stages = [e.stage for e in events]

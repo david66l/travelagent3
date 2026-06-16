@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { useChatStore } from "@/stores/chatStore";
-import { useWebSocket } from "@/hooks/useWebSocket";
+import { useChat } from "@/hooks/useChat";
 import { TopBar } from "@/components/TopBar";
 import { Sidebar } from "@/components/Sidebar";
 import { ChatPanel } from "@/components/ChatPanel";
@@ -14,7 +14,7 @@ import { SettingsPanel } from "@/components/SettingsPanel";
 import { cn } from "@/lib/utils";
 
 export default function Home() {
-  const { sendMessage, reconnect } = useWebSocket();
+  const { sendMessage, reconnect } = useChat();
   const store = useChatStore();
   const { activeView, activeTab } = store;
 

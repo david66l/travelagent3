@@ -1,4 +1,4 @@
-"""Planning Core — deterministic draft generation with optional LLM enhancement."""
+"""Planning Core — deterministic draft generation."""
 
 from planner.core.models import (
     Strategy,
@@ -14,10 +14,13 @@ from planner.core.models import (
 from planner.core.heuristic_strategy import build_strategy
 from planner.core.daily_scheduler import build_schedule
 from planner.core.rule_validator import validate
-from planner.core.llm_strategy import enhance_strategy
 from planner.core.repair import generate_repairs, apply_repair, run_repair_loop
-from planner.core.fact_checksum import compute_checksum, verify_checksum
-from planner.core.writer import enrich, enrich_safe
+from planner.core.fact_guard import (
+    activity_fields_match,
+    protected_field_differences,
+    protected_fields_match,
+)
+from planner.core.writer import enrich
 
 __all__ = [
     "Strategy",
@@ -32,12 +35,11 @@ __all__ = [
     "build_strategy",
     "build_schedule",
     "validate",
-    "enhance_strategy",
     "generate_repairs",
     "apply_repair",
     "run_repair_loop",
-    "compute_checksum",
-    "verify_checksum",
+    "activity_fields_match",
+    "protected_field_differences",
+    "protected_fields_match",
     "enrich",
-    "enrich_safe",
 ]

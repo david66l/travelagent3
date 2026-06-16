@@ -132,9 +132,7 @@ def _assign_days(
         median_distance = sorted(distances)[(len(distances) - 1) // 2]
         threshold = max(30.0, median_distance * 2.0)
         remote_names_all = {
-            p.name
-            for p in located
-            if p.location and _distance_km(center, p.location) >= threshold
+            p.name for p in located if p.location and _distance_km(center, p.location) >= threshold
         }
 
         for p in located:
@@ -144,12 +142,12 @@ def _assign_days(
             one_way_h = dist / 50.0
             activity_h = _resolve_duration(p) / 60.0
 
-            if one_way_h * 2 > 5:                     # round-trip > 5h → cross_city
+            if one_way_h * 2 > 5:  # round-trip > 5h → cross_city
                 remote_class[p.name] = "cross_city"
                 cross_city.add(p.name)
-            elif one_way_h * 2 + activity_h > 9:       # round-trip +游玩 > 9h → full_day
+            elif one_way_h * 2 + activity_h > 9:  # round-trip +游玩 > 9h → full_day
                 remote_class[p.name] = "full_day"
-            elif _resolve_duration(p) >= 180:           # ≥ 3h → full_day
+            elif _resolve_duration(p) >= 180:  # ≥ 3h → full_day
                 remote_class[p.name] = "full_day"
             else:
                 remote_class[p.name] = "half_day"
@@ -191,9 +189,9 @@ def _assign_days(
     # ------------------------------------------------------------------ #
     # 3. Effective daily capacity (B – dynamic)
     # ------------------------------------------------------------------ #
-    DAY_START = 9 * 60   # 09:00
-    DAY_END = 21 * 60    # 21:00
-    LUNCH_MIN = 90       # lunch slot in minutes
+    DAY_START = 9 * 60  # 09:00
+    DAY_END = 21 * 60  # 21:00
+    LUNCH_MIN = 90  # lunch slot in minutes
 
     def _effective_max(day_idx: int) -> int:
         if day_full_remote[day_idx]:
@@ -208,15 +206,18 @@ def _assign_days(
                         remote_end += int(dist / 50 * 60)
                         break
             remaining = max(0, DAY_END - remote_end)
-            extra = max(0, int(remaining / 150))       # ~2h activity + 0.5h buffer
+            extra = max(0, int(remaining / 150))  # ~2h activity + 0.5h buffer
             return min(remote_count[day_idx] + extra, max_pois_per_day)
 
         if remote_count[day_idx] > 0:  # half_day
             total_remote = sum(_resolve_duration(p) for p in days[day_idx])
             lunch_dur = LUNCH_MIN if total_remote >= 180 else 0
             max_dist = max(
-                (_distance_km(center, p.location) for p in days[day_idx]
-                 if p.name in active_remote and p.location and center),
+                (
+                    _distance_km(center, p.location)
+                    for p in days[day_idx]
+                    if p.name in active_remote and p.location and center
+                ),
                 default=0,
             )
             travel_back = int(max_dist / 50 * 60) if max_dist > 20 else 0
@@ -300,9 +301,7 @@ def _find_empty_day(days: list[list[ScoredPOI]]) -> Optional[int]:
     return None
 
 
-def _optimize_daily_routes(
-    day_assignments: list[list[ScoredPOI]]
-) -> list[list[ScoredPOI]]:
+def _optimize_daily_routes(day_assignments: list[list[ScoredPOI]]) -> list[list[ScoredPOI]]:
     """Optimize daily routes with nearest-neighbor ordering."""
     optimized = []
     for day_pois in day_assignments:
@@ -347,7 +346,7 @@ def _distance_km(a: Location, b: Location) -> float:
     """Approximate distance in kilometers."""
     lat_km = (a.lat - b.lat) * 111
     lng_km = (a.lng - b.lng) * 85
-    return (lat_km ** 2 + lng_km ** 2) ** 0.5
+    return (lat_km**2 + lng_km**2) ** 0.5
 
 
 def _build_day_plans(
@@ -409,9 +408,7 @@ def _build_day_plans(
             current_time += duration
             current_time += 30  # transit buffer
 
-        day.total_cost = sum(
-            (a.ticket_price or 0) + (a.meal_cost or 0) for a in day.activities
-        )
+        day.total_cost = sum((a.ticket_price or 0) + (a.meal_cost or 0) for a in day.activities)
         schedule.append(day)
 
     return schedule
@@ -445,9 +442,7 @@ def _create_meal_activity(
 ) -> Activity:
     """Create a meal activity placeholder."""
     food_hint = (
-        f"（偏好：{','.join(profile.food_preferences)}）"
-        if profile.food_preferences
-        else ""
+        f"（偏好：{','.join(profile.food_preferences)}）" if profile.food_preferences else ""
     )
     return Activity(
         poi_name=f"{meal_type.capitalize()}{food_hint}",

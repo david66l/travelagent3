@@ -21,6 +21,7 @@ class TestRealtimeQueryAgent:
             with patch.object(self.agent.weather_skill, "query", mock_weather):
                 with patch.object(self.agent, "_query_prices", mock_price):
                     from schemas import UserProfile
+
                     result = await self.agent.query_all(
                         city="北京",
                         dates=["2026-05-01"],
@@ -48,11 +49,16 @@ class TestRealtimeQueryAgent:
     @pytest.mark.asyncio
     async def test_query_prices(self):
         from schemas import ScoredPOI
+
         pois = [
             ScoredPOI(name="故宫", category="attraction", score=0.9),
             ScoredPOI(name="全聚德", category="restaurant", score=0.8),
         ]
-        with patch.object(self.agent.price_skill, "query_price", AsyncMock(return_value=AsyncMock(poi_name="故宫"))) as mock:
+        with patch.object(
+            self.agent.price_skill,
+            "query_price",
+            AsyncMock(return_value=AsyncMock(poi_name="故宫")),
+        ) as mock:
             result = await self.agent._query_prices("北京", pois)
             assert len(result) == 1  # only attractions
             mock.assert_called_once()

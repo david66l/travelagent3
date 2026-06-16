@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useChatStore } from "@/stores/chatStore";
 import { DayCard } from "./DayCard";
 
@@ -8,6 +8,17 @@ export function ItineraryPanel() {
   const store = useChatStore();
   const { itinerary, currentTrip, currentStage, isLoading } = store;
   const [activeDay, setActiveDay] = useState(0);
+
+  // Reset active day when itinerary changes or shrinks
+  useEffect(() => {
+    if (!itinerary || itinerary.length === 0) {
+      setActiveDay(0);
+      return;
+    }
+    if (activeDay >= itinerary.length) {
+      setActiveDay(itinerary.length - 1);
+    }
+  }, [itinerary, activeDay]);
 
   const tripTitle = currentTrip
     ? `${currentTrip.title}`

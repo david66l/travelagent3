@@ -1,73 +1,217 @@
+"""SQLAlchemy ORM models aligned with PRD_AI全栈高并发改造."""
+
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Column, String, Integer, DateTime, Text, JSON
+from sqlalchemy import (
+    Column,
+    String,
+    Integer,
+    DateTime,
+    Text,
+    JSON,
+    Boolean,
+    ForeignKey,
+    Index,
+)
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship
 
 from core.database import Base
 
 
+def _uuid_str() -> str:
+    return str(uuid.uuid4())
+
+
 class User(Base):
+    """Registered and guest users."""
+
     __tablename__ = "users"
 
-    id = Column(String(100), primary_key=True, default=lambda: str(uuid.uuid4()))
-    username = Column(String(100), nullable=False, unique=True)
-    email = Column(String(255), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    email = Column(String(255), nullable=True, unique=True, index=True)
+    phone = Column(String(20), nullable=True, unique=True, index=True)
+    password_hash = Column(String(255), nullable=True)
+    role = Column(
+        String(20),
+        nullable=False,
+        default="guest",
+        index=True,
+    )  # guest / user / admin
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+    profile = relationship("UserProfile", back_populates="user", uselist=False)
+    conversations = relationship("Conversation", back_populates="user")
+    itineraries = relationship("Itinerary", back_populates="user")
+    planning_jobs = relationship("PlanningJob", back_populates="user")
 
 
-class Session(Base):
-    __tablename__ = "sessions"
+class UserProfile(Base):
+    """User preference and personalization profile."""
 
-    id = Column(String(100), primary_key=True)
-    user_id = Column(String(100), nullable=False)
-    destination = Column(String(100), nullable=True)
-    travel_days = Column(Integer, nullable=True)
-    status = Column(String(50), default="active")  # active / completed / abandoned
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    __tablename__ = "user_profiles"
+
+    user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    personal = Column(JSON, default=dict, nullable=False)
+    preferences = Column(JSON, default=dict, nullable=False)
+    frequent_destinations = Column(JSON, default=list, nullable=False)
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+    user = relationship("User", back_populates="profile")
 
 
 class Conversation(Base):
+    """A multi-turn conversation/session."""
+
     __tablename__ = "conversations"
 
-    id = Column(String(100), primary_key=True, default=lambda: str(uuid.uuid4()))
-    session_id = Column(String(100), nullable=False)
-    user_message = Column(Text, nullable=False)
-    assistant_response = Column(Text, nullable=True)
-    intent = Column(String(50), nullable=True)
-    tools_used = Column(JSON, default=list)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    title = Column(String(255), nullable=True)
+    status = Column(
+        String(20),
+        nullable=False,
+        default="active",
+        index=True,
+    )  # active / archived / deleted
+    state_snapshot = Column(JSON, default=dict, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+    archived_at = Column(DateTime, nullable=True)
+
+    user = relationship("User", back_populates="conversations")
+    messages = relationship(
+        "Message",
+        back_populates="conversation",
+        cascade="all, delete-orphan",
+    )
+    planning_jobs = relationship("PlanningJob", back_populates="conversation")
+    itineraries = relationship("Itinerary", back_populates="conversation")
+
+    __table_args__ = (Index("ix_conversations_user_updated", "user_id", "updated_at"),)
+
+
+class Message(Base):
+    """A single message within a conversation."""
+
+    __tablename__ = "messages"
+
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    conversation_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("conversations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    role = Column(String(20), nullable=False)  # user / assistant / system
+    content = Column(Text, nullable=False)
+    token_count = Column(Integer, default=0, nullable=False)
+    metadata_ = Column("metadata", JSON, default=dict, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    conversation = relationship("Conversation", back_populates="messages")
+
+    __table_args__ = (Index("ix_messages_conversation_created", "conversation_id", "created_at"),)
 
 
 class Itinerary(Base):
+    """Generated travel itinerary."""
+
     __tablename__ = "itineraries"
 
-    id = Column(String(100), primary_key=True, default=lambda: str(uuid.uuid4()))
-    session_id = Column(String(100), nullable=False)
-    user_id = Column(String(100), nullable=False)
-    destination = Column(String(100), nullable=False)
-    travel_days = Column(Integer, nullable=False)
-    daily_plans = Column(JSON, default=list)
-    preference_snapshot = Column(JSON, default=dict)
-    budget_snapshot = Column(JSON, default=dict)
-    status = Column(String(50), default="draft")  # draft / confirmed / completed
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    job_id = Column(
+        String(36),
+        ForeignKey("planning_jobs.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    conversation_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("conversations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    destination = Column(String(100), nullable=False, index=True)
+    days = Column(Integer, nullable=False)
+    content = Column(JSON, default=dict, nullable=False)
+    proposal_text = Column(Text, nullable=True)
+    is_favorite = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+    user = relationship("User", back_populates="itineraries")
+    conversation = relationship("Conversation", back_populates="itineraries")
+    job = relationship("PlanningJob", back_populates="itineraries")
+
+    __table_args__ = (Index("ix_itineraries_user_created", "user_id", "created_at"),)
 
 
-class PreferenceChange(Base):
-    __tablename__ = "preference_changes"
-
-    id = Column(String(100), primary_key=True, default=lambda: str(uuid.uuid4()))
-    session_id = Column(String(100), nullable=False)
-    user_id = Column(String(100), nullable=False)
-    field = Column(String(100), nullable=False)
-    old_value = Column(Text, nullable=True)
-    new_value = Column(Text, nullable=False)
-    source_message = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-
-# Register new planning job models with Base metadata
+# Import planning job models at the end to avoid circular imports and
+# register them with Base metadata.
 from models.planning_job import PlanningJob, PlanningJobEvent  # noqa: E402, F401
+from models.dead_letter_archive import DeadLetterArchive  # noqa: E402, F401
+
+__all__ = [
+    "User",
+    "UserProfile",
+    "Conversation",
+    "Message",
+    "Itinerary",
+    "PlanningJob",
+    "PlanningJobEvent",
+    "DeadLetterArchive",
+]

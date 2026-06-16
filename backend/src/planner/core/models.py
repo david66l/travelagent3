@@ -3,8 +3,7 @@
 from typing import Optional, Literal
 from pydantic import BaseModel, Field
 
-from schemas import DayPlan, ScoredPOI, WeatherDay, UserProfile, Location
-
+from schemas import DayPlan
 
 # --------------------------------------------------------------------------- #
 # Strategy Models
@@ -88,6 +87,7 @@ class RepairResult(BaseModel):
     rejected_plans: list[RepairPlan] = Field(default_factory=list)
     new_violations: list[RuleViolation] = Field(default_factory=list)
     needs_human: bool = False
+    itinerary: list[DayPlan] = Field(default_factory=list)
 
 
 # --------------------------------------------------------------------------- #

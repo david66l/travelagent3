@@ -26,11 +26,18 @@ class TestTavilySearchSkill:
 
     @pytest.mark.asyncio
     async def test_search_success(self):
-        resp = self._make_resp({
-            "results": [
-                {"title": "北京旅游", "url": "http://example.com", "content": "北京很好玩", "score": 0.9},
-            ]
-        })
+        resp = self._make_resp(
+            {
+                "results": [
+                    {
+                        "title": "北京旅游",
+                        "url": "http://example.com",
+                        "content": "北京很好玩",
+                        "score": 0.9,
+                    },
+                ]
+            }
+        )
         client = self._make_client(resp)
 
         with patch("httpx.AsyncClient", return_value=client):
@@ -69,10 +76,12 @@ class TestTavilySearchSkill:
 
     @pytest.mark.asyncio
     async def test_search_with_context(self):
-        resp = self._make_resp({
-            "results": [{"title": "T", "url": "U", "content": "C", "score": 0.8}],
-            "answer": "AI generated answer",
-        })
+        resp = self._make_resp(
+            {
+                "results": [{"title": "T", "url": "U", "content": "C", "score": 0.8}],
+                "answer": "AI generated answer",
+            }
+        )
         client = self._make_client(resp)
 
         with patch("httpx.AsyncClient", return_value=client):
@@ -90,9 +99,11 @@ class TestTavilySearchSkill:
 
     @pytest.mark.asyncio
     async def test_long_content_truncated(self):
-        resp = self._make_resp({
-            "results": [{"title": "T", "url": "U", "content": "x" * 1000, "score": 0.5}],
-        })
+        resp = self._make_resp(
+            {
+                "results": [{"title": "T", "url": "U", "content": "x" * 1000, "score": 0.5}],
+            }
+        )
         client = self._make_client(resp)
 
         with patch("httpx.AsyncClient", return_value=client):
@@ -118,14 +129,20 @@ class TestUnifiedSearchSkill:
     @pytest.mark.asyncio
     async def test_fallback_to_duckduckgo(self):
         with patch.object(self.skill.tavily, "search", AsyncMock(return_value=[])):
-            with patch.object(self.skill.duckduckgo, "search", AsyncMock(return_value=["fallback"])):
+            with patch.object(
+                self.skill.duckduckgo, "search", AsyncMock(return_value=["fallback"])
+            ):
                 results = await self.skill.search("test")
                 assert results == ["fallback"]
 
     @pytest.mark.asyncio
     async def test_search_with_context_fallback(self):
-        with patch.object(self.skill.tavily, "search_with_context", AsyncMock(return_value=([], ""))):
-            with patch.object(self.skill.duckduckgo, "search", AsyncMock(return_value=["fallback"])):
+        with patch.object(
+            self.skill.tavily, "search_with_context", AsyncMock(return_value=([], ""))
+        ):
+            with patch.object(
+                self.skill.duckduckgo, "search", AsyncMock(return_value=["fallback"])
+            ):
                 results, answer = await self.skill.search_with_context("test")
                 assert results == ["fallback"]
                 assert answer == ""

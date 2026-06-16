@@ -40,6 +40,28 @@ if [ -f "$PID_DIR/frontend.pid" ]; then
     rm -f "$PID_DIR/frontend.pid"
 fi
 
+if [ -f "$PID_DIR/celery_worker.pid" ]; then
+    pid=$(cat "$PID_DIR/celery_worker.pid")
+    if kill "$pid" 2>/dev/null; then
+        log_info "已停止 Celery worker (PID: $pid)"
+        stopped=1
+    else
+        log_warn "Celery worker 进程 $pid 未运行"
+    fi
+    rm -f "$PID_DIR/celery_worker.pid"
+fi
+
+if [ -f "$PID_DIR/celery_beat.pid" ]; then
+    pid=$(cat "$PID_DIR/celery_beat.pid")
+    if kill "$pid" 2>/dev/null; then
+        log_info "已停止 Celery beat (PID: $pid)"
+        stopped=1
+    else
+        log_warn "Celery beat 进程 $pid 未运行"
+    fi
+    rm -f "$PID_DIR/celery_beat.pid"
+fi
+
 # 兜底：按端口停止
 if lsof -ti:8000 >/dev/null 2>&1; then
     kill $(lsof -ti:8000) 2>/dev/null || true
@@ -50,6 +72,13 @@ fi
 if lsof -ti:3000 >/dev/null 2>&1; then
     kill $(lsof -ti:3000) 2>/dev/null || true
     log_info "已释放端口 3000"
+    stopped=1
+fi
+
+# 兜底：清理残留 Celery 进程
+if pgrep -f "celery -A worker.memory_tasks.celery_app" >/dev/null 2>&1; then
+    pkill -f "celery -A worker.memory_tasks.celery_app" 2>/dev/null || true
+    log_info "已清理残留 Celery 进程"
     stopped=1
 fi
 

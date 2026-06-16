@@ -7,8 +7,10 @@ import { MessageBubble } from "./MessageBubble";
 import { ThinkingBubble } from "./ThinkingBubble";
 import { cn } from "@/lib/utils";
 
+type SendStatus = "sent" | "queued" | "failed";
+
 interface ChatPanelProps {
-  sendMessage: (content: string) => boolean;
+  sendMessage: (content: string) => SendStatus;
 }
 
 export function ChatPanel({ sendMessage }: ChatPanelProps) {
@@ -19,8 +21,6 @@ export function ChatPanel({ sendMessage }: ChatPanelProps) {
   const handleSend = () => {
     if (!input.trim() || store.isLoading) return;
 
-    // Clear previous run status before starting a new turn
-    store.clearRunStatus();
     store.addMessage({
       role: "user",
       content: input.trim(),
@@ -28,8 +28,8 @@ export function ChatPanel({ sendMessage }: ChatPanelProps) {
     });
     store.setLoading(true);
 
-    const ok = sendMessage(input.trim());
-    if (!ok) {
+    const status = sendMessage(input.trim());
+    if (status === "failed") {
       store.addMessage({
         role: "assistant",
         content: "连接已断开，请刷新页面重试。",
@@ -37,31 +37,36 @@ export function ChatPanel({ sendMessage }: ChatPanelProps) {
       });
       store.setLoading(false);
     }
+    // "queued" is acceptable: the message will be flushed on reconnect/open.
     setInput("");
   };
 
   const handleConfirm = () => {
     if (store.isLoading) return;
-    store.clearRunStatus();
     store.addMessage({
       role: "user",
       content: "确认行程",
       timestamp: Date.now(),
     });
     store.setLoading(true);
-    sendMessage("确认行程");
+    const status = sendMessage("确认行程");
+    if (status === "failed") {
+      store.setLoading(false);
+    }
   };
 
   const handleModify = () => {
     if (store.isLoading) return;
-    store.clearRunStatus();
     store.addMessage({
       role: "user",
       content: "继续修改行程",
       timestamp: Date.now(),
     });
     store.setLoading(true);
-    sendMessage("继续修改行程");
+    const status = sendMessage("继续修改行程");
+    if (status === "failed") {
+      store.setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -101,7 +106,7 @@ export function ChatPanel({ sendMessage }: ChatPanelProps) {
           </div>
         )}
         {store.messages.map((msg, i) => (
-          <MessageBubble key={i} role={msg.role} content={msg.content} runStatus={msg.runStatus} />
+          <MessageBubble key={i} role={msg.role} content={msg.content} />
         ))}
         {store.isLoading && <ThinkingBubble />}
       </div>

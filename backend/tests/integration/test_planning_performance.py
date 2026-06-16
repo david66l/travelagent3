@@ -15,8 +15,8 @@ from models.planning_job import PlanningJob
 from repositories.planning_job import PlanningJobRepository
 from pipeline.planning_pipeline import PlanningPipeline
 from worker.planning_worker import PlanningWorker
-from schemas import IntentResult, ScoredPOI, WeatherDay
-
+from schemas import ScoredPOI, WeatherDay
+from tests.support.planning_feedback import feedback_with_trip
 
 # --------------------------------------------------------------------------- #
 # helpers
@@ -40,21 +40,17 @@ async def _run_scenario(
         session_id=f"perf-{scenario}",
         user_id="user-1",
         user_input=f"{city}{days}天",
+        user_feedback=feedback_with_trip(
+            city,
+            days,
+            (intent_entities or {}).get("travel_dates", "2026-06-01"),
+            **{k: v for k, v in (intent_entities or {}).items()
+               if k not in ("destination", "travel_days", "travel_dates")},
+        ),
     )
     await db.commit()
 
-    mock_intent = AsyncMock(return_value=IntentResult(
-        intent="generate_itinerary",
-        confidence=0.95,
-        user_entities=intent_entities or {
-            "destination": city,
-            "travel_days": days,
-            "travel_dates": "2026-06-01",
-        },
-    ))
-
     patches = [
-        patch("agents.intent_recognition.IntentRecognitionAgent.recognize", mock_intent),
         patch("agents.realtime_query.RealtimeQueryAgent.query_pois", mock_pois),
         patch("agents.realtime_query.RealtimeQueryAgent.query_weather", mock_weather),
     ]
@@ -62,6 +58,7 @@ async def _run_scenario(
         patches.extend(extra_patches)
 
     import contextlib
+
     with contextlib.ExitStack() as stack:
         for p in patches:
             stack.enter_context(p)
@@ -80,10 +77,9 @@ async def _run_scenario(
     # fresh query — expire + execute gives us the latest committed state.
     from sqlalchemy import select
     from core.database import async_session_maker as session_factory
+
     async with session_factory() as fresh_db:
-        result = await fresh_db.execute(
-            select(PlanningJob).where(PlanningJob.id == job.id)
-        )
+        result = await fresh_db.execute(select(PlanningJob).where(PlanningJob.id == job.id))
         updated = result.scalar_one()
 
     return {
@@ -97,15 +93,14 @@ async def _run_scenario(
             if isinstance(updated.itinerary_draft, list) and updated.itinerary_draft
             else False
         ),
-        "needs_human": (
-            updated.proposal_text and "needs_human" in str(updated.itinerary_final)
-        ),
+        "needs_human": (updated.proposal_text and "needs_human" in str(updated.itinerary_final)),
     }
 
 
 # --------------------------------------------------------------------------- #
 # scenario 1 — hot cache / built-in city
 # --------------------------------------------------------------------------- #
+
 
 @pytest.mark.performance
 @pytest.mark.asyncio
@@ -114,37 +109,97 @@ async def test_perf_builtin_beijing_3days(db):
 
     # Use a decent set of POIs — Beijing defaults subset
     pois = [
-        ScoredPOI(name="故宫", category="attraction", score=0.95,
-                  area="东城区", recommended_hours="半天",
-                  ticket_price=60, tags=["历史", "文化", "皇家"]),
-        ScoredPOI(name="天坛", category="attraction", score=0.90,
-                  area="东城区", recommended_hours="2-3小时",
-                  ticket_price=34, tags=["历史", "文化"]),
-        ScoredPOI(name="颐和园", category="attraction", score=0.88,
-                  area="海淀区", recommended_hours="半天",
-                  ticket_price=30, tags=["园林", "湖景"]),
-        ScoredPOI(name="长城", category="attraction", score=0.92,
-                  area="延庆区", recommended_hours="半天",
-                  ticket_price=40, tags=["历史", "登山"]),
-        ScoredPOI(name="南锣鼓巷", category="attraction", score=0.75,
-                  area="东城区", recommended_hours="2小时",
-                  ticket_price=0, tags=["胡同", "美食", "文艺"]),
-        ScoredPOI(name="798艺术区", category="attraction", score=0.80,
-                  area="朝阳区", recommended_hours="2-3小时",
-                  ticket_price=0, tags=["艺术", "拍照"]),
-        ScoredPOI(name="鸟巢", category="attraction", score=0.82,
-                  area="朝阳区", recommended_hours="2小时",
-                  ticket_price=50, tags=["建筑", "奥运"]),
-        ScoredPOI(name="雍和宫", category="attraction", score=0.78,
-                  area="东城区", recommended_hours="1-2小时",
-                  ticket_price=25, tags=["宗教", "历史"]),
+        ScoredPOI(
+            name="故宫",
+            category="attraction",
+            score=0.95,
+            area="东城区",
+            recommended_hours="半天",
+            ticket_price=60,
+            tags=["历史", "文化", "皇家"],
+        ),
+        ScoredPOI(
+            name="天坛",
+            category="attraction",
+            score=0.90,
+            area="东城区",
+            recommended_hours="2-3小时",
+            ticket_price=34,
+            tags=["历史", "文化"],
+        ),
+        ScoredPOI(
+            name="颐和园",
+            category="attraction",
+            score=0.88,
+            area="海淀区",
+            recommended_hours="半天",
+            ticket_price=30,
+            tags=["园林", "湖景"],
+        ),
+        ScoredPOI(
+            name="长城",
+            category="attraction",
+            score=0.92,
+            area="延庆区",
+            recommended_hours="半天",
+            ticket_price=40,
+            tags=["历史", "登山"],
+        ),
+        ScoredPOI(
+            name="南锣鼓巷",
+            category="attraction",
+            score=0.75,
+            area="东城区",
+            recommended_hours="2小时",
+            ticket_price=0,
+            tags=["胡同", "美食", "文艺"],
+        ),
+        ScoredPOI(
+            name="798艺术区",
+            category="attraction",
+            score=0.80,
+            area="朝阳区",
+            recommended_hours="2-3小时",
+            ticket_price=0,
+            tags=["艺术", "拍照"],
+        ),
+        ScoredPOI(
+            name="鸟巢",
+            category="attraction",
+            score=0.82,
+            area="朝阳区",
+            recommended_hours="2小时",
+            ticket_price=50,
+            tags=["建筑", "奥运"],
+        ),
+        ScoredPOI(
+            name="雍和宫",
+            category="attraction",
+            score=0.78,
+            area="东城区",
+            recommended_hours="1-2小时",
+            ticket_price=25,
+            tags=["宗教", "历史"],
+        ),
     ]
     mock_pois = AsyncMock(return_value=pois)
-    mock_weather = AsyncMock(return_value=[
-        WeatherDay(date="2026-06-01", condition="晴", temp_high=30, temp_low=20, precipitation_chance=0),
-        WeatherDay(date="2026-06-02", condition="多云", temp_high=28, temp_low=21, precipitation_chance=10),
-        WeatherDay(date="2026-06-03", condition="晴", temp_high=31, temp_low=22, precipitation_chance=0),
-    ])
+    mock_weather = AsyncMock(
+        return_value=[
+            WeatherDay(
+                date="2026-06-01", condition="晴", temp_high=30, temp_low=20, precipitation_chance=0
+            ),
+            WeatherDay(
+                date="2026-06-02",
+                condition="多云",
+                temp_high=28,
+                temp_low=21,
+                precipitation_chance=10,
+            ),
+            WeatherDay(
+                date="2026-06-03", condition="晴", temp_high=31, temp_low=22, precipitation_chance=0
+            ),
+        ]
+    )
 
     rec = await _run_scenario(
         db,
@@ -164,6 +219,7 @@ async def test_perf_builtin_beijing_3days(db):
 # scenario 2 — fallback on slow POI
 # --------------------------------------------------------------------------- #
 
+
 @pytest.mark.performance
 @pytest.mark.asyncio
 async def test_perf_fallback_slow_poi(db):
@@ -171,6 +227,7 @@ async def test_perf_fallback_slow_poi(db):
 
     async def _slow_pois(*a, **k):
         await asyncio.sleep(10)  # will trip the 3s timeout
+
     mock_pois = AsyncMock(side_effect=_slow_pois)
     mock_weather = AsyncMock(return_value=[])
 
@@ -191,6 +248,7 @@ async def test_perf_fallback_slow_poi(db):
 # scenario 3 — repair cost
 # --------------------------------------------------------------------------- #
 
+
 @pytest.mark.performance
 @pytest.mark.asyncio
 async def test_perf_repair_cost(db):
@@ -209,15 +267,36 @@ async def test_perf_repair_cost(db):
         interests=["历史"],
     )
     pois = [
-        ScoredPOI(name="外滩", category="attraction", score=0.9,
-                  area="外滩", recommended_hours="2小时", ticket_price=0,
-                  tags=["观光"], location=Location(lat=31.24, lng=121.49)),
-        ScoredPOI(name="豫园", category="attraction", score=0.85,
-                  area="城隍庙", recommended_hours="2小时", ticket_price=40,
-                  tags=["历史"], location=Location(lat=31.23, lng=121.49)),
-        ScoredPOI(name="上海博物馆", category="attraction", score=0.92,
-                  area="人民广场", recommended_hours="2-3小时", ticket_price=0,
-                  tags=["历史", "文化"], location=Location(lat=31.23, lng=121.47)),
+        ScoredPOI(
+            name="外滩",
+            category="attraction",
+            score=0.9,
+            area="外滩",
+            recommended_hours="2小时",
+            ticket_price=0,
+            tags=["观光"],
+            location=Location(lat=31.24, lng=121.49),
+        ),
+        ScoredPOI(
+            name="豫园",
+            category="attraction",
+            score=0.85,
+            area="城隍庙",
+            recommended_hours="2小时",
+            ticket_price=40,
+            tags=["历史"],
+            location=Location(lat=31.23, lng=121.49),
+        ),
+        ScoredPOI(
+            name="上海博物馆",
+            category="attraction",
+            score=0.92,
+            area="人民广场",
+            recommended_hours="2-3小时",
+            ticket_price=0,
+            tags=["历史", "文化"],
+            location=Location(lat=31.23, lng=121.47),
+        ),
     ]
 
     strategy = build_strategy(pois, profile)
@@ -226,13 +305,19 @@ async def test_perf_repair_cost(db):
         day_number=1,
         activities=[
             Activity(
-                poi_name="外滩", category="attraction",
-                start_time="09:00", end_time="11:00", duration_min=120,
+                poi_name="外滩",
+                category="attraction",
+                start_time="09:00",
+                end_time="11:00",
+                duration_min=120,
                 ticket_price=0,
             ),
             Activity(
-                poi_name="豫园", category="attraction",
-                start_time="10:00", end_time="12:00", duration_min=120,
+                poi_name="豫园",
+                category="attraction",
+                start_time="10:00",
+                end_time="12:00",
+                duration_min=120,
                 ticket_price=40,
             ),
         ],
@@ -245,7 +330,11 @@ async def test_perf_repair_cost(db):
 
     t0 = time.perf_counter()
     result = run_repair_loop(
-        itinerary, profile, strategy.must_see, pois, max_iterations=5,
+        itinerary,
+        profile,
+        strategy.must_see,
+        pois,
+        max_iterations=5,
     )
     repair_s = round(time.perf_counter() - t0, 3)
 
@@ -266,30 +355,65 @@ async def test_perf_repair_cost(db):
 # scenario 4 — full-job event sequence
 # --------------------------------------------------------------------------- #
 
+
 @pytest.mark.performance
 @pytest.mark.asyncio
 async def test_perf_full_job_event_sequence(db):
     """Full pipeline event order and stage timing (mocked LLM/API)."""
 
     pois = [
-        ScoredPOI(name="故宫", category="attraction", score=0.95,
-                  area="东城区", recommended_hours="半天",
-                  ticket_price=60, tags=["历史", "文化"]),
-        ScoredPOI(name="天坛", category="attraction", score=0.90,
-                  area="东城区", recommended_hours="2-3小时",
-                  ticket_price=34, tags=["历史"]),
-        ScoredPOI(name="全聚德", category="restaurant", score=0.80,
-                  area="前门", recommended_hours="1.5小时",
-                  ticket_price=0, tags=["烤鸭"]),
-        ScoredPOI(name="798艺术区", category="attraction", score=0.80,
-                  area="朝阳区", recommended_hours="2-3小时",
-                  ticket_price=0, tags=["艺术", "拍照"]),
+        ScoredPOI(
+            name="故宫",
+            category="attraction",
+            score=0.95,
+            area="东城区",
+            recommended_hours="半天",
+            ticket_price=60,
+            tags=["历史", "文化"],
+        ),
+        ScoredPOI(
+            name="天坛",
+            category="attraction",
+            score=0.90,
+            area="东城区",
+            recommended_hours="2-3小时",
+            ticket_price=34,
+            tags=["历史"],
+        ),
+        ScoredPOI(
+            name="全聚德",
+            category="restaurant",
+            score=0.80,
+            area="前门",
+            recommended_hours="1.5小时",
+            ticket_price=0,
+            tags=["烤鸭"],
+        ),
+        ScoredPOI(
+            name="798艺术区",
+            category="attraction",
+            score=0.80,
+            area="朝阳区",
+            recommended_hours="2-3小时",
+            ticket_price=0,
+            tags=["艺术", "拍照"],
+        ),
     ]
     mock_pois = AsyncMock(return_value=pois)
-    mock_weather = AsyncMock(return_value=[
-        WeatherDay(date="2026-06-01", condition="晴", temp_high=30, temp_low=20, precipitation_chance=0),
-        WeatherDay(date="2026-06-02", condition="多云", temp_high=28, temp_low=21, precipitation_chance=10),
-    ])
+    mock_weather = AsyncMock(
+        return_value=[
+            WeatherDay(
+                date="2026-06-01", condition="晴", temp_high=30, temp_low=20, precipitation_chance=0
+            ),
+            WeatherDay(
+                date="2026-06-02",
+                condition="多云",
+                temp_high=28,
+                temp_low=21,
+                precipitation_chance=10,
+            ),
+        ]
+    )
 
     rec = await _run_scenario(
         db,

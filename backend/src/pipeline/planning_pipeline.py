@@ -16,15 +16,6 @@ from planner.core import build_strategy, build_schedule
 
 logger = logging.getLogger(__name__)
 
-# Global graph reference — kept for fallback if needed
-_graph: Any = None
-
-
-def set_graph(graph: Any) -> None:
-    """Set the shared compiled graph (called once at app startup)."""
-    global _graph
-    _graph = graph
-
 
 class PlanningPipeline:
     """
@@ -54,51 +45,11 @@ class PlanningPipeline:
             return
 
         # ------------------------------------------------------------------ #
-        # 1. Intent recognition
+        # 1. Profile from conversation state (intent already applied in WS)
         # ------------------------------------------------------------------ #
-        try:
-            from agents.intent_recognition import IntentRecognitionAgent
-            from schemas import UserProfile
+        from core.conversation_turn import user_profile_from_job
 
-            # Load accumulated conversation state (P1 — multi-turn memory)
-            fb = job.user_feedback or {}
-            saved_profile = fb.get("profile", {})
-            saved_messages = fb.get("recent_messages", [])
-
-            intent_agent = IntentRecognitionAgent()
-            intent_result = await intent_agent.recognize(
-                user_input=job.user_input,
-                messages=saved_messages
-                + [{"role": "user", "content": job.user_input}],
-                user_profile=UserProfile(**{k: v for k, v in saved_profile.items() if v})
-                if any(saved_profile.values())
-                else None,
-            )
-            entities = intent_result.user_entities
-            # Merge: accumulated profile as base, current entities as override
-            def _pick(key, default=None):
-                return entities.get(key) or saved_profile.get(key) or default
-
-            profile = UserProfile(
-                destination=_pick("destination"),
-                travel_days=_pick("travel_days"),
-                travel_dates=_pick("travel_dates"),
-                travelers_count=_pick("travelers_count", 1),
-                travelers_type=_pick("travelers_type"),
-                budget_range=_pick("budget_range"),
-                food_preferences=_pick("food_preferences") or [],
-                interests=_pick("interests") or [],
-                pace=_pick("pace") or "moderate",
-                accommodation_preference=_pick("accommodation_preference"),
-                special_requests=_pick("special_requests") or [],
-            )
-        except asyncio.CancelledError:
-            raise
-        except Exception as e:
-            logger.exception(f"Intent recognition failed for job {job.id}: {e}")
-            await self._release_job(job, "failed", f"Intent recognition failed: {e}")
-            return
-
+        profile = user_profile_from_job(job)
         if not profile.destination:
             await self._release_job(job, "failed", "无法识别目的地")
             return
@@ -106,64 +57,104 @@ class PlanningPipeline:
         if await self._check_cancelled(job):
             return
 
-        # ------------------------------------------------------------------ #
-        # 2. Data collection (POI + weather) with timeout + fallback
-        # ------------------------------------------------------------------ #
-        from agents.realtime_query import RealtimeQueryAgent
-        from agents.itinerary_planner import ItineraryPlannerAgent
-        from schemas import WeatherDay
+        from core.cache_keys import itinerary_draft_key
+        from core.cache_policy import jitter_ttl
+        from core.redis_client import redis_client
+        from core.settings import settings
+        from planner.core.models import Strategy
+        from schemas import DayPlan
 
-        query_agent = RealtimeQueryAgent()
-        fallback_used = False
-
-        # POI search with 3s timeout
+        draft_key = itinerary_draft_key(profile)
+        cached_draft: dict | None = None
         try:
-            pois = await self._safe_wait_for(
-                query_agent.query_pois(
-                    profile.destination,
-                    profile.interests + profile.food_preferences,
-                ),
-                timeout=3.0,
-            )
-        except asyncio.TimeoutError:
-            logger.warning(
-                "POI search timeout for %s, using fallback", profile.destination
-            )
-            pois = list(
-                ItineraryPlannerAgent.CITY_DEFAULTS.get(
-                    profile.destination,
-                    ItineraryPlannerAgent.CITY_DEFAULTS.get("上海", []),
-                )
-            )
-            fallback_used = True
-
-        # Weather query with 3s timeout
-        weather: list[WeatherDay] = []
-        try:
-            from graph.nodes import _split_dates
-            start, end = _split_dates(profile.travel_dates or "")
-            if start:
-                weather = await self._safe_wait_for(
-                    query_agent.query_weather(profile.destination, start, end),
-                    timeout=3.0,
-                )
-        except asyncio.TimeoutError:
-            logger.warning("Weather query timeout for %s", profile.destination)
+            cached_draft = await redis_client.get_json(draft_key)
         except Exception:
             pass
 
-        # ------------------------------------------------------------------ #
-        # 3. Planning Core: heuristic strategy + algorithm scheduler
-        # ------------------------------------------------------------------ #
-        strategy = build_strategy(pois, profile)
-        itinerary_draft = build_schedule(strategy, pois, weather, profile)
+        if cached_draft and isinstance(cached_draft.get("itinerary_draft"), list):
+            logger.info("Itinerary draft cache hit for %s", profile.destination)
+            strategy = Strategy(**cached_draft["strategy"])
+            itinerary_draft = [DayPlan(**d) for d in cached_draft["itinerary_draft"]]
+            fallback_used = bool(cached_draft.get("fallback_used", False))
+            draft_payload = cached_draft
+            pois: list = []
+            if profile.destination:
+                from agents.realtime_query import RealtimeQueryAgent
+
+                try:
+                    pois = await self._safe_wait_for(
+                        RealtimeQueryAgent().query_pois(
+                            profile.destination,
+                            profile.interests + profile.food_preferences,
+                        ),
+                        timeout=3.0,
+                    )
+                except Exception:
+                    pois = []
+        else:
+            # ------------------------------------------------------------------ #
+            # 2. Data collection (POI + weather) with timeout + fallback
+            # ------------------------------------------------------------------ #
+            from agents.realtime_query import RealtimeQueryAgent
+            from schemas import WeatherDay
+
+            query_agent = RealtimeQueryAgent()
+            fallback_used = False
+
+            # POI search with 3s timeout
+            try:
+                pois = await self._safe_wait_for(
+                    query_agent.query_pois(
+                        profile.destination,
+                        profile.interests + profile.food_preferences,
+                    ),
+                    timeout=3.0,
+                )
+            except asyncio.TimeoutError:
+                logger.warning("POI search timeout for %s, using fallback", profile.destination)
+                from skills.city_data import CITY_DEFAULTS
+
+                pois = list(CITY_DEFAULTS.get(profile.destination, []))
+                fallback_used = True
+
+            if not fallback_used:
+                fallback_used = not pois or all(getattr(p, "is_fallback", True) for p in pois)
+
+            # Weather query with 3s timeout
+            weather: list[WeatherDay] = []
+            try:
+                start, end = _split_dates(profile.travel_dates or "")
+                if start:
+                    weather = await self._safe_wait_for(
+                        query_agent.query_weather(profile.destination, start, end),
+                        timeout=3.0,
+                    )
+            except asyncio.TimeoutError:
+                logger.warning("Weather query timeout for %s", profile.destination)
+            except Exception as exc:
+                logger.warning("Weather query failed for %s: %s", profile.destination, exc)
+
+            # ------------------------------------------------------------------ #
+            # 3. Planning Core: heuristic strategy + algorithm scheduler
+            # ------------------------------------------------------------------ #
+            strategy = build_strategy(pois, profile)
+            itinerary_draft = build_schedule(strategy, pois, weather, profile)
+
+            draft_payload = {
+                "itinerary_draft": [day.model_dump() for day in itinerary_draft],
+                "strategy": strategy.model_dump(),
+                "fallback_used": fallback_used,
+            }
+            try:
+                await redis_client.set_json(
+                    draft_key,
+                    draft_payload,
+                    ttl=jitter_ttl(settings.cache_ttl_itinerary),
+                )
+            except Exception:
+                pass
 
         # Stream draft immediately (TTFI)
-        draft_payload = {
-            "itinerary_draft": [day.model_dump() for day in itinerary_draft],
-            "strategy": strategy.model_dump(),
-            "fallback_used": fallback_used,
-        }
         if not await self._record_stage(job, "draft_ready", draft_payload):
             logger.warning("Job %s lost ownership before draft_ready", job.id)
             return
@@ -180,6 +171,7 @@ class PlanningPipeline:
         report = validate_itinerary(itinerary_draft, profile, strategy.must_see)
         repair_result = None
         needs_human = False
+        working_itinerary = itinerary_draft
 
         if report.hard_violations:
             logger.warning(
@@ -188,7 +180,10 @@ class PlanningPipeline:
                 len(report.hard_violations),
             )
             repair_result = run_repair_loop(
-                itinerary_draft, profile, strategy.must_see, pois,
+                itinerary_draft,
+                profile,
+                strategy.must_see,
+                pois,
             )
             logger.info(
                 "Repair loop: success=%s applied=%d rejected=%d needs_human=%s",
@@ -198,15 +193,15 @@ class PlanningPipeline:
                 repair_result.needs_human,
             )
 
-        if repair_result and repair_result.success:
-            # Re-validate to get the clean report
-            report = validate_itinerary(itinerary_draft, profile, strategy.must_see)
+        if repair_result and repair_result.success and repair_result.itinerary:
+            working_itinerary = repair_result.itinerary
+            report = validate_itinerary(working_itinerary, profile, strategy.must_see)
         elif repair_result and repair_result.needs_human:
             needs_human = True
 
         # Stream final itinerary (with validation metadata)
         final_payload = {
-            "itinerary_final": [day.model_dump() for day in itinerary_draft],
+            "itinerary_final": [day.model_dump() for day in working_itinerary],
             "hard_violations": [v.model_dump() for v in report.hard_violations],
             "soft_warnings": [w.model_dump() for w in report.soft_warnings],
         }
@@ -218,17 +213,11 @@ class PlanningPipeline:
             return
 
         # ------------------------------------------------------------------ #
-        # 5. Writer (Phase 2C — enrich prose, never mutate facts)
+        # 5. Writer (Phase 2C — LLM-enrich prose, per-activity validation)
         # ------------------------------------------------------------------ #
-        from planner.core import enrich, verify_checksum
+        from planner.core import enrich
 
-        checksum_before = verify_checksum(itinerary_draft, itinerary_draft)  # always True
-        enriched_itinerary, proposal_text = enrich(itinerary_draft, profile)
-
-        # If checksum fails, writer already returned original; log and proceed
-        if not verify_checksum(itinerary_draft, enriched_itinerary):
-            logger.error("Writer mutated protected facts — falling back to original")
-            enriched_itinerary = itinerary_draft
+        enriched_itinerary, proposal_text = await enrich(working_itinerary, profile)
 
         writing_payload = {
             "proposal_text_preview": proposal_text,
@@ -253,6 +242,10 @@ class PlanningPipeline:
                 "strategy": strategy.model_dump(),
                 "warnings": [w.message for w in report.soft_warnings],
                 "needs_human": needs_human,
+                "violations": [v.model_dump() for v in report.hard_violations],
+                "suggested_fixes": [
+                    v.suggested_fix for v in report.hard_violations if v.suggested_fix
+                ],
             },
         )
 
@@ -269,7 +262,7 @@ class PlanningPipeline:
         explicit task and awaiting it after cancellation, we ensure
         all callbacks are processed before proceeding.
         """
-        task = asyncio.ensure_future(aw)
+        task = asyncio.create_task(aw)
         try:
             return await asyncio.wait_for(task, timeout=timeout)
         except asyncio.TimeoutError:
@@ -361,3 +354,20 @@ class PlanningPipeline:
         return True
 
 
+# --------------------------------------------------------------------------- #
+# Helpers (moved from graph/nodes.py)
+# --------------------------------------------------------------------------- #
+
+
+def _split_dates(dates: str) -> tuple[str, str]:
+    """Split date range string into start and end dates."""
+    if not dates:
+        return "", ""
+
+    for sep in [" to ", " ~ ", " - ", " 到 ", "至", "—"]:
+        if sep in dates:
+            parts = dates.split(sep, 1)
+            return parts[0].strip(), parts[1].strip()
+
+    # Single date
+    return dates.strip(), dates.strip()
