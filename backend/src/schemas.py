@@ -12,11 +12,24 @@ class UserProfile(BaseModel):
     travelers_type: Optional[str] = None  # 独自/情侣/亲子/朋友/父母
     budget_range: Optional[float] = None
     food_preferences: list[str] = Field(default_factory=list)
+    food_taboos: list[str] = Field(default_factory=list)  # 忌口
     interests: list[str] = Field(default_factory=list)
     pace: str = "moderate"  # relaxed / moderate / intensive
     accommodation_preference: Optional[str] = None
     special_requests: list[str] = Field(default_factory=list)
     preference_history: list[dict] = Field(default_factory=list)
+    # 人群
+    has_elderly: bool = False
+    has_children: bool = False
+    has_wheelchair: bool = False
+    # 体力约束
+    max_walk_minutes: int = 180
+    max_transit_minutes: int = 120
+    # 偏好
+    avoid_crowds: bool = False
+    prefer_morning: bool = False
+    # 出行
+    transport_mode: str = "any"  # self_drive / public / mixed / any
 
 
 # ===== Location =====
@@ -58,6 +71,8 @@ class DayPlan(BaseModel):
     total_cost: float = 0
     total_walking_steps: int = 0
     total_transit_time_min: int = 0
+    has_prefilled: bool = False
+    budget_note: str = ""
 
 
 class ItineraryRecord(BaseModel):

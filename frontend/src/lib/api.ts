@@ -1,6 +1,7 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
 const TOKEN_KEY = "ta_access_token";
+const REFRESH_KEY = "ta_refresh_token";
 const FINGERPRINT_KEY = "ta_device_fp";
 
 export function getApiBaseUrl(): string {
@@ -22,6 +23,23 @@ export function getStoredAccessToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
 }
 
+export function getStoredRefreshToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem(REFRESH_KEY);
+}
+
+export function setStoredTokens(accessToken: string, refreshToken: string): void {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(TOKEN_KEY, accessToken);
+  localStorage.setItem(REFRESH_KEY, refreshToken);
+}
+
+export function clearStoredTokens(): void {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(REFRESH_KEY);
+}
+
 export function authHeaders(token: string, fingerprint: string): HeadersInit {
   return {
     Authorization: `Bearer ${token}`,
@@ -30,14 +48,23 @@ export function authHeaders(token: string, fingerprint: string): HeadersInit {
   };
 }
 
+export interface AuthTokenPayload {
+  access_token: string;
+  refresh_token?: string;
+  token_type: string;
+  expires_in?: number;
+  role: string;
+}
+
 export async function ensureGuestSession(): Promise<{
   token: string;
   fingerprint: string;
+  role: string;
 }> {
   const fingerprint = getDeviceFingerprint();
   const stored = getStoredAccessToken();
   if (stored) {
-    return { token: stored, fingerprint };
+    return { token: stored, fingerprint, role: "guest" };
   }
 
   const res = await fetch(`${API_URL}/api/v1/auth/guest`, {
@@ -46,15 +73,40 @@ export async function ensureGuestSession(): Promise<{
     body: JSON.stringify({ device_fingerprint: fingerprint }),
   });
   if (!res.ok) {
-    throw new Error(`Guest auth failed: ${res.status}`);
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || `Guest auth failed: ${res.status}`);
   }
   const json = await res.json();
-  const token = json.data?.access_token as string;
-  if (!token) {
+  const data = json.data as AuthTokenPayload | undefined;
+  if (!data?.access_token) {
     throw new Error("Guest auth response missing access_token");
   }
-  localStorage.setItem(TOKEN_KEY, token);
-  return { token, fingerprint };
+  localStorage.setItem(TOKEN_KEY, data.access_token);
+  return { token: data.access_token, fingerprint, role: data.role || "guest" };
+}
+
+export async function loginUser(credentials: {
+  email: string;
+  password: string;
+}): Promise<AuthTokenPayload> {
+  const res = await fetch(`${API_URL}/api/v1/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(credentials),
+  });
+
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(json.message || `Login failed: ${res.status}`);
+  }
+
+  const data = json.data as AuthTokenPayload | undefined;
+  if (!data?.access_token) {
+    throw new Error("Login response missing access_token");
+  }
+
+  setStoredTokens(data.access_token, data.refresh_token || "");
+  return data;
 }
 
 export async function createConversation(

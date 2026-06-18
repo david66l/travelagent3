@@ -19,6 +19,7 @@ from core.redis_client import RedisClient, redis_client as global_redis
 from core.security import (
     decode_token,
     is_token_blacklisted,
+    is_user_banned,
 )
 from models import User
 from repositories.v1 import (
@@ -81,24 +82,27 @@ async def _resolve_token_user(
 ) -> User:
     """Decode a JWT, validate it, and load the corresponding user."""
     if await is_token_blacklisted(token):
-        raise UnauthorizedException("Token has been revoked")
+        raise UnauthorizedException("Token has been revoked", code="TOKEN_REVOKED")
 
     payload = decode_token(token)
     user_id = payload.get("sub")
     if not user_id:
-        raise UnauthorizedException("Malformed token")
+        raise UnauthorizedException("Malformed token", code="TOKEN_INVALID")
+
+    if await is_user_banned(user_id):
+        raise UnauthorizedException("Token has been revoked", code="TOKEN_REVOKED")
 
     repo = UserRepository(db)
     user = await repo.get_by_id(user_id)
     if user is None:
-        raise UnauthorizedException("User not found")
+        raise UnauthorizedException("User not found", code="TOKEN_INVALID")
 
     # Guest tokens are bound to a device fingerprint.
     if payload.get("type") == "guest" or payload.get("role") == "guest":
         expected = payload.get("device_fingerprint")
         actual = request.headers.get("X-Device-Fingerprint")
         if expected and expected != actual:
-            raise ForbiddenException("Device mismatch")
+            raise ForbiddenException("Device mismatch", code="DEVICE_MISMATCH")
 
     return user
 
@@ -139,7 +143,7 @@ async def get_optional_user(
 def require_user(user: User = Depends(get_current_user)) -> User:
     """Require an authenticated non-guest user."""
     if user.role == "guest":
-        raise ForbiddenException("Guest access denied")
+        raise ForbiddenException("请先登录", code="AUTH_MISSING")
     return user
 
 

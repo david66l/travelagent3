@@ -219,7 +219,7 @@ BACKEND_PID=$!
 # 等待后端健康检查
 log_step "等待后端启动..."
 for i in $(seq 1 20); do
-    if curl -s http://localhost:8000/api/health >/dev/null 2>&1; then
+    if curl -s http://127.0.0.1:8000/api/health >/dev/null 2>&1; then
         log_info "后端启动成功 (PID: $BACKEND_PID)"
         break
     fi
@@ -234,12 +234,12 @@ log_step "启动 Celery worker + beat..."
 
 cd "$PROJECT_ROOT/backend/src"
 
-python3 -m celery -A worker.memory_tasks.celery_app worker \
-    -Q default,memory -l info \
+python3 -m celery -A core.celery_app worker \
+    -Q default,memory,planning -l info \
     > "$PROJECT_ROOT/logs/celery_worker.log" 2>&1 &
 CELERY_WORKER_PID=$!
 
-python3 -m celery -A worker.memory_tasks.celery_app beat \
+python3 -m celery -A core.celery_app beat \
     -l info \
     > "$PROJECT_ROOT/logs/celery_beat.log" 2>&1 &
 CELERY_BEAT_PID=$!

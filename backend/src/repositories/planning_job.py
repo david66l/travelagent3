@@ -383,7 +383,36 @@ class PlanningJobRepository:
     async def is_cancelled(self, job_id: str) -> bool:
         result = await self.db.execute(select(PlanningJob.status).where(PlanningJob.id == job_id))
         status = result.scalar_one_or_none()
-        return status in ("cancelling", "cancelled")
+        return status in ("cancelling", "cancelled", "force_cancelled")
+
+    async def count_completed_for_user(self, user_uuid: UUID) -> int:
+        result = await self.db.execute(
+            select(func.count())
+            .select_from(PlanningJob)
+            .where(
+                PlanningJob.user_uuid == user_uuid,
+                PlanningJob.status == "completed",
+            )
+        )
+        return int(result.scalar_one() or 0)
+
+    async def force_cancel(self, job_id: str) -> bool:
+        """Mark a stuck cancelling job as force_cancelled (PRD §4.7)."""
+        result = await self.db.execute(
+            update(PlanningJob)
+            .where(
+                PlanningJob.id == job_id,
+                PlanningJob.status == "cancelling",
+            )
+            .values(
+                status="force_cancelled",
+                locked_by=None,
+                lock_expires_at=None,
+                completed_at=func.now(),
+                updated_at=func.now(),
+            )
+        )
+        return result.rowcount > 0
 
     # ------------------------------------------------------------------ #
     # Stage updates
@@ -422,6 +451,7 @@ class PlanningJobRepository:
                 values["itinerary_final"] = payload.get("itinerary_final", payload)
             elif stage == "completed":
                 values["proposal_text"] = payload.get("proposal_text")
+                values["result"] = payload
 
         stmt = update(PlanningJob).where(PlanningJob.id == job_id)
         if worker_id is not None:

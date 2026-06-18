@@ -8,6 +8,7 @@ endpoint bodies without going through the ASGI transport layer.
 
 import json
 from uuid import uuid4
+from unittest.mock import patch
 
 import pytest
 
@@ -286,7 +287,9 @@ class TestPlanningJobRoutes:
             conversation_id=conv.id,
             input_requirements={"destination": "杭州"},
         )
-        response = await create_planning_job(body, user, service)
+        with patch("api.v1.planning_jobs.enqueue_planning_job") as enqueue:
+            response = await create_planning_job(body, user, service)
+            enqueue.assert_called_once()
         assert response.status_code == 201
         assert _body(response)["data"]["conversation_id"] == str(conv.id)
 

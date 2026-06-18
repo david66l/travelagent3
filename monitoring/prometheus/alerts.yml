@@ -1,0 +1,47 @@
+groups:
+  - name: travel-agent
+    rules:
+      - alert: HighErrorRate
+        expr: |
+          sum(rate(http_requests_total{status_code=~"5.."}[5m])) /
+          sum(rate(http_requests_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Backend 5xx rate > 5%"
+      - alert: HighP99Latency
+        expr: histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (le)) > 2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "HTTP P99 latency > 2s"
+      - alert: PlanningJobFailures
+        expr: increase(planning_jobs_failed_total[15m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Planning job failures spiking"
+      - alert: CostCircuitBreakerActive
+        expr: cost_circuit_breaker_active == 1
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Global cost circuit breaker is active — LLM degraded to small model"
+      - alert: DailyTokenBudgetHigh
+        expr: cost_daily_tokens_total > 40000000
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Daily LLM token consumption approaching global budget"
+      - alert: DailyExternalApiCostHigh
+        expr: cost_daily_external_api_cny > 800
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Daily external API cost estimate exceeds 800 CNY"

@@ -1,0 +1,19 @@
+# FastAPI Backend Service (M5)
+# Internal service accessed by Gateway and Celery workers.
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: travel-agent
+  labels:
+    app: backend
+    tier: api
+spec:
+  type: ClusterIP
+  selector:
+    app: backend
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+      protocol: TCP

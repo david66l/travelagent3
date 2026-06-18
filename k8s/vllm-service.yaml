@@ -1,0 +1,20 @@
+# vLLM Service (M4)
+# Exposes the OpenAI-compatible API to the backend and Prometheus scraper.
+# Backend uses http://vllm:8000/v1 (set in ConfigMap VLLM_BASE_URL).
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm
+  namespace: travel-agent
+  labels:
+    app: vllm
+    tier: model
+spec:
+  type: ClusterIP
+  selector:
+    app: vllm
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+      protocol: TCP

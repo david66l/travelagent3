@@ -58,15 +58,15 @@ class ConflictException(AppException):
 class UnauthorizedException(AppException):
     """Authentication required or invalid credentials."""
 
-    def __init__(self, message: str = "Unauthorized"):
-        super().__init__(401, "UNAUTHORIZED", message)
+    def __init__(self, message: str = "Unauthorized", code: str = "UNAUTHORIZED"):
+        super().__init__(401, code, message)
 
 
 class ForbiddenException(AppException):
     """Permission denied."""
 
-    def __init__(self, message: str = "Forbidden"):
-        super().__init__(403, "FORBIDDEN", message)
+    def __init__(self, message: str = "Forbidden", code: str = "FORBIDDEN"):
+        super().__init__(403, code, message)
 
 
 class RateLimitException(AppException):

@@ -51,7 +51,7 @@ class TestGuestAuth:
             headers={"X-Device-Fingerprint": "other-device", "Authorization": f"Bearer {token}"},
         )
         assert me_response.status_code == 403
-        assert me_response.json()["error"]["code"] == "FORBIDDEN"
+        assert me_response.json()["error"]["code"] == "DEVICE_MISMATCH"
 
 
 class TestRegisterLogin:
@@ -124,7 +124,8 @@ class TestRefresh:
         data = response.json()["data"]
         assert data["role"] == "user"
         assert "access_token" in data
-        assert data.get("refresh_token") is None
+        assert data.get("refresh_token") is not None
+        assert data["refresh_token"] != refresh_token
 
 
 class TestUpgrade:
@@ -182,4 +183,4 @@ class TestLogout:
             headers={"Authorization": f"Bearer {access_token}"},
         )
         assert me_response.status_code == 401
-        assert me_response.json()["error"]["code"] == "UNAUTHORIZED"
+        assert me_response.json()["error"]["code"] == "TOKEN_REVOKED"

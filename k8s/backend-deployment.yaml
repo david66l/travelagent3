@@ -1,0 +1,145 @@
+# FastAPI Backend Deployment (M5)
+# Business API + SSE streaming + async job submission.
+# Resources follow PRD §12.2: replicas=3, CPU req 1 / lim 3, mem req 1Gi / lim 2Gi
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: travel-agent
+  labels:
+    app: backend
+    tier: api
+    version: v1
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+        tier: api
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/api/v1/metrics"
+    spec:
+      initContainers:
+        # Run Alembic migrations before starting app pods.
+        # For zero-downtime deploys, use a Job or Helm pre-upgrade hook instead.
+        - name: migrations
+          image: ghcr.io/travelagent/travel-agent-backend:latest
+          imagePullPolicy: Always
+          command: ["alembic", "upgrade", "head"]
+          envFrom:
+            - configMapRef:
+                name: travel-agent-config
+            - secretRef:
+                name: travel-agent-secrets
+          env:
+            - name: PYTHONPATH
+              value: "/app/src"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+      containers:
+        - name: backend
+          image: ghcr.io/travelagent/travel-agent-backend:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: travel-agent-config
+            - secretRef:
+                name: travel-agent-secrets
+          env:
+            - name: PYTHONPATH
+              value: "/app/src"
+            - name: PROMETHEUS_MULTIPROC_DIR
+              value: "/tmp/prometheus"
+          resources:
+            requests:
+              cpu: "1"
+              memory: 1Gi
+            limits:
+              cpu: "3"
+              memory: 2Gi
+          readinessProbe:
+            httpGet:
+              path: /api/ready
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 24
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 15"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - backend
+                topologyKey: kubernetes.io/hostname
+            - weight: 80
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - backend
+                topologyKey: topology.kubernetes.io/zone
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      terminationGracePeriodSeconds: 60

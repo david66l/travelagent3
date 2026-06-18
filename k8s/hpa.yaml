@@ -1,0 +1,240 @@
+# Horizontal Pod Autoscalers (M5)
+# Configuration follows PRD §12.3.
+# For queue-length / GPU metrics you must install one of:
+#   - Prometheus Adapter (custom metrics from prometheus)
+#   - KEDA (ScaledObject with Redis list length / Prometheus triggers)
+# The manifests below include CPU-based fallbacks that work out of the box,
+# plus commented custom-metric blocks for production.
+# ---------------------------------------------------------------------------
+# Gateway HPA: CPU > 70%
+# ---------------------------------------------------------------------------
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: gateway-hpa
+  namespace: travel-agent
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: gateway
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 30
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 25
+          periodSeconds: 60
+---
+# ---------------------------------------------------------------------------
+# FastAPI Backend HPA: CPU > 70% (and optionally custom request-queue depth)
+# ---------------------------------------------------------------------------
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: backend-hpa
+  namespace: travel-agent
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: backend
+  minReplicas: 3
+  maxReplicas: 20
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    # Uncomment after installing Prometheus Adapter and exposing
+    # the custom metric "fastapi_request_queue_length" from backend.
+    # - type: Pods
+    #   pods:
+    #     metric:
+    #       name: fastapi_request_queue_length
+    #     target:
+    #       type: AverageValue
+    #       averageValue: "20"
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 30
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 25
+          periodSeconds: 60
+---
+# ---------------------------------------------------------------------------
+# Celery Planning Worker HPA: queue length > 50
+# Recommended: KEDA ScaledObject with Redis list length trigger.
+# Fallback below uses CPU scaling.
+# ---------------------------------------------------------------------------
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: celery-worker-planning-hpa
+  namespace: travel-agent
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: celery-worker-planning
+  minReplicas: 2
+  maxReplicas: 30
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 75
+    # Uncomment with Prometheus Adapter / custom-metrics-server:
+    # - type: External
+    #   external:
+    #     metric:
+    #       name: celery_queue_length
+    #       selector:
+    #         matchLabels:
+    #           queue: planning
+    #     target:
+    #       type: AverageValue
+    #       averageValue: "50"
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 30
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 25
+          periodSeconds: 60
+---
+# ---------------------------------------------------------------------------
+# Celery POI Worker HPA: queue length > 30
+# ---------------------------------------------------------------------------
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: celery-worker-poi-hpa
+  namespace: travel-agent
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: celery-worker-poi
+  minReplicas: 2
+  maxReplicas: 20
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 75
+    # Uncomment with Prometheus Adapter / custom-metrics-server:
+    # - type: External
+    #   external:
+    #     metric:
+    #       name: celery_queue_length
+    #       selector:
+    #         matchLabels:
+    #           queue: poi
+    #     target:
+    #       type: AverageValue
+    #       averageValue: "30"
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 30
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 25
+          periodSeconds: 60
+---
+# ---------------------------------------------------------------------------
+# vLLM HPA: GPU utilization > 80% / request queue length > 20
+# IMPORTANT: vLLM must NOT scale to 0 if you want immediate responses.
+# PRD §12.3 says minReplicas=1 for vLLM.
+# Scaling on GPU requires custom metrics (DCGM / Prometheus Adapter).
+# ---------------------------------------------------------------------------
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: vllm-hpa
+  namespace: travel-agent
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: vllm
+  minReplicas: 1
+  maxReplicas: 5
+  metrics:
+    # CPU fallback only works when vLLM is CPU-bound (e.g., prefill on small batch).
+    # Production should use DCGM metrics:
+    #   name: nvidia_gpu_utilization_gpu or vllm_gpu_utilization
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 80
+    # Uncomment after exposing vLLM metrics to Prometheus Adapter:
+    # - type: Pods
+    #   pods:
+    #     metric:
+    #       name: vllm_gpu_utilization
+    #     target:
+    #       type: AverageValue
+    #       averageValue: "80"
+    # - type: Pods
+    #   pods:
+    #     metric:
+    #       name: vllm_scheduler_running_sum_iteration_tokens
+    #     target:
+    #       type: AverageValue
+    #       averageValue: "20"
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 180
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 180

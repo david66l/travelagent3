@@ -139,6 +139,10 @@ export interface ChatState {
   currentStage: string | null;
   jobStatus: string | null;
 
+  // Streaming text state
+  streamingContent: string;
+  isStreaming: boolean;
+
   setSessionId: (id: string) => void;
   addMessage: (msg: Message) => void;
   setConnected: (v: boolean) => void;
@@ -168,6 +172,12 @@ export interface ChatState {
   setJobId: (id: string | null) => void;
   setCurrentStage: (stage: string | null) => void;
   setJobStatus: (status: string | null) => void;
+
+  // Streaming text setters
+  appendStreamingContent: (chunk: string) => void;
+  setStreamingContent: (content: string) => void;
+  startStreaming: () => void;
+  stopStreaming: () => void;
 
   clear: () => void;
 }
@@ -212,6 +222,9 @@ export const useChatStore = create<ChatState>()(
       jobId: null,
       currentStage: null,
       jobStatus: null,
+
+      streamingContent: "",
+      isStreaming: false,
 
       setSessionId: (id) => set({ sessionId: id }),
 
@@ -356,6 +369,14 @@ export const useChatStore = create<ChatState>()(
       setCurrentStage: (stage) => set({ currentStage: stage }),
       setJobStatus: (status) => set({ jobStatus: status }),
 
+      appendStreamingContent: (chunk) =>
+        set((state) => ({
+          streamingContent: state.streamingContent + chunk,
+        })),
+      setStreamingContent: (content) => set({ streamingContent: content }),
+      startStreaming: () => set({ isStreaming: true, streamingContent: "" }),
+      stopStreaming: () => set({ isStreaming: false }),
+
       // 保存当前对话快照
       saveChatSnapshot: () => {
         const state = get();
@@ -440,6 +461,8 @@ export const useChatStore = create<ChatState>()(
           jobId: null,
           currentStage: null,
           jobStatus: null,
+          streamingContent: "",
+          isStreaming: false,
         });
       },
     }),

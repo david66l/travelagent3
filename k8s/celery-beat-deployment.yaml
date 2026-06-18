@@ -1,0 +1,70 @@
+# Celery Beat Deployment (M5)
+# Periodic task scheduler: session archival, cache warming, dead-letter inspection.
+# Resources follow PRD §12.2: 1 replica, CPU 0.5–1, memory 512Mi–1Gi
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: celery-beat
+  namespace: travel-agent
+  labels:
+    app: celery-beat
+    tier: scheduler
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: celery-beat
+  template:
+    metadata:
+      labels:
+        app: celery-beat
+        tier: scheduler
+    spec:
+      containers:
+        - name: beat
+          image: ghcr.io/travelagent/travel-agent-backend:latest
+          imagePullPolicy: Always
+          command:
+            - celery
+            - -A
+            - core.celery_app
+            - beat
+            - -l
+            - info
+            - --scheduler
+            - celery.beat.PersistentScheduler
+          envFrom:
+            - configMapRef:
+                name: travel-agent-config
+            - secretRef:
+                name: travel-agent-secrets
+          env:
+            - name: PYTHONPATH
+              value: "/app/src"
+          resources:
+            requests:
+              cpu: 500m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          # Beat is a singleton; liveness restarts it if it hangs
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - "celery -A core.celery_app inspect ping --destination celery@$HOSTNAME"
+            initialDelaySeconds: 30
+            periodSeconds: 60
+            timeoutSeconds: 10
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+      terminationGracePeriodSeconds: 30

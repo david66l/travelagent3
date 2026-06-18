@@ -1,4 +1,5 @@
 import os
+import re
 import secrets
 import warnings
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -30,6 +31,8 @@ class Settings(BaseSettings):
     redis_db_cache: int = 0
     redis_db_queue: int = 1
     redis_db_state: int = 2
+    # Comma-separated Redis URLs for Redlock (multi-master); empty → state DB only
+    redis_redlock_urls: str = ""
 
     # LLM / vLLM
     openai_api_key: str = ""
@@ -38,10 +41,17 @@ class Settings(BaseSettings):
     llm_temperature: float = 0.7
     llm_max_tokens: int = 4096
     llm_timeout: int = 60
-    vllm_base_url: str = "http://localhost:8000/v1"
+    vllm_base_url: str = "http://vllm:8000/v1"
     vllm_api_key: str = "not-needed"
+    vllm_enabled: bool = False
+    vllm_max_retries: int = 2
     default_model: str = "travel-plan-v1"
     small_model: str = "travel-chat-v1"
+    repair_model: str = "travel-repair-v1"
+    # 本地 llama.cpp 推理（意图识别用小模型）
+    local_llm_url: str = "http://localhost:8081/v1"
+    local_llm_model: str = "qwen2.5-7b-instruct"
+    local_llm_enabled: bool = True
 
     # Search (Tavily - https://tavily.com, free 1000 calls/month)
     tavily_api_key: str = ""
@@ -80,6 +90,29 @@ class Settings(BaseSettings):
     rate_limit_guest_per_minute: int = 10
     rate_limit_max_concurrent_sse: int = 3
 
+    # Guest / LLM quotas (PRD §4.1 / §4.3 / §4.10.7)
+    guest_max_completed_itineraries: int = 1
+    free_max_completed_itineraries: int = 5
+    member_max_completed_itineraries: int = 20
+    premium_max_completed_itineraries: int = 100
+    llm_quota_guest_daily: int = 10_000
+    llm_quota_user_daily: int = 100_000
+    llm_quota_member_daily: int = 500_000
+    llm_quota_premium_daily: int = 2_000_000
+    external_api_quota_guest_daily: int = 20
+    external_api_quota_free_daily: int = 200
+    external_api_quota_member_daily: int = 1000
+    external_api_quota_premium_daily: int = 5000
+    free_user_allow_large_model: bool = True
+    external_api_default_cost_cny: float = 0.01
+
+    # Prompt compression (M6 §4.10.1)
+    prompt_compress_max_messages: int = 12
+    prompt_compress_max_chars: int = 2000
+
+    # Alerting (PRD §4.7.4 dead-letter webhook)
+    alert_webhook_url: str = ""
+
     # Cache TTLs (seconds)
     cache_ttl_poi: int = 21600  # 6 hours
     cache_ttl_weather: int = 3600  # 1 hour
@@ -104,6 +137,7 @@ class Settings(BaseSettings):
     celery_result_backend: str = "redis://localhost:6379/2"
     celery_task_default_queue: str = "default"
     celery_planning_queue: str = "planning"
+    celery_memory_queue: str = "memory"
     celery_dead_letter_queue: str = "planning_dead_letter"
     celery_worker_prefetch_multiplier: int = 1
     # celery: dispatch to Celery worker queue; embedded: in-process PlanningWorker poll loop
@@ -121,14 +155,50 @@ class Settings(BaseSettings):
     circuit_breaker_recovery_seconds: int = 30
     circuit_breaker_window_seconds: int = 10
 
-    # Cost control
+    # Cost control (M6 §4.10.6)
+    cost_circuit_breaker_enabled: bool = True
     cost_circuit_breaker_daily_tokens: int = 50_000_000
     cost_circuit_breaker_daily_api_cost_cny: float = 1000.0
     cost_circuit_breaker_hourly_gpu_cost_cny: float = 500.0
 
+    # Observability (M5)
+    otel_enabled: bool = False
+    otel_exporter_endpoint: str = "http://localhost:4318/v1/traces"
+    otel_service_name: str = "travel-agent-backend"
+    metrics_path: str = "/api/v1/metrics"
+
+    # MLflow (M5)
+    mlflow_tracking_uri: str = ""
+    mlflow_registry_uri: str = ""
+
+    # AI safety (M5 §4.9)
+    input_safety_enabled: bool = True
+    output_safety_enabled: bool = True
+
     @property
     def seed_cities_list(self) -> list[str]:
         return [c.strip() for c in self.seed_cities.split(",") if c.strip()]
+
+    def redis_url_for_db(self, db: int) -> str:
+        """Build a Redis URL for a logical database index (PRD cache/queue/state split)."""
+        base = self.redis_url.strip()
+        if re.search(r"/\d+$", base):
+            return re.sub(r"/\d+$", f"/{db}", base)
+        return f"{base.rstrip('/')}/{db}"
+
+    @property
+    def redis_cache_url(self) -> str:
+        return self.redis_url_for_db(self.redis_db_cache)
+
+    @property
+    def redis_state_url(self) -> str:
+        return self.redis_url_for_db(self.redis_db_state)
+
+    @property
+    def redis_redlock_url_list(self) -> list[str]:
+        if self.redis_redlock_urls.strip():
+            return [u.strip() for u in self.redis_redlock_urls.split(",") if u.strip()]
+        return [self.redis_state_url]
 
     @property
     def database_url_sync(self) -> str:

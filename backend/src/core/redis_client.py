@@ -12,14 +12,15 @@ from core.settings import settings
 class RedisClient:
     """Async Redis wrapper with JSON serialization and TTL support."""
 
-    def __init__(self):
+    def __init__(self, url: Optional[str] = None):
+        self._url = url or settings.redis_state_url
         self._client: Optional[aioredis.Redis] = None
         self._loop: Optional[asyncio.AbstractEventLoop] = None
 
     async def connect(self):
         """Initialize Redis connection bound to the current event loop."""
         self._client = await aioredis.from_url(
-            settings.redis_url,
+            self._url,
             decode_responses=True,
         )
         self._loop = asyncio.get_running_loop()
@@ -112,10 +113,20 @@ class RedisClient:
         client = self._ensure_client()
         return int(await client.incr(key))
 
+    async def incrby(self, key: str, amount: int) -> int:
+        """Increment integer value at key by amount."""
+        client = self._ensure_client()
+        return int(await client.incrby(key, amount))
+
     async def decr(self, key: str) -> int:
         """Decrement integer value at key."""
         client = self._ensure_client()
         return int(await client.decr(key))
+
+    async def decrby(self, key: str, amount: int) -> int:
+        """Decrement integer value at key by amount."""
+        client = self._ensure_client()
+        return int(await client.decrby(key, amount))
 
     async def lpush(self, key: str, value: str) -> int:
         """Push value onto the head of a list."""
@@ -184,5 +195,6 @@ class RedisClient:
         return bool(result)
 
 
-# Global singleton
-redis_client = RedisClient()
+# Global singletons — cache (db0) vs state (db2); Celery queue uses db1 via broker URL
+redis_cache_client = RedisClient(settings.redis_cache_url)
+redis_client = RedisClient(settings.redis_state_url)

@@ -126,6 +126,17 @@ class UserService(BaseService):
             "refresh_token": create_refresh_token(user.id, user.role),
         }
 
-    async def logout(self, token: str) -> None:
-        """Revoke the provided access token."""
+    async def logout(self, token: str, refresh_token: str | None = None) -> None:
+        """Revoke access and optional refresh tokens."""
         await blacklist_token(token)
+        if refresh_token:
+            try:
+                await blacklist_token(refresh_token)
+            except UnauthorizedException:
+                pass
+
+    async def ban_user(self, user_id: UUID) -> None:
+        """Revoke all outstanding tokens for a user (admin action)."""
+        from core.security import ban_user_tokens
+
+        await ban_user_tokens(str(user_id))

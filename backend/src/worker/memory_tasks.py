@@ -99,11 +99,19 @@ def _run_async(coro: Coroutine[Any, Any, _T]) -> _T:
 
 
 @celery_app.task(bind=True, max_retries=3, default_retry_delay=60)  # type: ignore[untyped-decorator]
-def archive_session(self: Any, session_id: str, user_id: str | None = None) -> bool:
+def archive_session(
+    self: Any,
+    session_id: str,
+    user_id: str | None = None,
+    user_role: str | None = None,
+) -> bool:
     """Archive a single session's warm snapshot to cold storage."""
     try:
         _run_async(_ensure_redis())
-        return cast(bool, _run_async(memory_manager.archive_to_cold(session_id, user_id)))
+        return cast(
+            bool,
+            _run_async(memory_manager.archive_to_cold(session_id, user_id, user_role)),
+        )
     except Exception as exc:
         logger.exception("archive_session failed for %s", session_id)
         raise self.retry(exc=exc)
@@ -145,10 +153,11 @@ def archive_active_sessions(self: Any) -> dict[str, int]:
                     skipped += 1
                     continue
                 user_id = snapshot.get("user_id")
-                if not user_id:
+                user_role = snapshot.get("user_role")
+                if not user_id or user_role == "guest":
                     skipped += 1
                     continue
-                ok = await memory_manager.archive_to_cold(session_id, user_id)
+                ok = await memory_manager.archive_to_cold(session_id, user_id, user_role)
                 if ok:
                     archived += 1
                 else:
@@ -224,7 +233,11 @@ def compact_stale_sessions(self: Any) -> dict[str, int]:
                     skipped += 1
                     continue
                 user_id = snapshot.get("user_id")
-                ok = await memory_manager.archive_to_cold(session_id, user_id)
+                user_role = snapshot.get("user_role")
+                if not user_id or user_role == "guest":
+                    skipped += 1
+                    continue
+                ok = await memory_manager.archive_to_cold(session_id, user_id, user_role)
                 if ok:
                     await memory_manager.warm_delete(session_id)
                     archived += 1

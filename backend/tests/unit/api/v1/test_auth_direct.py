@@ -107,12 +107,14 @@ class TestRefresh:
         refresh = security.create_refresh_token(user.id, user.role)
         response = await auth.refresh(
             RefreshRequest(refresh_token=refresh),
+            authorization=None,
             service=service,
         )
         body = _body(response)
         assert response.status_code == 200
         assert body["data"]["role"] == "user"
-        assert body["data"].get("refresh_token") is None
+        assert body["data"].get("refresh_token") is not None
+        assert body["data"]["refresh_token"] != refresh
 
     @pytest.mark.asyncio
     async def test_refresh_with_access_token_fails(self, db):
@@ -122,6 +124,7 @@ class TestRefresh:
         with pytest.raises(Exception):
             await auth.refresh(
                 RefreshRequest(refresh_token=access),
+                authorization=None,
                 service=service,
             )
 

@@ -24,6 +24,21 @@ celery_app.conf.update(
         "worker.planning_tasks.execute_planning_job": {
             "queue": settings.celery_planning_queue,
         },
+        "worker.memory_tasks.archive_session": {
+            "queue": settings.celery_memory_queue,
+        },
+        "worker.memory_tasks.schedule_delayed_archive": {
+            "queue": settings.celery_memory_queue,
+        },
+        "worker.memory_tasks.archive_active_sessions": {
+            "queue": settings.celery_memory_queue,
+        },
+        "worker.memory_tasks.cleanup_expired_memories": {
+            "queue": settings.celery_memory_queue,
+        },
+        "worker.memory_tasks.compact_stale_sessions": {
+            "queue": settings.celery_memory_queue,
+        },
     },
     beat_schedule={
         "archive-active-sessions": {

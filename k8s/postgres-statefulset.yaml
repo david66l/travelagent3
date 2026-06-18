@@ -1,0 +1,244 @@
+# PostgreSQL Primary/Standby StatefulSet (M5)
+# - 2 replicas: pod-0 = primary, pod-1 = hot standby streaming replica
+# - Uses native PostgreSQL streaming replication (password-based)
+# - For fully automated failover in production, replace with Patroni / CloudNativePG.
+# Resources follow PRD §12.2: 2 replicas, 2–4 CPU, 4–8 Gi each
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: travel-agent
+  labels:
+    app: postgres
+    tier: datastore
+spec:
+  serviceName: postgres
+  replicas: 2
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+        tier: datastore
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: app
+                    operator: In
+                    values:
+                      - postgres
+              topologyKey: kubernetes.io/hostname
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - postgres
+                topologyKey: topology.kubernetes.io/zone
+      initContainers:
+        - name: init-replica
+          image: postgres:16-alpine
+          env:
+            - name: POSTGRES_USER
+              value: "travelagent"
+            - name: POSTGRES_DB
+              value: "travel_agent"
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: travel-agent-secrets
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRES_REPLICATION_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: travel-agent-secrets
+                  key: POSTGRES_REPLICATION_PASSWORD
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              # Only pod-1 (and higher) become replicas
+              ORDINAL=$(echo "$POD_NAME" | awk -F'-' '{print $NF}')
+              if [ "$ORDINAL" = "0" ]; then
+                echo "Pod 0 is the primary. Nothing to do."
+                exit 0
+              fi
+
+              # Wait for primary
+              until pg_isready -h postgres-0.postgres -p 5432 -U "$POSTGRES_USER"; do
+                echo "Waiting for primary postgres-0..."
+                sleep 2
+              done
+
+              # If data directory is empty, pg_basebackup from primary
+              if [ ! -s "/var/lib/postgresql/data/PG_VERSION" ]; then
+                echo "Cloning primary via pg_basebackup..."
+                rm -rf /var/lib/postgresql/data/*
+                PGPASSWORD="$POSTGRES_PASSWORD" pg_basebackup \
+                  -h postgres-0.postgres \
+                  -D /var/lib/postgresql/data \
+                  -U "$POSTGRES_USER" \
+                  -v -P -W \
+                  --wal-method=stream \
+                  --write-recovery-conf \
+                  --slot=replica_${ORDINAL} \
+                  --checkpoint=fast
+                touch /var/lib/postgresql/data/standby.signal
+              else
+                echo "Data directory already exists; skipping clone."
+              fi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              value: "travelagent"
+            - name: POSTGRES_DB
+              value: "travel_agent"
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: travel-agent-secrets
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRES_REPLICATION_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: travel-agent-secrets
+                  key: POSTGRES_REPLICATION_PASSWORD
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: PGDATA
+              value: "/var/lib/postgresql/data"
+          args:
+            - postgres
+            - -c
+            - "wal_level=replica"
+            - -c
+            - "max_wal_senders=10"
+            - -c
+            - "max_replication_slots=10"
+            - -c
+            - "hot_standby=on"
+            - -c
+            - "listen_addresses=*"
+          resources:
+            # PRD §12.2: Postgres 2–4 CPU, 4–8 Gi
+            requests:
+              cpu: "2"
+              memory: 4Gi
+            limits:
+              cpu: "4"
+              memory: 8Gi
+          readinessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - travelagent
+                - -d
+                - travel_agent
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - travelagent
+                - -d
+                - travel_agent
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          startupProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - travelagent
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 18
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: init-scripts
+              mountPath: /docker-entrypoint-initdb.d
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 999
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop:
+                - ALL
+      volumes:
+        - name: init-scripts
+          configMap:
+            name: postgres-init-config
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 50Gi
+---
+# PostgreSQL initialization: create replication user and pg_hba on primary
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init-config
+  namespace: travel-agent
+data:
+  01-replication.sh: |
+    #!/bin/bash
+    set -e
+    # Only run on the primary (pod-0)
+    ORDINAL="${POD_NAME##*-}"
+    if [ "$ORDINAL" != "0" ]; then
+      exit 0
+    fi
+
+    echo "Creating replication user and pg_hba entries..."
+    psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c \
+      "DO \$\$BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'replicator') THEN CREATE ROLE replicator WITH REPLICATION LOGIN PASSWORD '$POSTGRES_REPLICATION_PASSWORD'; END IF; END\$\$;"
+
+    # Allow replication connections from the cluster subnet
+    {
+      echo "host    replication     replicator      0.0.0.0/0               scram-sha-256"
+      echo "host    all             all             0.0.0.0/0               scram-sha-256"
+    } >> "$PGDATA/pg_hba.conf"

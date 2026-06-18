@@ -3,7 +3,7 @@
 from typing import Any, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, AliasChoices
+from pydantic import BaseModel, ConfigDict, Field, AliasChoices, model_validator
 
 
 class CreateConversationRequest(BaseModel):
@@ -98,6 +98,44 @@ class PlanningJobResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+    @model_validator(mode="before")
+    @classmethod
+    def ensure_result_payload(cls, data: Any) -> Any:
+        """Expose itinerary columns on `result` when legacy rows omit the JSON blob."""
+        if isinstance(data, dict):
+            if data.get("result"):
+                return data
+            merged = _result_from_job_columns(data)
+            if merged:
+                data = dict(data)
+                data["result"] = merged
+            return data
+        result = getattr(data, "result", None)
+        if result:
+            return data
+        merged = _result_from_job_columns(data)
+        if not merged:
+            return data
+        if hasattr(data, "__dict__"):
+            copy = dict(data.__dict__)
+            copy["result"] = merged
+            return copy
+        return data
+
+
+def _result_from_job_columns(job: Any) -> Optional[dict]:
+    payload: dict = {}
+    itinerary_final = getattr(job, "itinerary_final", None)
+    if itinerary_final:
+        payload["itinerary_final"] = itinerary_final
+    itinerary_draft = getattr(job, "itinerary_draft", None)
+    if itinerary_draft:
+        payload["itinerary_draft"] = itinerary_draft
+    proposal_text = getattr(job, "proposal_text", None)
+    if proposal_text:
+        payload["proposal_text"] = proposal_text
+    return payload or None
+
 
 class UpdatePlanningJobRequest(BaseModel):
     status: str
@@ -139,6 +177,10 @@ class LoginRequest(BaseModel):
 
 class RefreshRequest(BaseModel):
     refresh_token: str = Field(..., min_length=1)
+
+
+class LogoutRequest(BaseModel):
+    refresh_token: Optional[str] = None
 
 
 class UpgradeRequest(BaseModel):

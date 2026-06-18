@@ -1,130 +1,157 @@
 #!/usr/bin/env python3
-"""TravelAgent2 end-to-end smoke test.
+"""TravelAgent2 端到端冒烟测试（SSE 主路径）。
 
-Assumes backend + frontend are already running on localhost.
+前置：backend (8000) + frontend (3000) 已启动。
+用法：python scripts/e2e_smoke.py
 """
 
 from __future__ import annotations
 
 import json
-import queue
+import os
 import sys
 import time
 import uuid
 
 import httpx
-import websocket
 
-BASE_URL = "http://localhost:8000"
-WS_URL = "ws://localhost:8000/ws/chat/{session_id}"
-FRONTEND_URL = "http://localhost:3000"
+BASE_URL = os.environ.get("E2E_BASE_URL", "http://127.0.0.1:8000")
+FRONTEND_URL = os.environ.get("E2E_FRONTEND_URL", "http://127.0.0.1:3000")
+# Cursor/shell 常带 HTTP 代理，直连本机需绕过
+HTTPX_KWARGS = {"trust_env": False}
 
 
 def health_check() -> dict:
-    with httpx.Client() as client:
+    with httpx.Client(**HTTPX_KWARGS) as client:
         resp = client.get(f"{BASE_URL}/api/health", timeout=10)
         resp.raise_for_status()
         return resp.json()
 
 
+def metrics_check() -> str:
+    with httpx.Client(**HTTPX_KWARGS) as client:
+        resp = client.get(f"{BASE_URL}/api/v1/metrics", timeout=10)
+        resp.raise_for_status()
+        return resp.text
+
+
 def frontend_smoke() -> int:
-    with httpx.Client() as client:
+    with httpx.Client(**HTTPX_KWARGS) as client:
         resp = client.get(FRONTEND_URL, timeout=10)
         return resp.status_code
 
 
-def websocket_chat_flow() -> dict:
-    session_id = f"e2e-{uuid.uuid4().hex[:8]}"
-    uri = WS_URL.format(session_id=session_id)
-    received: list[dict] = []
-    msg_queue: queue.Queue[str] = queue.Queue()
-    job_id: str | None = None
+def sse_chat_flow() -> dict:
+    fp = str(uuid.uuid4())
+    with httpx.Client(**HTTPX_KWARGS) as client:
+        guest = client.post(
+            f"{BASE_URL}/api/v1/auth/guest",
+            json={"device_fingerprint": fp},
+            timeout=10,
+        )
+        guest.raise_for_status()
+        token = guest.json()["data"]["access_token"]
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "X-Device-Fingerprint": fp,
+        }
 
-    def on_message(_ws, message):
-        msg_queue.put(message)
+        conv = client.post(
+            f"{BASE_URL}/api/v1/conversations",
+            json={"title": "e2e"},
+            headers=headers,
+            timeout=10,
+        )
+        conv.raise_for_status()
+        conversation_id = conv.json()["data"]["id"]
 
-    def on_error(_ws, error):
-        print(f"[E2E] WS error: {error}", file=sys.stderr)
+        msg = client.post(
+            f"{BASE_URL}/api/v1/chat/message",
+            json={
+                "conversation_id": conversation_id,
+                "content": "我想3月15日到3月18日去北京玩3天，预算5000元，喜欢历史文化和美食",
+                "stream": True,
+            },
+            headers=headers,
+            timeout=10,
+        )
+        msg.raise_for_status()
 
-    ws = websocket.WebSocketApp(
-        uri,
-        on_message=on_message,
-        on_error=on_error,
-    )
+        received: list[dict] = []
+        job_id: str | None = None
+        with client.stream(
+            "GET",
+            f"{BASE_URL}/api/v1/chat/stream",
+            params={"conversation_id": conversation_id, "timeout": 120},
+            headers=headers,
+            timeout=130,
+        ) as stream:
+            deadline = time.time() + 45
+            for line in stream.iter_lines():
+                if time.time() > deadline:
+                    break
+                if not line or not line.startswith("data:"):
+                    continue
+                payload = json.loads(line[5:].strip())
+                received.append(payload)
+                if payload.get("type") == "job_created":
+                    job_id = payload.get("job_id")
+                if payload.get("type") in ("done", "error"):
+                    break
 
-    import threading
-
-    wst = threading.Thread(target=ws.run_forever, daemon=True)
-    wst.start()
-
-    # Wait for open
-    for _ in range(50):
-        if ws.sock and ws.sock.connected:
-            break
-        time.sleep(0.1)
-    else:
-        print("[E2E] FAIL: websocket did not open", file=sys.stderr)
-        ws.close()
-        return {"session_id": session_id, "job_id": None, "messages": []}
-
-    ws.send(json.dumps({"type": "chat", "content": "我想去北京玩3天", "user_id": "e2e-user"}))
-
-    deadline = time.time() + 30
-    while time.time() < deadline and job_id is None:
-        try:
-            raw = msg_queue.get(timeout=1)
-        except queue.Empty:
-            continue
-        msg = json.loads(raw)
-        received.append(msg)
-        if msg.get("type") == "job_created":
-            job_id = msg.get("job_id")
-            # Listen a bit longer for stage/completed events.
-            try:
-                extra = json.loads(msg_queue.get(timeout=10))
-                received.append(extra)
-            except queue.Empty:
-                pass
-            break
-        if msg.get("type") == "needs_clarification":
-            break
-
-    ws.close()
-    wst.join(timeout=5)
-    return {"session_id": session_id, "job_id": job_id, "messages": received}
+        return {
+            "conversation_id": conversation_id,
+            "job_id": job_id,
+            "messages": received,
+            "headers": headers,
+        }
 
 
-def websocket_reconnect(session_id: str, job_id: str) -> dict:
-    uri = WS_URL.format(session_id=session_id)
-    received: list[dict] = []
-    msg_queue: queue.Queue[str] = queue.Queue()
+def wait_for_job(headers: dict, job_id: str, timeout: int = 180) -> dict:
+    deadline = time.time() + timeout
+    poll_interval = float(os.environ.get("E2E_JOB_POLL_SEC", "5"))
+    with httpx.Client(**HTTPX_KWARGS) as client:
+        while time.time() < deadline:
+            resp = client.get(
+                f"{BASE_URL}/api/v1/planning-jobs/{job_id}",
+                headers=headers,
+                timeout=15,
+            )
+            if resp.status_code == 429:
+                time.sleep(15)
+                continue
+            resp.raise_for_status()
+            data = resp.json()["data"]
+            status = data.get("status")
+            if status in ("failed", "cancelled", "force_cancelled"):
+                return data
+            if status == "completed" and job_has_itinerary_payload(data):
+                return data
+            time.sleep(poll_interval)
+    raise TimeoutError(f"job {job_id} did not finish within {timeout}s")
 
-    def on_message(_ws, message):
-        msg_queue.put(message)
 
-    ws = websocket.WebSocketApp(uri, on_message=on_message)
+def list_itineraries(headers: dict, limit: int = 10) -> list[dict]:
+    with httpx.Client(**HTTPX_KWARGS) as client:
+        resp = client.get(
+            f"{BASE_URL}/api/v1/itineraries",
+            params={"limit": limit, "offset": 0},
+            headers=headers,
+            timeout=15,
+        )
+        resp.raise_for_status()
+        return resp.json().get("data") or []
 
-    import threading
 
-    wst = threading.Thread(target=ws.run_forever, daemon=True)
-    wst.start()
-
-    for _ in range(50):
-        if ws.sock and ws.sock.connected:
-            break
-        time.sleep(0.1)
-
-    ws.send(json.dumps({"type": "subscribe", "job_id": job_id, "last_event_id": 0}))
-
-    try:
-        raw = msg_queue.get(timeout=10)
-        received.append(json.loads(raw))
-    except queue.Empty:
-        pass
-
-    ws.close()
-    wst.join(timeout=5)
-    return {"messages": received}
+def job_has_itinerary_payload(job: dict) -> bool:
+    result = job.get("result") or {}
+    for key in ("itinerary_final", "itinerary_draft", "itinerary_enriched"):
+        days = result.get(key)
+        if isinstance(days, list) and days:
+            return True
+    if result.get("proposal_text") or result.get("proposal_text_preview"):
+        return True
+    return False
 
 
 def main() -> int:
@@ -132,28 +159,46 @@ def main() -> int:
     health = health_check()
     print(f"[E2E] health: {health}")
 
+    print("[E2E] metrics ...")
+    metrics = metrics_check()
+    print(f"[E2E] metrics sample: {metrics.splitlines()[:3]}")
+
     print("[E2E] frontend smoke ...")
     frontend_status = frontend_smoke()
     print(f"[E2E] frontend status: {frontend_status}")
 
-    print("[E2E] websocket chat flow ...")
-    flow = websocket_chat_flow()
-    print(f"[E2E] session_id={flow['session_id']}, job_id={flow['job_id']}")
+    print("[E2E] SSE chat flow ...")
+    flow = sse_chat_flow()
+    print(f"[E2E] conversation_id={flow['conversation_id']}, job_id={flow['job_id']}")
     print(f"[E2E] received message types: {[m.get('type') for m in flow['messages']]}")
 
     if flow["job_id"] is None:
         print("[E2E] FAIL: did not receive job_created", file=sys.stderr)
         return 1
 
-    print("[E2E] websocket reconnect ...")
-    reconnect = websocket_reconnect(flow["session_id"], flow["job_id"])
-    types = [m.get("type") for m in reconnect["messages"]]
-    print(f"[E2E] reconnect message types: {types}")
+    print("[E2E] wait for planning job completion ...")
+    job_timeout = int(os.environ.get("E2E_JOB_TIMEOUT", "180"))
+    try:
+        job = wait_for_job(flow["headers"], flow["job_id"], timeout=job_timeout)
+    except TimeoutError as exc:
+        print(f"[E2E] FAIL: {exc}", file=sys.stderr)
+        return 1
+    print(f"[E2E] job status={job.get('status')}, latency_ms={job.get('latency_ms')}")
 
-    if "state_restored" not in types:
-        print("[E2E] WARN: state_restored not received (job may not be completed yet)")
+    if job.get("status") != "completed":
+        print(f"[E2E] FAIL: job ended with status={job.get('status')}", file=sys.stderr)
+        if job.get("error_message") or job.get("last_error"):
+            print(f"[E2E] error: {job.get('error_message') or job.get('last_error')}", file=sys.stderr)
+        return 1
 
-    print("[E2E] PASS")
+    if not job_has_itinerary_payload(job):
+        print("[E2E] FAIL: completed job missing itinerary payload in result", file=sys.stderr)
+        return 1
+
+    itineraries = list_itineraries(flow["headers"])
+    print(f"[E2E] itineraries table rows={len(itineraries)} (optional; planning stores payload on job)")
+
+    print("[E2E] PASS (full path: chat → job → itinerary payload)")
     return 0
 
 

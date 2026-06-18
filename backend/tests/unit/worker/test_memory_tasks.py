@@ -34,7 +34,7 @@ def test_archive_session_task_delays_to_memory_manager():
         result = memory_tasks.archive_session.delay("session-1", "user-1")
 
     assert result.get() is True
-    mock_archive.assert_awaited_once_with("session-1", "user-1")
+    mock_archive.assert_awaited_once_with("session-1", "user-1", None)
 
 
 def test_archive_session_task_retries_on_failure():
@@ -78,7 +78,7 @@ def test_archive_active_sessions_archives_authenticated_hot_sessions():
 
     summary = result.get()
     assert summary["archived"] == 1
-    mock_archive.assert_awaited_once_with("s1", "user-1")
+    mock_archive.assert_awaited_once_with("s1", "user-1", None)
 
 
 def test_compact_stale_sessions_archives_old_warm_snapshots():
@@ -105,7 +105,7 @@ def test_compact_stale_sessions_archives_old_warm_snapshots():
     summary = result.get()
     assert summary["archived"] == 1
     assert summary["skipped"] == 0
-    mock_archive.assert_awaited_once_with("s1", "user-1")
+    mock_archive.assert_awaited_once_with("s1", "user-1", None)
     mock_delete.assert_awaited_once_with("s1")
 
 

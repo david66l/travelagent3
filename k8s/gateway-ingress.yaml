@@ -1,0 +1,50 @@
+# Ingress for TravelAgent2 (M5)
+# Routes external traffic to the Go Gateway.
+# Requirements:
+#   - Ingress-NGINX Controller installed
+#   - TLS certificate for the configured host
+# Adjust the host and cert-manager ClusterIssuer for your environment.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: travel-agent
+  namespace: travel-agent
+  labels:
+    app: travel-agent
+    tier: edge
+  annotations:
+    nginx.ingress.kubernetes.io/ingress-class: nginx
+    # SSE / long-running chat streams
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    # Body size for itinerary exports / batch uploads
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    # Enable CORS at ingress if needed (Gateway also enforces CORS)
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "*"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, DELETE, OPTIONS"
+    nginx.ingress.kubernetes.io/cors-allow-headers: "Authorization, Content-Type, X-Request-ID, X-Device-Fingerprint"
+    # TLS redirect + HSTS (PRD §4.9.3)
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    # cert-manager integration (uncomment if cert-manager is installed)
+    # cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: nginx
+  # tls:
+  #   - hosts:
+  #       - travel-agent.example.com
+  #     secretName: travel-agent-tls
+  rules:
+    - host: travel-agent.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: gateway
+                port:
+                  number: 80

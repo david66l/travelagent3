@@ -14,12 +14,15 @@ if _src_dir not in sys.path:
 
 from core.database import init_db  # noqa: E402
 from core.settings import settings  # noqa: E402
-from core.redis_client import redis_client  # noqa: E402
+from core.redis_client import redis_cache_client, redis_client  # noqa: E402
+from core.redlock import redlock  # noqa: E402
 from api.health import router as health_router  # noqa: E402
 from api.websocket import router as ws_router  # noqa: E402
 from api.v1 import v1_router  # noqa: E402
 from middleware import setup_exception_handlers  # noqa: E402
-from middleware.rate_limit import setup_rate_limit  # noqa: E402
+from middleware.metrics_middleware import MetricsMiddleware  # noqa: E402
+from middleware.request_context import RequestContextMiddleware  # noqa: E402
+from core.tracing import setup_tracing  # noqa: E402
 from worker.planning_worker import start_worker, stop_worker  # noqa: E402
 
 
@@ -28,6 +31,8 @@ async def lifespan(app: FastAPI):
     """Application lifespan: startup and shutdown."""
     await init_db()
     await redis_client.connect()
+    await redis_cache_client.connect()
+    await redlock.connect()
     if settings.planning_executor == "embedded":
         await start_worker()
 
@@ -36,6 +41,8 @@ async def lifespan(app: FastAPI):
     if settings.planning_executor == "embedded":
         await stop_worker()
     await redis_client.disconnect()
+    await redis_cache_client.disconnect()
+    await redlock.disconnect()
 
 
 def create_app() -> FastAPI:
@@ -47,6 +54,10 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    # Request context + metrics (M5)
+    app.add_middleware(MetricsMiddleware)
+    app.add_middleware(RequestContextMiddleware)
+
     # CORS
     app.add_middleware(
         CORSMiddleware,
@@ -56,9 +67,6 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # Rate limiting
-    setup_rate_limit(app)
-
     # Global exception handlers
     setup_exception_handlers(app)
 
@@ -66,6 +74,8 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     app.include_router(ws_router)
     app.include_router(v1_router)
+
+    setup_tracing(app)
 
     return app
 

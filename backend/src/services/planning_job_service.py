@@ -63,3 +63,13 @@ class PlanningJobService(BaseService):
             token_usage=token_usage,
             latency_ms=latency_ms,
         )
+
+    async def request_cancel(self, job_id: str, user_uuid: UUID) -> bool:
+        """Request cancellation if the job belongs to the user."""
+        job = await self.repo.get_by_id(job_id)
+        if job is None or job.user_uuid != user_uuid:
+            return False
+        if job.status not in ("pending", "running", "cancelling"):
+            return False
+        await self.repo.request_cancel(job_id)
+        return True

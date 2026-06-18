@@ -6,7 +6,9 @@ from typing import Optional
 
 import httpx
 
+from core.external_api_tracker import record_external_api_usage
 from core.settings import settings
+from core.thought_logger import get_current_user_id, get_current_user_role
 
 
 @dataclass
@@ -27,6 +29,20 @@ class TavilySearchSkill:
 
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or settings.tavily_api_key
+
+    async def _track_success(self) -> None:
+        try:
+            user_id = get_current_user_id()
+            role = get_current_user_role() or "user"
+            await record_external_api_usage(
+                "tavily",
+                status="success",
+                data_source="api",
+                user_id=user_id,
+                role=role,
+            )
+        except Exception:
+            pass
 
     async def search(
         self, query: str, top_n: int = 5, search_depth: str = "advanced"
@@ -72,6 +88,7 @@ class TavilySearchSkill:
                             score=r.get("score", 0.0),
                         )
                     )
+                await self._track_success()
                 return results
             except Exception:
                 return []
@@ -135,6 +152,7 @@ class TavilySearchSkill:
                 except Exception:
                     pass
 
+                await self._track_success()
                 return results, answer
             except Exception:
                 return [], ""

@@ -1,0 +1,79 @@
+# Dockerfile.vllm — Production vLLM inference image for TravelAgent2 (M4)
+# Base: vLLM OpenAI-compatible server with CUDA support
+# Includes: Qwen2.5-14B-Instruct base model + travel LoRA adapters
+#
+# Build:
+#   docker build -f Dockerfile.vllm -t ghcr.io/travelagent/travel-agent-vllm:latest .
+#
+# Run (requires NVIDIA Container Toolkit + GPU):
+#   docker run --gpus all -p 8000:8000 \
+#     -e VLLM_MODEL=Qwen/Qwen2.5-14B-Instruct \
+#     ghcr.io/travelagent/travel-agent-vllm:latest
+#
+# Notes:
+# - Model weights are downloaded at build time if HF_TOKEN is provided.
+# - LoRA adapters are copied from ml/adapters/ and pre-registered.
+# - For air-gapped environments, mount model weights as a PVC/volume.
+
+FROM vllm/vllm-openai:v0.6.3.post1 AS base
+
+# Build arguments
+ARG HF_TOKEN=""
+ARG VLLM_MODEL="Qwen/Qwen2.5-14B-Instruct"
+ARG ADAPTER_DIR="ml/adapters"
+
+ENV PYTHONUNBUFFERED=1
+ENV HF_HOME=/models/.cache/huggingface
+ENV VLLM_MODEL=${VLLM_MODEL}
+ENV VLLM_PORT=8000
+
+# Install runtime utilities
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user (vLLM can run as non-root; GPU access via group)
+RUN groupadd -r vllm && useradd -r -g vllm -m -d /models vllm
+
+# Optional: download base model weights during build
+# Set HF_TOKEN build secret for gated models
+RUN mkdir -p /models/base /models/adapters && chown -R vllm:vllm /models
+WORKDIR /models
+
+# Copy LoRA adapters into image (lightweight; base model mounted separately in K8s)
+COPY --chown=vllm:vllm ${ADAPTER_DIR} /models/adapters
+
+# Pre-create adapter mount points so --lora-modules resolves even if PVC not mounted
+RUN for adapter in travel-chat-v1 travel-plan-v1 travel-repair-v1; do \
+      mkdir -p /models/adapters/${adapter}; \
+    done
+
+USER vllm
+
+# Expose OpenAI-compatible API port
+EXPOSE 8000
+
+# Health check against vLLM /health endpoint
+HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=5 \
+    CMD curl -sf http://localhost:8000/health || exit 1
+
+# Default launch args (PRD §8.1.2)
+# Override via K8s Deployment args or VLLM_EXTRA_ARGS env.
+ENV VLLM_EXTRA_ARGS=""
+CMD exec python -m vllm.entrypoints.openai.api_server \
+    --model "${VLLM_MODEL}" \
+    --host 0.0.0.0 \
+    --port ${VLLM_PORT} \
+    --enable-lora \
+    --lora-modules \
+      travel-chat-v1=/models/adapters/travel-chat-v1,\
+      travel-plan-v1=/models/adapters/travel-plan-v1,\
+      travel-repair-v1=/models/adapters/travel-repair-v1 \
+    --tensor-parallel-size 1 \
+    --max-model-len 8192 \
+    --gpu-memory-utilization 0.85 \
+    --dtype half \
+    --max-num-seqs 256 \
+    --enable-prefix-caching \
+    ${VLLM_EXTRA_ARGS}

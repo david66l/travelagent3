@@ -2,7 +2,7 @@
 
 from schemas import ScoredPOI, WeatherDay, UserProfile, Location
 from planner.core.heuristic_strategy import build_strategy
-from planner.core.daily_scheduler import build_schedule, _assign_days
+from planner.core.daily_scheduler import build_schedule, _assign_days_constrained
 
 
 class TestDailyScheduler:
@@ -76,7 +76,7 @@ class TestDailyScheduler:
         pois = [
             ScoredPOI(name="故宫", category="attraction", score=0.9, location=loc_a),
             ScoredPOI(name="天坛", category="attraction", score=0.85, location=loc_b),
-            ScoredPOI(name="颐和园", category="attraction", score=0.8, location=loc_c),
+            ScoredPOI(name="颐和园", category="temple", score=0.8, location=loc_c),
         ]
         profile = UserProfile(destination="北京", travel_days=1)
         strategy = build_strategy(pois, profile)
@@ -302,8 +302,168 @@ class TestDailyScheduler:
         for poi in pois:
             groups.setdefault(poi.area or "其他", []).append(poi)
 
-        days = _assign_days(pois, groups, travel_days=3)
+        profile = UserProfile(destination="测试城市", travel_days=3)
+        days = _assign_days_constrained(
+            pois,
+            groups,
+            travel_days=3,
+            profile=profile,
+            must_see=[],
+            remote_class={},
+            cross_city=set(),
+            center=None,
+        )
 
         assigned_names = [poi.name for day in days for poi in day]
-        assert len(assigned_names) == 12
-        assert all(len(day) <= 4 for day in days)
+        # Diversity constraint limits same-category POIs to 2 per day
+        assert len(assigned_names) == 6
+        assert all(len(day) <= 2 for day in days)
+
+
+# --------------------------------------------------------------------------- #
+# Algorithm optimization tests
+# --------------------------------------------------------------------------- #
+
+
+class TestProximityGrouping:
+    def test_proximity_grouping_groups_nearby_pois(self):
+        loc_a = Location(lat=30.24, lng=120.14)
+        loc_b = Location(lat=30.25, lng=120.15)
+        loc_c = Location(lat=30.26, lng=120.16)
+        loc_far = Location(lat=29.60, lng=119.03)
+
+        pois = [
+            ScoredPOI(name="西湖", category="attraction", score=0.9, location=loc_a),
+            ScoredPOI(name="雷峰塔", category="attraction", score=0.9, location=loc_b),
+            ScoredPOI(name="断桥", category="attraction", score=0.9, location=loc_c),
+            ScoredPOI(name="千岛湖", category="attraction", score=0.9, location=loc_far),
+        ]
+
+        from planner.core.daily_scheduler import _group_pois_by_proximity
+
+        groups = _group_pois_by_proximity(pois)
+        # 西湖, 雷峰塔, 断桥 are within 3km of each other; 千岛湖 is alone
+        assert len(groups) == 2
+        cluster_names = {name: [p.name for p in group] for name, group in groups.items()}
+        names = set()
+        for group in cluster_names.values():
+            names.update(group)
+        assert names == {"西湖", "雷峰塔", "断桥", "千岛湖"}
+
+    def test_proximity_grouping_falls_back_when_no_locations(self):
+        pois = [
+            ScoredPOI(name="故宫", category="attraction", score=0.9),
+            ScoredPOI(name="天坛", category="attraction", score=0.9),
+        ]
+
+        from planner.core.daily_scheduler import _group_pois_by_proximity
+
+        groups = _group_pois_by_proximity(pois)
+        assert groups == {}
+
+
+class TestRouteOptimization:
+    def test_two_opt_matches_or_improves_nearest_neighbor(self):
+        locs = [
+            Location(lat=30.2458, lng=120.1450),
+            Location(lat=30.2408, lng=120.0980),
+            Location(lat=30.2310, lng=120.1430),
+            Location(lat=30.2390, lng=120.1420),
+            Location(lat=30.2590, lng=120.1460),
+        ]
+        pois = [
+            ScoredPOI(name=f"POI{i}", category="attraction", score=0.9, location=loc)
+            for i, loc in enumerate(locs)
+        ]
+
+        from planner.core.daily_scheduler import (
+            _nearest_neighbor,
+            _optimize_route_2opt,
+            _route_total_distance,
+        )
+
+        nn_route = _nearest_neighbor(pois)
+        opt_route = _optimize_route_2opt(nn_route)
+        assert _route_total_distance(opt_route) <= _route_total_distance(nn_route) + 1e-9
+
+
+class TestMealMatching:
+    def test_create_meal_prefers_real_restaurant_by_food_preference(self):
+        from planner.core.daily_scheduler import _create_meal_activity
+
+        nearby = [
+            ScoredPOI(name="川菜馆", category="restaurant", score=0.8, tags=["辣", "川菜"]),
+            ScoredPOI(name="杭帮菜馆", category="restaurant", score=0.8, tags=["杭帮菜"]),
+        ]
+        profile = UserProfile(destination="杭州", travel_days=1, food_preferences=["杭帮菜"])
+        meal = _create_meal_activity(0, "lunch", profile, 12 * 60, nearby)
+        assert "杭帮菜馆" in meal.poi_name
+        assert meal.category == "restaurant"
+
+    def test_create_meal_falls_back_to_placeholder_when_no_restaurants(self):
+        from planner.core.daily_scheduler import _create_meal_activity
+
+        profile = UserProfile(destination="杭州", travel_days=1)
+        meal = _create_meal_activity(0, "lunch", profile, 12 * 60, [])
+        assert "Lunch" in meal.poi_name
+
+
+class TestDailyDiversity:
+    def test_daily_diversity_replaces_excess_same_category(self):
+        from planner.core.daily_scheduler import _ensure_daily_diversity
+
+        all_pois = [
+            ScoredPOI(name="寺庙A", category="temple", score=0.9),
+            ScoredPOI(name="寺庙B", category="temple", score=0.85),
+            ScoredPOI(name="寺庙C", category="temple", score=0.8),
+            ScoredPOI(name="湖泊", category="lake", score=0.95),
+        ]
+        day_assignments = [list(all_pois[:3])]
+        result = _ensure_daily_diversity(day_assignments, all_pois)
+        categories = [p.category for p in result[0]]
+        assert categories.count("temple") == 2
+        assert "lake" in categories
+
+
+class TestTravelBudget:
+    def test_budget_includes_transport_and_accommodation(self):
+        pois = [
+            ScoredPOI(name="西湖", category="attraction", score=0.9, area="西湖区"),
+        ]
+        profile = UserProfile(destination="杭州", travel_days=3)
+        strategy = build_strategy(pois, profile)
+        schedule = build_schedule(strategy, pois, [], profile)
+
+        total = sum(day.total_cost for day in schedule)
+        transport = 3 * 30
+        accommodation = (3 - 1) * 200
+        assert total == transport + accommodation
+
+
+class TestRemoteDetection:
+    def test_cross_city_poi_is_detected_and_excluded(self):
+        from planner.core.daily_scheduler import detect_remote_pois
+
+        pois = [
+            ScoredPOI(
+                name="西湖",
+                category="attraction",
+                score=0.9,
+                location=Location(lat=30.2458, lng=120.1450),
+            ),
+            ScoredPOI(
+                name="雷峰塔",
+                category="attraction",
+                score=0.9,
+                location=Location(lat=30.2310, lng=120.1430),
+            ),
+            ScoredPOI(
+                name="千岛湖",
+                category="attraction",
+                score=0.9,
+                location=Location(lat=29.5980, lng=119.0330),
+            ),
+        ]
+        remote_class, cross_city, _ = detect_remote_pois(pois)
+        assert remote_class.get("千岛湖") == "cross_city"
+        assert "千岛湖" in cross_city

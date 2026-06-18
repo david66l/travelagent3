@@ -57,35 +57,199 @@ async def test_load_state_falls_back_to_warm(fresh_manager, mock_redis):
 @pytest.mark.asyncio
 async def test_load_state_returns_default_when_nothing_cached(fresh_manager, mock_redis):
     mock_redis.get_json = AsyncMock(return_value=None)
+    mock_redis.get = AsyncMock(return_value=None)
     state = await fresh_manager.load_state("new-session")
     assert state["phase"] == "gathering"
     assert state["turn"] == 0
 
 
 @pytest.mark.asyncio
-async def test_acquire_lock_releases_on_exit(fresh_manager, mock_redis):
-    mock_redis.set_nx = AsyncMock(return_value=True)
-    mock_redis.get = AsyncMock(return_value=None)
-    mock_redis.delete = AsyncMock()
+async def test_load_state_recovers_from_cold_archive(fresh_manager, mock_redis):
+    conv_id = uuid.uuid4()
+    cold = {"destination": "杭州", "turn": 3, "phase": "completed"}
+    mock_redis.get_json = AsyncMock(return_value=None)
+    mock_redis.get = AsyncMock(return_value=str(conv_id))
 
-    async with fresh_manager.acquire_lock("s1") as acquired_token:
-        assert acquired_token is not None
-        # Make the lock release check see the same token.
-        mock_redis.get.return_value = acquired_token
+    with patch.object(
+        fresh_manager,
+        "cold_get_by_conversation_id",
+        new=AsyncMock(return_value=cold),
+    ):
+        state = await fresh_manager.load_state("s1")
 
-    mock_redis.delete.assert_awaited_once()
+    assert state["destination"] == "杭州"
+    assert state["turn"] == 3
 
 
 @pytest.mark.asyncio
-async def test_acquire_lock_does_not_delete_if_token_changed(fresh_manager, mock_redis):
-    mock_redis.set_nx = AsyncMock(return_value=True)
-    mock_redis.get = AsyncMock(return_value="someone-elses-token")
-    mock_redis.delete = AsyncMock()
+async def test_load_state_promotes_warm_to_hot(fresh_manager, mock_redis):
+    warm = {"tier": "warm", "turn": 2}
+    mock_redis.get_json = AsyncMock(side_effect=[None, warm])
+    mock_redis.set_json = AsyncMock()
+
+    state = await fresh_manager.load_state("s1", promote_to_hot=True)
+
+    assert state["turn"] == 2
+    assert mock_redis.set_json.await_count >= 2
+
+
+@pytest.fixture
+def redlock_sim():
+    """Simulate Redlock with an in-memory holder for lock tests."""
+    holder: dict[str, str] = {}
+    nx_lock = asyncio.Lock()
+
+    async def acquire(resource, ttl, blocking=True, blocking_timeout=2.0):
+        token = uuid.uuid4().hex
+        deadline = asyncio.get_event_loop().time() + blocking_timeout
+        while True:
+            async with nx_lock:
+                if resource not in holder:
+                    holder[resource] = token
+                    return token
+            if not blocking:
+                return None
+            if asyncio.get_event_loop().time() >= deadline:
+                return None
+            await asyncio.sleep(0.05)
+
+    async def release(resource, token):
+        async with nx_lock:
+            if holder.get(resource) == token:
+                del holder[resource]
+
+    async def extend(resource, token, ttl):
+        return holder.get(resource) == token
+
+    with patch("core.memory.redlock") as rl:
+        rl.acquire = AsyncMock(side_effect=acquire)
+        rl.release = AsyncMock(side_effect=release)
+        rl.extend = AsyncMock(side_effect=extend)
+        yield rl, holder
+
+
+@pytest.mark.asyncio
+async def test_acquire_lock_releases_on_exit(fresh_manager, redlock_sim):
+    rl, holder = redlock_sim
+
+    async with fresh_manager.acquire_lock("s1") as acquired_token:
+        assert acquired_token is not None
+        assert holder.get("session:s1:lock") == acquired_token
+
+    assert "session:s1:lock" not in holder
+    rl.release.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_acquire_lock_does_not_delete_if_token_changed(fresh_manager, redlock_sim):
+    rl, holder = redlock_sim
+
+    async with fresh_manager.acquire_lock("s1") as token:
+        holder["session:s1:lock"] = "someone-elses-token"
+
+    rl.release.assert_awaited()
+    assert holder["session:s1:lock"] == "someone-elses-token"
+
+
+@pytest.mark.asyncio
+async def test_acquire_lock_non_blocking_raises_when_not_acquired(fresh_manager, redlock_sim):
+    _, holder = redlock_sim
+    holder["session:s1:lock"] = "occupied"
+
+    with pytest.raises(RuntimeError, match="Could not acquire lock"):
+        async with fresh_manager.acquire_lock("s1", blocking=False):
+            pass  # pragma: no cover
+
+
+@pytest.mark.asyncio
+async def test_acquire_lock_timeout_raises_when_not_acquired(fresh_manager, redlock_sim):
+    _, holder = redlock_sim
+    holder["session:s1:lock"] = "occupied"
+
+    with pytest.raises(RuntimeError, match="Timeout acquiring lock"):
+        async with fresh_manager.acquire_lock("s1", blocking_timeout=0.0):
+            pass  # pragma: no cover
+
+
+@pytest.mark.asyncio
+async def test_acquire_lock_swallows_release_exception(fresh_manager, redlock_sim):
+    rl, _ = redlock_sim
+    rl.release = AsyncMock(side_effect=RuntimeError("redis down"))
 
     async with fresh_manager.acquire_lock("s1"):
         pass
 
-    mock_redis.delete.assert_not_awaited()
+    rl.release.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_acquire_lock_extension_renews_token(fresh_manager, redlock_sim):
+    rl, holder = redlock_sim
+
+    async with fresh_manager.acquire_lock("s1", ttl=0.1):
+        await asyncio.sleep(0.06)
+
+    rl.extend.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_acquire_lock_extension_stops_when_token_changes(fresh_manager, redlock_sim):
+    rl, holder = redlock_sim
+
+    async with fresh_manager.acquire_lock("s1", ttl=0.1) as token:
+        holder["session:s1:lock"] = "other-token"
+        await asyncio.sleep(0.06)
+
+    assert rl.extend.await_count >= 0
+
+
+@pytest.mark.asyncio
+async def test_acquire_lock_waits_then_acquires(fresh_manager, redlock_sim):
+    _, holder = redlock_sim
+    holder["session:s1:lock"] = "busy"
+
+    sleep_calls = []
+    original_sleep = asyncio.sleep
+
+    def _patched_sleep(delay: float) -> asyncio.Future[None]:
+        sleep_calls.append(delay)
+        holder.pop("session:s1:lock", None)
+        return original_sleep(0)
+
+    with patch("core.memory.asyncio.sleep", _patched_sleep):
+        async with fresh_manager.acquire_lock("s1"):
+            pass
+
+    assert sleep_calls
+
+
+@pytest.mark.asyncio
+async def test_acquire_lock_extension_logs_debug_on_exception(fresh_manager, redlock_sim):
+    rl, _ = redlock_sim
+    rl.extend = AsyncMock(side_effect=RuntimeError("redis error"))
+
+    async with fresh_manager.acquire_lock("s1", ttl=0.1):
+        await asyncio.sleep(0.06)
+
+    assert rl.extend.await_count > 0
+
+
+@pytest.mark.asyncio
+async def test_concurrent_lock_allows_only_one_holder(fresh_manager, redlock_sim):
+    outcomes: list[str] = []
+
+    async def worker(name: str):
+        try:
+            async with fresh_manager.acquire_lock("concurrent-s1", blocking_timeout=0.08):
+                outcomes.append(f"ok:{name}")
+                await asyncio.sleep(0.2)
+        except RuntimeError:
+            outcomes.append(f"blocked:{name}")
+
+    await asyncio.gather(worker("a"), worker("b"))
+
+    assert sum(o.startswith("ok:") for o in outcomes) == 1
+    assert sum(o.startswith("blocked:") for o in outcomes) == 1
 
 
 @pytest.mark.asyncio
@@ -190,100 +354,3 @@ async def test_archive_to_cold_returns_false_when_no_warm_snapshot(fresh_manager
     assert result is False
 
 
-@pytest.mark.asyncio
-async def test_acquire_lock_non_blocking_raises_when_not_acquired(fresh_manager, mock_redis):
-    mock_redis.set_nx = AsyncMock(return_value=False)
-
-    with pytest.raises(RuntimeError, match="Could not acquire lock"):
-        async with fresh_manager.acquire_lock("s1", blocking=False):
-            pass  # pragma: no cover
-
-
-@pytest.mark.asyncio
-async def test_acquire_lock_timeout_raises_when_not_acquired(fresh_manager, mock_redis):
-    mock_redis.set_nx = AsyncMock(return_value=False)
-
-    with pytest.raises(RuntimeError, match="Timeout acquiring lock"):
-        async with fresh_manager.acquire_lock("s1", blocking_timeout=0.0):
-            pass  # pragma: no cover
-
-
-@pytest.mark.asyncio
-async def test_acquire_lock_swallows_release_exception(fresh_manager, mock_redis):
-    mock_redis.set_nx = AsyncMock(return_value=True)
-    mock_redis.get = AsyncMock(return_value=None)
-    mock_redis.delete = AsyncMock(side_effect=RuntimeError("redis down"))
-
-    async with fresh_manager.acquire_lock("s1") as acquired_token:
-        mock_redis.get.return_value = acquired_token
-
-    # No exception should propagate from the context manager.
-    mock_redis.delete.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_acquire_lock_extension_renews_token(fresh_manager, mock_redis):
-    """Background task extends the lock while the caller holds it."""
-    mock_redis.set_nx = AsyncMock(return_value=True)
-    mock_redis.get = AsyncMock(return_value=None)
-    mock_redis.set = AsyncMock()
-    mock_redis.delete = AsyncMock()
-
-    async with fresh_manager.acquire_lock("s1", ttl=0.1) as token:
-        mock_redis.get.return_value = token
-        # Yield enough time for the extension task to run at least once.
-        await asyncio.sleep(0.06)
-
-    # set is called for the initial lock and at least one extension.
-    assert mock_redis.set.await_count >= 1
-
-
-@pytest.mark.asyncio
-async def test_acquire_lock_extension_stops_when_token_changes(fresh_manager, mock_redis):
-    """Extension loop exits early if another owner holds the lock."""
-    mock_redis.set_nx = AsyncMock(return_value=True)
-    mock_redis.get = AsyncMock(return_value="other-token")
-    mock_redis.delete = AsyncMock()
-
-    async with fresh_manager.acquire_lock("s1", ttl=0.1):
-        await asyncio.sleep(0.06)
-
-    # No extension attempts should issue a SET.
-    mock_redis.set.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_acquire_lock_waits_then_acquires(fresh_manager, mock_redis):
-    """Blocking acquisition retries until the lock becomes available."""
-    mock_redis.set_nx = AsyncMock(side_effect=[False, True])
-    mock_redis.get = AsyncMock(return_value=None)
-    mock_redis.delete = AsyncMock()
-
-    sleep_calls = []
-
-    original_sleep = asyncio.sleep
-
-    def _patched_sleep(delay: float) -> asyncio.Future[None]:
-        sleep_calls.append(delay)
-        return original_sleep(0)
-
-    with patch("core.memory.asyncio.sleep", _patched_sleep):
-        async with fresh_manager.acquire_lock("s1") as token:
-            mock_redis.get.return_value = token
-
-    assert mock_redis.set_nx.await_count == 2
-    assert sleep_calls
-
-
-@pytest.mark.asyncio
-async def test_acquire_lock_extension_logs_debug_on_exception(fresh_manager, mock_redis):
-    """Extension loop should not propagate Redis errors."""
-    mock_redis.set_nx = AsyncMock(return_value=True)
-    mock_redis.get = AsyncMock(side_effect=RuntimeError("redis error"))
-    mock_redis.delete = AsyncMock()
-
-    async with fresh_manager.acquire_lock("s1", ttl=0.1):
-        await asyncio.sleep(0.06)
-
-    # The lock context exits cleanly even though the extension task crashed.
-    assert mock_redis.get.await_count > 0

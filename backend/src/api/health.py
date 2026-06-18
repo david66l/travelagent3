@@ -5,6 +5,8 @@ import uuid
 from fastapi import APIRouter
 from pydantic import BaseModel
 
+from core.redis_client import redis_client
+
 router = APIRouter(prefix="/api")
 
 
@@ -21,5 +23,19 @@ async def create_session() -> CreateSessionResponse:
 
 @router.get("/health")
 async def health_check() -> dict:
-    """Health check endpoint used by Docker and CI."""
+    """Liveness probe used by Docker, K8s, and CI."""
     return {"status": "ok", "service": "travel-agent"}
+
+
+@router.get("/ready")
+async def readiness_check() -> dict:
+    """Readiness probe — verifies Redis connectivity."""
+    try:
+        if redis_client._client is None:
+            await redis_client.connect()
+        pong = await redis_client._client.ping()
+        if not pong:
+            return {"status": "degraded", "redis": "no_pong"}
+        return {"status": "ready", "redis": "ok"}
+    except Exception as exc:
+        return {"status": "degraded", "redis": str(exc)}

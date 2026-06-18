@@ -1,0 +1,112 @@
+# TravelAgent2 shared ConfigMap (M5)
+# Non-sensitive configuration consumed by backend, gateway, celery, and frontend.
+# Sensitive values live in k8s/secret.yaml.
+#
+# Redis topology:
+# - Redis Cluster is deployed as 3-master/3-replica StatefulSet (PRD §4.7.6).
+# - Service "redis" is headless (for cluster discovery / pod DNS).
+# - Service "redis-cluster" is ClusterIP used as the initial seed endpoint.
+# - Redis Cluster only supports database 0; logical DB separation is done via key prefixes.
+#
+# Postgres topology:
+# - Primary/standby StatefulSet with service "postgres".
+# - Read replicas can be accessed via postgres-read Service (created by postgres-statefulset.yaml).
+# ---------------------------------------------------------------------------
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: travel-agent-config
+  namespace: travel-agent
+data:
+  # -------------------------------------------------------------------------
+  # Gateway
+  # -------------------------------------------------------------------------
+  GATEWAY_PORT: "8080"
+  GATEWAY_WORKERS: "4"
+  GATEWAY_READ_TIMEOUT: "10s"
+  GATEWAY_WRITE_TIMEOUT: "30s"
+  BACKEND_URL: "http://backend:8000"
+  FRONTEND_URL: "http://frontend:3000"
+  JWT_ALGORITHM: "HS256"
+  ACCESS_TOKEN_EXPIRE_MINUTES: "30"
+  REFRESH_TOKEN_EXPIRE_DAYS: "7"
+  # Rate limits (PRD §4.1.3)
+  RATE_LIMIT_IP_PER_MINUTE: "60"
+  RATE_LIMIT_USER_PER_MINUTE: "30"
+  RATE_LIMIT_GUEST_PER_MINUTE: "10"
+  RATE_LIMIT_MAX_CONCURRENT_SSE: "3"
+  # Circuit breaker (PRD §4.1.4)
+  GATEWAY_BREAKER_FAIL_THRESHOLD: "20"
+  GATEWAY_BREAKER_WINDOW_SEC: "10"
+  GATEWAY_BREAKER_OPEN_SEC: "30"
+  GATEWAY_BREAKER_FAIL_RATE: "0.5"
+
+  # -------------------------------------------------------------------------
+  # Backend / FastAPI
+  # -------------------------------------------------------------------------
+  APP_HOST: "0.0.0.0"
+  APP_PORT: "8000"
+  LOG_LEVEL: "INFO"
+  # Redis Cluster mode (PRD §4.7.6)
+  REDIS_CLUSTER: "true"
+  # redis-cluster service is the seed; cluster client discovers masters/replicas.
+  REDIS_URL: "redis://redis-cluster:6379/0"
+  REDIS_DB_CACHE: "0"
+  REDIS_DB_QUEUE: "0"
+  REDIS_DB_STATE: "0"
+  # Redlock URLs: comma-separated list of all Redis Cluster master endpoints.
+  # In production these should match the headless pod DNS of the 3 masters.
+  REDIS_REDLOCK_URLS: "redis://redis-0.redis:6379/0,redis://redis-2.redis:6379/0,redis://redis-4.redis:6379/0"
+  # Database (populated from secret DATABASE_URL; this is a fallback for non-secret aware tools)
+  # DATABASE_URL: see secret.yaml
+  # LLM / vLLM (M4)
+  VLLM_BASE_URL: "http://vllm:8000/v1"
+  VLLM_API_KEY: "not-needed"
+  VLLM_ENABLED: "true"
+  VLLM_MAX_RETRIES: "3"
+  DEFAULT_MODEL: "travel-plan-v1"
+  SMALL_MODEL: "travel-chat-v1"
+  REPAIR_MODEL: "travel-repair-v1"
+  # Search / external APIs (keys in secret)
+  SEARCH_ENGINE: "tavily"
+  # Metrics (M5)
+  METRICS_PATH: "/api/v1/metrics"
+  PROMETHEUS_MULTIPROC_DIR: "/tmp/prometheus"
+  OTEL_ENABLED: "false"
+  OTEL_EXPORTER_ENDPOINT: "http://otel-collector.monitoring.svc.cluster.local:4318/v1/traces"
+  OTEL_SERVICE_NAME: "travel-agent-backend"
+  # MLflow (M5)
+  MLFLOW_TRACKING_URI: "http://mlflow:5000"
+  # AI Safety (M5 §4.9)
+  INPUT_SAFETY_ENABLED: "true"
+  OUTPUT_SAFETY_ENABLED: "true"
+
+  # -------------------------------------------------------------------------
+  # Celery (PRD §4.7)
+  # -------------------------------------------------------------------------
+  # Redis Cluster only supports DB 0, so queue/state use key prefixes instead of DB numbers.
+  # Backend Celery config should set broker_transport_options.global_keyprefix per queue.
+  CELERY_BROKER_URL: "redis://redis-cluster:6379/0"
+  CELERY_RESULT_BACKEND: "redis://redis-cluster:6379/0"
+  CELERY_TASK_DEFAULT_QUEUE: "default"
+  CELERY_PLANNING_QUEUE: "planning"
+  CELERY_MEMORY_QUEUE: "memory"
+  CELERY_DEAD_LETTER_QUEUE: "planning_dead_letter"
+  CELERY_WORKER_PREFETCH_MULTIPLIER: "1"
+  # Task retry (PRD §4.7.3)
+  PLANNING_TASK_MAX_RETRIES: "3"
+  PLANNING_TASK_RETRY_INITIAL_SECONDS: "2.0"
+  PLANNING_TASK_RETRY_MAX_SECONDS: "30.0"
+  TASK_RETRY_COUNTER_TTL_SECONDS: "604800"
+  DEAD_LETTER_ARCHIVE_DAYS: "7"
+  # Planning executor: celery | embedded
+  PLANNING_EXECUTOR: "celery"
+
+  # -------------------------------------------------------------------------
+  # Frontend / Next.js
+  # -------------------------------------------------------------------------
+  NEXT_PUBLIC_API_URL: "/api/v1"
+  NEXT_PUBLIC_SSE_URL: "/api/v1/chat/stream"
+  NEXT_TELEMETRY_DISABLED: "1"
+  NODE_ENV: "production"
+  PORT: "3000"

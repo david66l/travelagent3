@@ -137,12 +137,19 @@ export function handleChatEvent(
       store.setLoading(false);
       store.setNeedsClarification(false);
       const payload = data.payload as Record<string, unknown> | undefined;
-      if (payload?.proposal_text) {
+      // Prefer the finalized proposal text when available; fall back to the
+      // streaming buffer for cases where the backend did not send a proposal.
+      const finalText = (payload?.proposal_text as string) || store.streamingContent;
+      if (finalText) {
         store.addMessage({
           role: "assistant",
-          content: payload.proposal_text as string,
+          content: finalText,
           timestamp: Date.now(),
         });
+      }
+      if (store.isStreaming) {
+        store.stopStreaming();
+        store.setStreamingContent("");
       }
       if (payload?.itinerary || payload?.itinerary_final) {
         store.setItinerary(
@@ -157,30 +164,70 @@ export function handleChatEvent(
       refs.lastEventIdRef.current = 0;
       store.setCurrentStage(stage === "failed" ? "处理失败" : "已取消");
       store.setLoading(false);
-      store.addMessage({
-        role: "assistant",
-        content:
-          stage === "failed"
-            ? `错误: ${(data.error as string) || "处理失败"}`
-            : "行程规划已取消",
-        timestamp: Date.now(),
-      });
+      if (store.isStreaming) {
+        store.addMessage({
+          role: "assistant",
+          content: store.streamingContent || "行程规划已中断",
+          timestamp: Date.now(),
+        });
+        store.stopStreaming();
+        store.setStreamingContent("");
+      } else {
+        store.addMessage({
+          role: "assistant",
+          content:
+            stage === "failed"
+              ? `错误: ${(data.error as string) || "处理失败"}`
+              : "行程规划已取消",
+          timestamp: Date.now(),
+        });
+      }
+    }
+    return;
+  }
+
+  if (type === "token") {
+    const chunk = (data.chunk as string) || "";
+    if (chunk) {
+      if (!store.isStreaming) {
+        store.startStreaming();
+      }
+      store.appendStreamingContent(chunk);
     }
     return;
   }
 
   if (type === "error") {
-    store.addMessage({
-      role: "assistant",
-      content: `错误: ${(data.error as string) || "未知错误"}`,
-      timestamp: Date.now(),
-    });
+    if (store.isStreaming) {
+      store.addMessage({
+        role: "assistant",
+        content: store.streamingContent || `错误: ${(data.error as string) || "未知错误"}`,
+        timestamp: Date.now(),
+      });
+      store.stopStreaming();
+      store.setStreamingContent("");
+    } else {
+      store.addMessage({
+        role: "assistant",
+        content: `错误: ${(data.error as string) || "未知错误"}`,
+        timestamp: Date.now(),
+      });
+    }
     store.setLoading(false);
     store.setCurrentStage(null);
     return;
   }
 
   if (type === "done") {
+    if (store.isStreaming) {
+      store.addMessage({
+        role: "assistant",
+        content: store.streamingContent,
+        timestamp: Date.now(),
+      });
+      store.stopStreaming();
+      store.setStreamingContent("");
+    }
     store.setConnected(false);
   }
 }

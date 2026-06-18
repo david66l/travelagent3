@@ -11,7 +11,7 @@ from sqlalchemy import update
 
 from core.celery_app import celery_app
 from core.database import async_session_maker
-from core.dead_letter import push_dead_letter
+from core.metrics import incr
 from core.settings import settings
 from core.task_retry import (
     compute_retry_delay,
@@ -57,6 +57,7 @@ async def _finalize_dead_letter(
         kwargs={"job_id": job_id},
         task_id=task_id,
     )
+    incr("planning_jobs_failed_total")
     async with async_session_maker() as db:
         repo = PlanningJobRepository(db)
         await repo.update_status(job_id, "failed")
@@ -102,3 +103,30 @@ def execute_planning_job(self: Any, job_id: str) -> bool:
         _run_async(_mark_retrying(job_id, f"{type(exc).__name__}: {exc}"))
         delay = compute_retry_delay(attempt)
         raise self.retry(exc=exc, countdown=delay)
+
+
+@celery_app.task(name="worker.planning_tasks.enforce_cancel_deadline")  # type: ignore[untyped-decorator]
+def enforce_cancel_deadline(job_id: str) -> bool:
+    """Force-cancel a job stuck in cancelling (PRD §4.7)."""
+    async def _enforce() -> bool:
+        async with async_session_maker() as db:
+            repo = PlanningJobRepository(db)
+            ok = await repo.force_cancel(job_id)
+            if ok:
+                await repo.add_event(
+                    job_id=job_id,
+                    stage="force_cancelled",
+                    event_type="force_cancelled",
+                )
+            await db.commit()
+            return ok
+
+    try:
+        forced = cast(bool, _run_async(_enforce()))
+        if forced:
+            logger.warning("Force-cancelled job %s after cancel deadline", job_id)
+            incr("planning_jobs_force_cancelled_total")
+        return forced
+    except Exception:
+        logger.exception("enforce_cancel_deadline failed for %s", job_id)
+        return False

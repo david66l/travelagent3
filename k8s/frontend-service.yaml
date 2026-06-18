@@ -1,0 +1,19 @@
+# Next.js Frontend Service (M5)
+# Internal service accessed by the Go Gateway for SSR/pages.
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: travel-agent
+  labels:
+    app: frontend
+    tier: web
+spec:
+  type: ClusterIP
+  selector:
+    app: frontend
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
+      protocol: TCP

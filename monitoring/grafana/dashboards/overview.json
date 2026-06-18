@@ -1,0 +1,95 @@
+{
+  "title": "TravelAgent2 - 全栈监控大盘",
+  "uid": "travelagent-overview",
+  "panels": [
+    {
+      "title": "总 QPS",
+      "type": "graph",
+      "targets": [
+        {"expr": "sum(rate(gateway_requests_total[1m]))", "legendFormat": "Gateway"},
+        {"expr": "sum(rate(http_requests_total{job=\"backend\"}[1m]))", "legendFormat": "FastAPI"}
+      ]
+    },
+    {
+      "title": "P99 延迟",
+      "type": "graph",
+      "targets": [
+        {"expr": "histogram_quantile(0.99, rate(gateway_request_duration_seconds_bucket[1m]))", "legendFormat": "Gateway P99"},
+        {"expr": "histogram_quantile(0.99, rate(http_request_duration_seconds_bucket{job=\"backend\"}[1m]))", "legendFormat": "FastAPI P99"}
+      ]
+    },
+    {
+      "title": "错误率 (5xx)",
+      "type": "stat",
+      "targets": [
+        {"expr": "sum(rate(gateway_requests_total{status=~\"5..\"}[1m])) / sum(rate(gateway_requests_total[1m])) * 100", "legendFormat": "Error %"}
+      ]
+    },
+    {
+      "title": "LLM Token 用量",
+      "type": "graph",
+      "targets": [
+        {"expr": "sum(rate(llm_token_usage_total[5m])) by (model)", "legendFormat": "{{model}}"}
+      ]
+    },
+    {
+      "title": "GPU 利用率",
+      "type": "gauge",
+      "targets": [
+        {"expr": "vllm_gpu_utilization", "legendFormat": "GPU {{pod}}"}
+      ]
+    },
+    {
+      "title": "Celery 队列长度",
+      "type": "graph",
+      "targets": [
+        {"expr": "celery_queue_length{queue=\"planning\"}", "legendFormat": "Planning"},
+        {"expr": "celery_queue_length{queue=\"poi\"}", "legendFormat": "POI"},
+        {"expr": "celery_queue_length{queue=\"memory\"}", "legendFormat": "Memory"}
+      ]
+    },
+    {
+      "title": "缓存命中率",
+      "type": "stat",
+      "targets": [
+        {"expr": "sum(rate(cache_hit_total[5m])) / (sum(rate(cache_hit_total[5m])) + sum(rate(cache_miss_total[5m]))) * 100", "legendFormat": "Hit Rate %"}
+      ]
+    },
+    {
+      "title": "外部 API 调用量",
+      "type": "graph",
+      "targets": [
+        {"expr": "sum(rate(external_api_calls_total[5m])) by (api_name, status)", "legendFormat": "{{api_name}} {{status}}"}
+      ]
+    },
+    {
+      "title": "成本估算 (元/小时)",
+      "type": "stat",
+      "targets": [
+        {"expr": "sum(rate(external_api_cost_total[1h])) + sum(rate(llm_token_usage_total[1h])) * 0.002", "legendFormat": "Cost ¥/h"}
+      ]
+    },
+    {
+      "title": "SSE 活跃连接数",
+      "type": "graph",
+      "targets": [
+        {"expr": "sse_active_connections", "legendFormat": "Active SSE"}
+      ]
+    },
+    {
+      "title": "vLLM TTFT (首Token延迟)",
+      "type": "graph",
+      "targets": [
+        {"expr": "histogram_quantile(0.50, rate(vllm_time_to_first_token_seconds_bucket[5m]))", "legendFormat": "P50"},
+        {"expr": "histogram_quantile(0.95, rate(vllm_time_to_first_token_seconds_bucket[5m]))", "legendFormat": "P95"}
+      ]
+    },
+    {
+      "title": "死信队列待处理",
+      "type": "stat",
+      "targets": [
+        {"expr": "dead_letter_entries_total", "legendFormat": "DLQ Pending"}
+      ]
+    }
+  ]
+}

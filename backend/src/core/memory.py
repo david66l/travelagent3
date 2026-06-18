@@ -4,7 +4,7 @@ Hot  -> Redis  -> session:{id}:state   (active sessions, short TTL)
 Warm -> Redis  -> session:{id}:warm    (recent snapshots, multi-day TTL)
 Cold -> Postgres -> conversations.state_snapshot (authoritative long-term archive)
 
-State updates are protected by a Redlock-style single-instance Redis lock.
+State updates are protected by a Redlock quorum lock (multi-master when configured).
 """
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ from sqlalchemy import select
 
 from core.conversation_state import default_conversation_state
 from core.database import async_session_maker
+from core.redlock import redlock
 from core.redis_client import redis_client
 from models import Conversation
 
@@ -107,12 +108,22 @@ class MemoryManager:
     # Cold layer
     # --------------------------------------------------------------------- #
 
-    async def archive_to_cold(self, session_id: str, user_id: Optional[str] = None) -> bool:
+    async def archive_to_cold(
+        self,
+        session_id: str,
+        user_id: Optional[str] = None,
+        user_role: Optional[str] = None,
+    ) -> bool:
         """Persist the warm snapshot to PostgreSQL.
 
-        Only authenticated users (UUID ``user_id``) get a Conversation row.
-        Anonymous sessions remain authoritative through ``planning_jobs``.
+        Guests do not get cold storage (PRD §4.5). Authenticated users get a
+        Conversation row; anonymous sessions remain in planning_jobs only.
         """
+        if user_role == "guest":
+            logger.debug("Skipping cold archive for guest session %s", session_id)
+            await self.warm_delete(session_id)
+            return False
+
         snapshot = await self.warm_get(session_id)
         if not snapshot:
             logger.debug("No warm snapshot to archive for session %s", session_id)
@@ -194,14 +205,21 @@ class MemoryManager:
     # Combined recovery
     # --------------------------------------------------------------------- #
 
-    async def load_state(self, session_id: str) -> dict[str, Any]:
-        """Recover state: hot -> warm -> cold default."""
+    async def load_state(
+        self,
+        session_id: str,
+        *,
+        promote_to_hot: bool = False,
+    ) -> dict[str, Any]:
+        """Recover state: hot -> warm -> cold -> default empty state."""
         state = await self.hot_get(session_id)
         if state is not None:
             return state
 
         state = await self.warm_get(session_id)
         if state is not None:
+            if promote_to_hot:
+                await self.hot_set(session_id, state)
             return state
 
         conv_id_raw = await redis_client.get(_conv_id_key(session_id))
@@ -209,6 +227,17 @@ class MemoryManager:
         if conv_id is not None:
             cold = await self.cold_get_by_conversation_id(conv_id)
             if cold is not None:
+                if promote_to_hot:
+                    await self.hot_set(session_id, cold)
+                return cold
+
+        # session_id is typically the conversation UUID — recover without Redis pointer.
+        session_conv_id = self._parse_uuid(session_id)
+        if session_conv_id is not None and session_conv_id != conv_id:
+            cold = await self.cold_get_by_conversation_id(session_conv_id)
+            if cold is not None:
+                if promote_to_hot:
+                    await self.hot_set(session_id, cold)
                 return cold
 
         return cast(dict[str, Any], default_conversation_state())
@@ -233,20 +262,16 @@ class MemoryManager:
         lost ownership (token mismatch).
         """
         key = _lock_key(session_id)
-        token = uuid.uuid4().hex
-        acquired = False
+        token: Optional[str] = None
         lock_task: Optional[asyncio.Task[None]] = None
 
         async def _extend() -> None:
-            """Background task that renews the lock while work is ongoing."""
             try:
                 while True:
                     await asyncio.sleep(ttl / 2)
-                    raw = await redis_client.get(key)
-                    if raw == token:
-                        await redis_client.set(key, token, ttl=ttl)
-                    else:
-                        break
+                    if token and await redlock.extend(key, token, ttl):
+                        continue
+                    break
             except asyncio.CancelledError:
                 pass
             except Exception:
@@ -254,8 +279,8 @@ class MemoryManager:
 
         deadline = asyncio.get_event_loop().time() + blocking_timeout
         while True:
-            acquired = await redis_client.set_nx(key, token, ttl=ttl)
-            if acquired:
+            token = await redlock.acquire(key, ttl, blocking=False, blocking_timeout=0)
+            if token:
                 break
             if not blocking:
                 raise RuntimeError(f"Could not acquire lock for session {session_id}")
@@ -273,12 +298,11 @@ class MemoryManager:
                     await lock_task
                 except asyncio.CancelledError:
                     pass
-            try:
-                raw = await redis_client.get(key)
-                if raw == token:
-                    await redis_client.delete(key)
-            except Exception:
-                logger.debug("Failed to release lock for session %s", session_id)
+            if token:
+                try:
+                    await redlock.release(key, token)
+                except Exception:
+                    logger.debug("Failed to release lock for session %s", session_id)
 
     # --------------------------------------------------------------------- #
     # Helpers

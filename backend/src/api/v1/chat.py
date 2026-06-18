@@ -15,11 +15,14 @@ from api.chat_runtime import (
     process_chat_message,
     push_job_status,
     restore_session_state,
+    schedule_disconnect_cleanup,
 )
 from api.deps import get_conversation_service, get_current_user
 from api.v1.schemas import ChatMessageRequest
 from core.database import async_session_maker
 from core.exceptions import NotFoundException, RateLimitException
+from core.input_safety import validate_user_input
+from core.metrics import record_prompt_injection_blocked
 from core.redis_client import redis_client
 from core.responses import success_response
 from core.settings import settings
@@ -46,6 +49,11 @@ async def _ensure_conversation(
 
 
 async def _track_sse_connection(user_id: UUID, timeout: int) -> str:
+    """Secondary SSE guard - primary control is at Go gateway.
+
+    Uses Redis key `sse:connections:{user_id}` independent of gateway
+    `gw:sse:{user_id}` so each layer has its own counter for defense-in-depth.
+    """
     key = f"sse:connections:{user_id}"
     count = await redis_client.incr(key)
     if count == 1:
@@ -88,6 +96,7 @@ async def chat_stream(
     async def event_generator():
         queue = await manager.register_sse(session_id)
         push_task: asyncio.Task | None = None
+        active_job_id: str | None = job_id
         try:
             await restore_session_state(session_id)
 
@@ -100,6 +109,7 @@ async def chat_stream(
                 else:
                     jobs = await repo.get_by_session(session_id, limit=1)
                     if jobs and jobs[0].status in ("pending", "running"):
+                        active_job_id = jobs[0].id
                         push_task = asyncio.create_task(
                             push_job_status(
                                 jobs[0].id,
@@ -135,6 +145,12 @@ async def chat_stream(
                 except asyncio.CancelledError:
                     pass
             await _release_sse_connection(sse_key)
+            schedule_disconnect_cleanup(
+                session_id,
+                str(user.id),
+                active_job_id,
+                user.role,
+            )
 
     headers = {
         "Cache-Control": "no-cache",
@@ -159,6 +175,13 @@ async def chat_message(
     await _ensure_conversation(body.conversation_id, user, service)
     session_id = _session_id_for(body.conversation_id)
 
+    if settings.input_safety_enabled:
+        try:
+            validate_user_input(body.content)
+        except Exception:
+            record_prompt_injection_blocked()
+            raise
+
     await service.add_message(body.conversation_id, "user", body.content)
 
     asyncio.create_task(
@@ -167,6 +190,7 @@ async def chat_message(
             str(user.id),
             body.content,
             conversation_id=body.conversation_id,
+            user_role=user.role,
         )
     )
 

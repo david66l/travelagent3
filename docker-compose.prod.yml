@@ -1,0 +1,386 @@
+# docker-compose.prod.yml — Production-grade single-machine deployment (M5)
+# Alternative to K8s for smaller deployments or on-premise machines with Docker.
+#
+# Usage:
+#   cp .env.example .env
+#   # edit .env with real secrets
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# Optional vLLM GPU inference:
+#   docker compose -f docker-compose.prod.yml --profile vllm up -d
+#
+# Optional observability stack:
+#   docker compose -f docker-compose.prod.yml -f docker-compose.observability.yml up -d
+#
+# Notes:
+# - Resource limits are tuned for a single 32C/128G machine; adjust to your host.
+# - Redis is deployed as a single node here. For Redis Cluster use K8s (PRD §4.7.6).
+# - Secrets come from .env; never commit .env to git.
+
+services:
+  # -------------------------------------------------------------------------
+  # PostgreSQL (single primary; add pg replica via streaming if needed)
+  # -------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: travelagent_postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-travelagent}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}
+      POSTGRES_DB: ${POSTGRES_DB:-travel_agent}
+      PGDATA: /var/lib/postgresql/data
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/migrations:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-travelagent} -d ${POSTGRES_DB:-travel_agent}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 8G
+        reservations:
+          cpus: "2"
+          memory: 4G
+    restart: unless-stopped
+    networks:
+      - travelagent
+
+  # -------------------------------------------------------------------------
+  # Redis (single-node production instance; cluster mode in K8s)
+  # -------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: travelagent_redis
+    command: >
+      redis-server
+      --appendonly yes
+      --appendfsync everysec
+      --maxmemory 8gb
+      --maxmemory-policy volatile-lru
+      --save 900 1 300 10 60 10000
+    volumes:
+      - redis_data:/data
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 8G
+        reservations:
+          cpus: "1"
+          memory: 4G
+    restart: unless-stopped
+    networks:
+      - travelagent
+
+  # -------------------------------------------------------------------------
+  # FastAPI Backend
+  # -------------------------------------------------------------------------
+  backend:
+    image: ${IMAGE_REGISTRY:-ghcr.io/travelagent}/travel-agent-backend:${IMAGE_TAG:-latest}
+    container_name: travelagent_backend
+    env_file:
+      - .env
+    environment:
+      APP_HOST: "0.0.0.0"
+      APP_PORT: "8000"
+      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER:-travelagent}:${POSTGRES_PASSWORD:?}@postgres:5432/${POSTGRES_DB:-travel_agent}"
+      DATABASE_URL_SYNC: "postgresql://${POSTGRES_USER:-travelagent}:${POSTGRES_PASSWORD:?}@postgres:5432/${POSTGRES_DB:-travel_agent}"
+      REDIS_URL: "redis://redis:6379/0"
+      CELERY_BROKER_URL: "redis://redis:6379/1"
+      CELERY_RESULT_BACKEND: "redis://redis:6379/2"
+      VLLM_BASE_URL: "http://vllm:8000/v1"
+      VLLM_ENABLED: ${VLLM_ENABLED:-false}
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: "3"
+          memory: 2G
+        reservations:
+          cpus: "1"
+          memory: 1G
+    restart: unless-stopped
+    networks:
+      - travelagent
+
+  # -------------------------------------------------------------------------
+  # Next.js Frontend
+  # -------------------------------------------------------------------------
+  frontend:
+    image: ${IMAGE_REGISTRY:-ghcr.io/travelagent}/travel-agent-frontend:${IMAGE_TAG:-latest}
+    container_name: travelagent_frontend
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      NEXT_PUBLIC_API_URL: "/api/v1"
+      NEXT_PUBLIC_SSE_URL: "/api/v1/chat/stream"
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://127.0.0.1:3000', (r)=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))\""]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1G
+        reservations:
+          cpus: "0.5"
+          memory: 512M
+    restart: unless-stopped
+    networks:
+      - travelagent
+
+  # -------------------------------------------------------------------------
+  # Go Gateway
+  # -------------------------------------------------------------------------
+  gateway:
+    image: ${IMAGE_REGISTRY:-ghcr.io/travelagent}/travel-agent-gateway:${IMAGE_TAG:-latest}
+    container_name: travelagent_gateway
+    env_file:
+      - .env
+    environment:
+      GATEWAY_PORT: "8080"
+      BACKEND_URL: "http://backend:8000"
+      FRONTEND_URL: "http://frontend:3000"
+      REDIS_URL: "redis://redis:6379/0"
+    ports:
+      - "8080:8080"
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2G
+        reservations:
+          cpus: "1"
+          memory: 512M
+    restart: unless-stopped
+    networks:
+      - travelagent
+
+  # -------------------------------------------------------------------------
+  # Celery workers — one service per queue for independent scaling
+  # -------------------------------------------------------------------------
+  celery_worker_default:
+    image: ${IMAGE_REGISTRY:-ghcr.io/travelagent}/travel-agent-backend:${IMAGE_TAG:-latest}
+    container_name: travelagent_celery_default
+    command: celery -A core.celery_app worker -Q default -l info --concurrency 4
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER:-travelagent}:${POSTGRES_PASSWORD:?}@postgres:5432/${POSTGRES_DB:-travel_agent}"
+      REDIS_URL: "redis://redis:6379/0"
+      CELERY_BROKER_URL: "redis://redis:6379/1"
+      CELERY_RESULT_BACKEND: "redis://redis:6379/2"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2G
+        reservations:
+          cpus: "1"
+          memory: 1G
+    restart: unless-stopped
+    networks:
+      - travelagent
+
+  celery_worker_planning:
+    image: ${IMAGE_REGISTRY:-ghcr.io/travelagent}/travel-agent-backend:${IMAGE_TAG:-latest}
+    container_name: travelagent_celery_planning
+    command: celery -A core.celery_app worker -Q planning -l info --concurrency 2
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER:-travelagent}:${POSTGRES_PASSWORD:?}@postgres:5432/${POSTGRES_DB:-travel_agent}"
+      REDIS_URL: "redis://redis:6379/0"
+      CELERY_BROKER_URL: "redis://redis:6379/1"
+      CELERY_RESULT_BACKEND: "redis://redis:6379/2"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      replicas: ${PLANNING_WORKERS:-2}
+      resources:
+        limits:
+          cpus: "4"
+          memory: 4G
+        reservations:
+          cpus: "2"
+          memory: 2G
+    restart: unless-stopped
+    networks:
+      - travelagent
+
+  celery_worker_poi:
+    image: ${IMAGE_REGISTRY:-ghcr.io/travelagent}/travel-agent-backend:${IMAGE_TAG:-latest}
+    container_name: travelagent_celery_poi
+    command: celery -A core.celery_app worker -Q poi -l info --concurrency 6
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER:-travelagent}:${POSTGRES_PASSWORD:?}@postgres:5432/${POSTGRES_DB:-travel_agent}"
+      REDIS_URL: "redis://redis:6379/0"
+      CELERY_BROKER_URL: "redis://redis:6379/1"
+      CELERY_RESULT_BACKEND: "redis://redis:6379/2"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      replicas: ${POI_WORKERS:-2}
+      resources:
+        limits:
+          cpus: "3"
+          memory: 2G
+        reservations:
+          cpus: "1"
+          memory: 1G
+    restart: unless-stopped
+    networks:
+      - travelagent
+
+  celery_worker_memory:
+    image: ${IMAGE_REGISTRY:-ghcr.io/travelagent}/travel-agent-backend:${IMAGE_TAG:-latest}
+    container_name: travelagent_celery_memory
+    command: celery -A core.celery_app worker -Q memory -l info --concurrency 2
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER:-travelagent}:${POSTGRES_PASSWORD:?}@postgres:5432/${POSTGRES_DB:-travel_agent}"
+      REDIS_URL: "redis://redis:6379/0"
+      CELERY_BROKER_URL: "redis://redis:6379/1"
+      CELERY_RESULT_BACKEND: "redis://redis:6379/2"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1G
+        reservations:
+          cpus: "0.5"
+          memory: 512M
+    restart: unless-stopped
+    networks:
+      - travelagent
+
+  celery_beat:
+    image: ${IMAGE_REGISTRY:-ghcr.io/travelagent}/travel-agent-backend:${IMAGE_TAG:-latest}
+    container_name: travelagent_celery_beat
+    command: celery -A core.celery_app beat -l info
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER:-travelagent}:${POSTGRES_PASSWORD:?}@postgres:5432/${POSTGRES_DB:-travel_agent}"
+      REDIS_URL: "redis://redis:6379/0"
+      CELERY_BROKER_URL: "redis://redis:6379/1"
+      CELERY_RESULT_BACKEND: "redis://redis:6379/2"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1G
+        reservations:
+          cpus: "0.5"
+          memory: 512M
+    restart: unless-stopped
+    networks:
+      - travelagent
+
+  # -------------------------------------------------------------------------
+  # vLLM inference (optional, requires NVIDIA GPU)
+  # -------------------------------------------------------------------------
+  vllm:
+    profiles: ["vllm"]
+    image: ${IMAGE_REGISTRY:-ghcr.io/travelagent}/travel-agent-vllm:${IMAGE_TAG:-latest}
+    container_name: travelagent_vllm
+    environment:
+      VLLM_MODEL: ${VLLM_MODEL:-Qwen/Qwen2.5-14B-Instruct}
+    volumes:
+      - vllm_models:/models
+      - ./ml/adapters:/models/adapters:ro
+    ports:
+      - "127.0.0.1:8001:8000"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+        limits:
+          cpus: "8"
+          memory: 64G
+    restart: unless-stopped
+    networks:
+      - travelagent
+
+volumes:
+  postgres_data:
+  redis_data:
+  vllm_models:
+
+networks:
+  travelagent:
+    driver: bridge

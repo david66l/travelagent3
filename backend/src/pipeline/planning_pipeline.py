@@ -1,7 +1,9 @@
-"""Planning pipeline — Phase 2A: Planning Core + Rule Validator.
+"""Planning pipeline — Phase 2A: Planning Core with embedded constraints.
 
 Replaces monolithic LangGraph planner_node with deterministic algorithm draft
-that streams to frontend immediately.
+that streams to frontend immediately. Validation/Repair layers are no longer
+invoked; the scheduler enforces constraints directly and only runs a lightweight
+sanity check.
 """
 
 import asyncio
@@ -12,7 +14,11 @@ from datetime import datetime
 from typing import Any, Optional
 
 from models.planning_job import PlanningJob
-from planner.core import build_strategy, build_schedule
+from core.metrics import incr
+from planner.core import build_strategy, build_schedule, detect_remote_pois
+from planner.core.or_scheduler import solve_itinerary_or
+from planner.core.daily_scheduler import _sanity_check
+from planner.core.models import RuleViolation
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +34,18 @@ class PlanningPipeline:
 
     async def run(self, job: PlanningJob):
         """Execute Phase 2A pipeline: data → draft → validate → finalize."""
+        from core.thought_logger import (
+            set_current_session_id,
+            set_current_user_id,
+            set_current_user_role,
+        )
+
+        feedback = job.user_feedback or {}
+        set_current_session_id(job.session_id)
+        if job.user_id:
+            set_current_user_id(job.user_id)
+        set_current_user_role(feedback.get("user_role", "user"))
+
         try:
             await self._run_core(job)
         except asyncio.CancelledError:
@@ -59,7 +77,7 @@ class PlanningPipeline:
 
         from core.cache_keys import itinerary_draft_key
         from core.cache_policy import jitter_ttl
-        from core.redis_client import redis_client
+        from core.redis_client import redis_cache_client
         from core.settings import settings
         from planner.core.models import Strategy
         from schemas import DayPlan
@@ -67,10 +85,11 @@ class PlanningPipeline:
         draft_key = itinerary_draft_key(profile)
         cached_draft: dict | None = None
         try:
-            cached_draft = await redis_client.get_json(draft_key)
+            cached_draft = await redis_cache_client.get_json(draft_key)
         except Exception:
             pass
 
+        cache_remote_warnings: list[RuleViolation] = []
         if cached_draft and isinstance(cached_draft.get("itinerary_draft"), list):
             logger.info("Itinerary draft cache hit for %s", profile.destination)
             strategy = Strategy(**cached_draft["strategy"])
@@ -91,6 +110,25 @@ class PlanningPipeline:
                     )
                 except Exception:
                     pois = []
+
+            # B1: cache hit must still run remote detection and filter cross-city POIs
+            if pois:
+                _, cross_city_names, _ = detect_remote_pois(pois)
+                if cross_city_names:
+                    for day in itinerary_draft:
+                        original_count = len(day.activities)
+                        day.activities = [
+                            a for a in day.activities if a.poi_name not in cross_city_names
+                        ]
+                        if original_count > 0 and not day.activities:
+                            cache_remote_warnings.append(
+                                RuleViolation(
+                                    rule="remote_poi_filtered",
+                                    severity="soft",
+                                    message=f"第{day.day_number}天仅含远程景点，已从缓存行程中移除",
+                                    day_number=day.day_number,
+                                )
+                            )
         else:
             # ------------------------------------------------------------------ #
             # 2. Data collection (POI + weather) with timeout + fallback
@@ -135,10 +173,21 @@ class PlanningPipeline:
                 logger.warning("Weather query failed for %s: %s", profile.destination, exc)
 
             # ------------------------------------------------------------------ #
-            # 3. Planning Core: heuristic strategy + algorithm scheduler
+            # 3. Planning Core: OR-Tools CP-SAT (primary) + greedy (fallback)
             # ------------------------------------------------------------------ #
             strategy = build_strategy(pois, profile)
-            itinerary_draft = build_schedule(strategy, pois, weather, profile)
+
+            # Try OR-Tools first
+            try:
+                itinerary_draft = solve_itinerary_or(
+                    pois, profile, must_see=strategy.must_see,
+                )
+                logger.info("OR-Tools solver used for job %s", job.id)
+            except Exception as exc:
+                logger.warning(
+                    "OR-Tools failed (%s), falling back to greedy scheduler", exc
+                )
+                itinerary_draft = build_schedule(strategy, pois, weather, profile)
 
             draft_payload = {
                 "itinerary_draft": [day.model_dump() for day in itinerary_draft],
@@ -146,7 +195,7 @@ class PlanningPipeline:
                 "fallback_used": fallback_used,
             }
             try:
-                await redis_client.set_json(
+                await redis_cache_client.set_json(
                     draft_key,
                     draft_payload,
                     ttl=jitter_ttl(settings.cache_ttl_itinerary),
@@ -163,47 +212,19 @@ class PlanningPipeline:
             return
 
         # ------------------------------------------------------------------ #
-        # 4. Rule Validator + Repair Executor (Phase 2B)
+        # 4. Sanity check (no validator/repair)
         # ------------------------------------------------------------------ #
-        from planner.core import validate as validate_itinerary
-        from planner.core import run_repair_loop
+        warnings = _sanity_check(itinerary_draft, profile)
+        if cache_remote_warnings:
+            warnings.extend([w.message for w in cache_remote_warnings])
 
-        report = validate_itinerary(itinerary_draft, profile, strategy.must_see)
-        repair_result = None
-        needs_human = False
-        working_itinerary = itinerary_draft
+        for warning in warnings:
+            logger.warning("Job %s sanity warning: %s", job.id, warning)
 
-        if report.hard_violations:
-            logger.warning(
-                "Job %s has %d hard violations — running repair loop",
-                job.id,
-                len(report.hard_violations),
-            )
-            repair_result = run_repair_loop(
-                itinerary_draft,
-                profile,
-                strategy.must_see,
-                pois,
-            )
-            logger.info(
-                "Repair loop: success=%s applied=%d rejected=%d needs_human=%s",
-                repair_result.success,
-                len(repair_result.applied_plans),
-                len(repair_result.rejected_plans),
-                repair_result.needs_human,
-            )
-
-        if repair_result and repair_result.success and repair_result.itinerary:
-            working_itinerary = repair_result.itinerary
-            report = validate_itinerary(working_itinerary, profile, strategy.must_see)
-        elif repair_result and repair_result.needs_human:
-            needs_human = True
-
-        # Stream final itinerary (with validation metadata)
+        # Stream final itinerary
         final_payload = {
-            "itinerary_final": [day.model_dump() for day in working_itinerary],
-            "hard_violations": [v.model_dump() for v in report.hard_violations],
-            "soft_warnings": [w.model_dump() for w in report.soft_warnings],
+            "itinerary_final": [day.model_dump() for day in itinerary_draft],
+            "warnings": warnings,
         }
         if not await self._record_stage(job, "itinerary_final", final_payload):
             logger.warning("Job %s lost ownership before itinerary_final", job.id)
@@ -217,7 +238,7 @@ class PlanningPipeline:
         # ------------------------------------------------------------------ #
         from planner.core import enrich
 
-        enriched_itinerary, proposal_text = await enrich(working_itinerary, profile)
+        enriched_itinerary, proposal_text = await enrich(itinerary_draft, profile)
 
         writing_payload = {
             "proposal_text_preview": proposal_text,
@@ -226,6 +247,9 @@ class PlanningPipeline:
         if not await self._record_stage(job, "writing", writing_payload):
             logger.warning("Job %s lost ownership before writing", job.id)
             return
+
+        # Stream proposal text as tokens to Redis for SSE subscribers.
+        await self._stream_proposal_tokens(job, proposal_text)
 
         if await self._check_cancelled(job):
             return
@@ -240,12 +264,7 @@ class PlanningPipeline:
                 "proposal_text": proposal_text,
                 "itinerary_final": [day.model_dump() for day in enriched_itinerary],
                 "strategy": strategy.model_dump(),
-                "warnings": [w.message for w in report.soft_warnings],
-                "needs_human": needs_human,
-                "violations": [v.model_dump() for v in report.hard_violations],
-                "suggested_fixes": [
-                    v.suggested_fix for v in report.hard_violations if v.suggested_fix
-                ],
+                "warnings": warnings,
             },
         )
 
@@ -286,6 +305,22 @@ class PlanningPipeline:
     ) -> bool:
         """Record stage completion."""
         return await self.worker.record_stage(job, stage, payload)
+
+    async def _stream_proposal_tokens(
+        self, job: PlanningJob, proposal_text: str
+    ) -> None:
+        """Publish proposal text chunks to Redis so SSE clients can type them out."""
+        from api.chat_runtime import publish_token
+
+        if not proposal_text:
+            return
+        # Stream in small chunks to create a smooth typing effect.
+        chunk_size = 8
+        for i in range(0, len(proposal_text), chunk_size):
+            chunk = proposal_text[i : i + chunk_size]
+            await publish_token(job.id, chunk)
+            # Tiny delay keeps the stream visible without blocking the worker.
+            await asyncio.sleep(0.01)
 
     async def _release_job(
         self,
@@ -335,22 +370,33 @@ class PlanningPipeline:
             )
             await db.commit()
 
+        if status == "completed":
+            incr("planning_jobs_completed_total")
+
         # Notify via Redis
         from core.redis_client import redis_client
 
         elapsed = (datetime.utcnow() - job.created_at).total_seconds()
-        await redis_client._client.publish(
-            f"job:status:{job.id}",
-            json.dumps(
-                {
-                    "type": "stage",
-                    "stage": status,
-                    "elapsed": round(elapsed, 1),
-                    "job_id": job.id,
-                },
-                ensure_ascii=False,
-            ),
-        )
+        try:
+            await redis_client._client.publish(
+                f"job:status:{job.id}",
+                json.dumps(
+                    {
+                        "type": "stage",
+                        "stage": status,
+                        "elapsed": round(elapsed, 1),
+                        "job_id": job.id,
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+        except Exception as exc:
+            logger.warning(
+                "Redis publish failed for job %s after %s (job state committed): %s",
+                job.id,
+                status,
+                exc,
+            )
         return True
 
 

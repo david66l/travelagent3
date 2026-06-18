@@ -5,21 +5,37 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+import httpx
+
 from core.celery_app import celery_app
 from core.dead_letter import archive_stale_dead_letters, list_dead_letters
+from core.metrics import incr
+from core.settings import settings
 from worker.memory_tasks import _ensure_redis, _run_async
 
 logger = logging.getLogger(__name__)
 
 
+def _notify_alert_webhook(message: str, payload: dict[str, Any]) -> None:
+    url = (settings.alert_webhook_url or "").strip()
+    if not url:
+        return
+    try:
+        httpx.post(url, json={"text": message, "payload": payload}, timeout=10.0)
+    except Exception:
+        logger.warning("Failed to POST dead-letter alert to webhook")
+
+
 @celery_app.task(name="worker.dlq_tasks.inspect_dead_letters")  # type: ignore[untyped-decorator]
 def inspect_dead_letters() -> dict[str, int]:
-    """Daily dead-letter inspection — logs summary (alert hook placeholder)."""
+    """Daily dead-letter inspection — logs summary and optional webhook alert."""
     _run_async(_ensure_redis())
     items = _run_async(list_dead_letters(limit=500))
+    pending = len(items)
+    incr("dead_letter_entries_total", pending)
     logger.warning(
         "Planning dead-letter daily report: %d entries pending manual review",
-        len(items),
+        pending,
     )
     for item in items[:20]:
         logger.warning(
@@ -29,7 +45,12 @@ def inspect_dead_letters() -> dict[str, int]:
             item.get("exception"),
             item.get("failed_at"),
         )
-    return {"pending": len(items)}
+    if pending > 0:
+        _notify_alert_webhook(
+            f"TravelAgent planning DLQ: {pending} pending entries",
+            {"pending": pending, "sample": items[:5]},
+        )
+    return {"pending": pending}
 
 
 @celery_app.task(name="worker.dlq_tasks.archive_stale_dead_letters")  # type: ignore[untyped-decorator]

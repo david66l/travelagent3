@@ -115,6 +115,31 @@ services:
       - travel_agent_network
     restart: unless-stopped
 
+  gateway:
+    build:
+      context: ./gateway
+      dockerfile: Dockerfile
+    container_name: travel_agent_gateway
+    env_file:
+      - .env
+    environment:
+      BACKEND_URL: http://backend:8000
+      FRONTEND_URL: http://frontend:3000
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+    ports:
+      - "8080:8080"
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    networks:
+      - travel_agent_network
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   redis_data:

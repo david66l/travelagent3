@@ -66,6 +66,8 @@ _redis_mock.set_nx = AsyncMock(return_value=True)
 _redis_mock.delete = AsyncMock()
 _redis_mock.incr = AsyncMock(return_value=1)
 _redis_mock.decr = AsyncMock(return_value=0)
+_redis_mock.incrby = AsyncMock(return_value=1)
+_redis_mock.decrby = AsyncMock(return_value=0)
 _redis_mock.lpush = AsyncMock(return_value=1)
 _redis_mock.lrange = AsyncMock(return_value=[])
 _redis_mock.lrem = AsyncMock(return_value=0)
@@ -80,18 +82,25 @@ _redis_mock.lock = MagicMock(side_effect=lambda *args, **kwargs: _make_lock_mock
 import core.redis_client  # noqa: E402
 
 core.redis_client.redis_client = _redis_mock
+core.redis_client.redis_cache_client = _redis_mock
 
 for _mod_name in [
     "api.main",
     "skills.poi_search",
     "skills.weather_query",
     "tools.base",
+    "pipeline.planning_pipeline",
     "core.memory",
+    "core.cost_circuit_breaker",
+    "core.external_api_tracker",
+    "core.token_quota",
 ]:
     try:
-        _mod = __import__(_mod_name, fromlist=["redis_client"])
+        _mod = __import__(_mod_name, fromlist=["redis_client", "redis_cache_client"])
         if hasattr(_mod, "redis_client"):
             _mod.redis_client = _redis_mock
+        if hasattr(_mod, "redis_cache_client"):
+            _mod.redis_cache_client = _redis_mock
     except Exception:
         pass
 
@@ -106,6 +115,8 @@ def mock_redis(monkeypatch):
     _redis_mock.delete = AsyncMock()
     _redis_mock.incr = AsyncMock(return_value=1)
     _redis_mock.decr = AsyncMock(return_value=0)
+    _redis_mock.incrby = AsyncMock(return_value=1)
+    _redis_mock.decrby = AsyncMock(return_value=0)
     _redis_mock.expire = AsyncMock()
     _redis_mock.sliding_window_add = AsyncMock(return_value=True)
     yield _redis_mock
@@ -391,10 +402,11 @@ def client(db):
     from middleware import setup_exception_handlers
     from fastapi.middleware.cors import CORSMiddleware
 
-    from middleware.rate_limit import RateLimitMiddleware
+    from middleware.request_context import RequestContextMiddleware
 
     test_app = FastAPI()
     setup_exception_handlers(test_app)
+    test_app.add_middleware(RequestContextMiddleware)
     test_app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -402,7 +414,6 @@ def client(db):
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    test_app.add_middleware(RateLimitMiddleware)
     test_app.include_router(health_router)
     test_app.include_router(ws_router)
     test_app.include_router(v1_router)

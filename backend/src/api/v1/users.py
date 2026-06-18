@@ -4,12 +4,13 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends
 
-from api.deps import get_current_user, get_user_service
+from api.deps import get_current_user, get_user_service, require_admin
 from api.v1.schemas import (
     UserProfileRequest,
     UserProfileResponse,
     UserResponse,
 )
+from core.exceptions import ForbiddenException, NotFoundException
 from core.responses import success_response
 from models import User
 from services import UserService
@@ -61,7 +62,21 @@ async def get_user(
     """Get a user by ID (placeholder, will be restricted in P3)."""
     user = await service.get_user(user_id)
     if user is None:
-        from core.exceptions import NotFoundException
-
         raise NotFoundException("User", user_id)
     return success_response(data=UserResponse.model_validate(user).model_dump())
+
+
+@router.post("/{user_id}/ban")
+async def ban_user_account(
+    user_id: UUID,
+    admin: User = Depends(require_admin),
+    service: UserService = Depends(get_user_service),
+):
+    """Revoke all tokens for a user (admin)."""
+    if user_id == admin.id:
+        raise ForbiddenException("Cannot ban yourself", code="BAN_SELF")
+    user = await service.get_user(user_id)
+    if user is None:
+        raise NotFoundException("User", user_id)
+    await service.ban_user(user_id)
+    return success_response(message="User tokens revoked")

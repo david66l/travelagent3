@@ -11,7 +11,8 @@ from core.cache_keys import tool_cache_key
 from core.cache_policy import jitter_ttl
 from core.circuit_breaker import get_circuit_breaker
 from core.local_cache import tool_local_cache
-from core.redis_client import redis_client
+from core.metrics import record_cache_hit, record_cache_miss
+from core.redis_client import redis_cache_client, redis_client
 from core.settings import settings
 from schemas import ToolResult
 
@@ -56,7 +57,7 @@ class Tool(ABC):
 
     async def _read_negative_cache(self, cache_key: str) -> Optional[ToolResult]:
         try:
-            cached = await redis_client.get_json(self._negative_cache_key(cache_key))
+            cached = await redis_cache_client.get_json(self._negative_cache_key(cache_key))
             if cached:
                 return ToolResult(**cached)
         except Exception:
@@ -65,7 +66,7 @@ class Tool(ABC):
 
     async def _set_negative_cache(self, cache_key: str, result: ToolResult) -> None:
         try:
-            await redis_client.set_json(
+            await redis_cache_client.set_json(
                 self._negative_cache_key(cache_key),
                 result.model_dump(),
                 ttl=60,
@@ -102,19 +103,32 @@ class Tool(ABC):
 
     async def _read_cache(self, cache_key: str) -> Optional[ToolResult]:
         try:
-            cached = await redis_client.get_json(cache_key)
+            cached = await redis_cache_client.get_json(cache_key)
             if cached:
                 return ToolResult(**cached)
         except Exception:
             pass
         return None
 
+    async def _try_load_cache(self, cache_key: str) -> Optional[ToolResult]:
+        """L1 -> Redis -> negative cache lookup (shared by all tools)."""
+        result = await self._read_l1_cache(cache_key)
+        if result:
+            return result
+
+        result = await self._read_cache(cache_key)
+        if result:
+            await self._set_l1_cache(cache_key, result)
+            return result
+
+        return await self._read_negative_cache(cache_key)
+
     async def _set_cache(self, cache_key: str, result: ToolResult) -> None:
         if result.data_source == "unavailable":
             await self._set_negative_cache(cache_key, result)
             return
         try:
-            await redis_client.set_json(
+            await redis_cache_client.set_json(
                 cache_key,
                 result.model_dump(),
                 ttl=self._effective_ttl(),
@@ -155,18 +169,11 @@ class Tool(ABC):
 
         cache_key = self._cache_key(params)
 
-        result = await self._read_l1_cache(cache_key)
+        result = await self._try_load_cache(cache_key)
         if result:
+            record_cache_hit(self.name or "tool")
             return result
-
-        result = await self._read_cache(cache_key)
-        if result:
-            await self._set_l1_cache(cache_key, result)
-            return result
-
-        neg = await self._read_negative_cache(cache_key)
-        if neg:
-            return neg
+        record_cache_miss(self.name or "tool")
 
         try:
             bloom = get_tool_cache_bloom()
@@ -177,19 +184,12 @@ class Tool(ABC):
 
         cache_lock = await self._acquire_cache_lock(cache_key)
         if cache_lock:
-            result = await self._read_l1_cache(cache_key)
+            result = await self._try_load_cache(cache_key)
             if result:
+                record_cache_hit(self.name or "tool")
                 await self._release_cache_lock(cache_lock)
                 return result
-            result = await self._read_cache(cache_key)
-            if result:
-                await self._set_l1_cache(cache_key, result)
-                await self._release_cache_lock(cache_lock)
-                return result
-            neg = await self._read_negative_cache(cache_key)
-            if neg:
-                await self._release_cache_lock(cache_lock)
-                return neg
+            record_cache_miss(self.name or "tool")
 
         start = time.monotonic()
         last_exc: Optional[Exception] = None

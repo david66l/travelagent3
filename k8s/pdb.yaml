@@ -1,0 +1,98 @@
+# Pod Disruption Budgets (M5)
+# Ensure rolling updates and voluntary node drains keep the service available.
+# PRD §12.2 / §12.5: Gateway/FastAPI minAvailable=2, Redis maintain quorum.
+# ---------------------------------------------------------------------------
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: gateway-pdb
+  namespace: travel-agent
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: gateway
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: backend-pdb
+  namespace: travel-agent
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: backend
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: celery-worker-planning-pdb
+  namespace: travel-agent
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: celery-worker
+      queue: planning
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: celery-worker-poi-pdb
+  namespace: travel-agent
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: celery-worker
+      queue: poi
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: celery-worker-default-pdb
+  namespace: travel-agent
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: celery-worker
+      queue: default
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: celery-worker-memory-pdb
+  namespace: travel-agent
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: celery-worker
+      queue: memory
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: redis-pdb
+  namespace: travel-agent
+spec:
+  # Redis Cluster needs at least half of the master nodes available to stay operational.
+  # With 6 pods (3 masters + 3 replicas), minAvailable=3 keeps quorum.
+  minAvailable: 3
+  selector:
+    matchLabels:
+      app: redis
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: postgres-pdb
+  namespace: travel-agent
+spec:
+  # Keep at least the primary available; replica can be disrupted.
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: postgres

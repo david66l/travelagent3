@@ -347,7 +347,11 @@ class POISearchSkill(Tool):
         breaker = get_circuit_breaker(self.name)
         if breaker.is_open():
             fb = await self._fallback(params, None)
-            fb.fallback_reason = fb.fallback_reason or "circuit open"
+            reason = fb.fallback_reason or "circuit open"
+            if "circuit open" not in reason:
+                fb.fallback_reason = f"{reason}; circuit open"
+            else:
+                fb.fallback_reason = reason
             return fb
 
         category = params.get("category")
@@ -356,7 +360,7 @@ class POISearchSkill(Tool):
         else:
             result = await self._run_merged_categories(params)
 
-        if result.data_source in ("unavailable", "fallback") or result.is_fallback:
+        if result.data_source == "unavailable":
             breaker.record_failure()
         else:
             breaker.record_success()
@@ -416,15 +420,15 @@ class POISearchSkill(Tool):
         )
 
     async def _run_for_category(self, params: dict) -> ToolResult:
-        """Single-category POI query: built-in → API → unavailable."""
+        """Single-category POI query: cache -> built-in -> API -> built-in fallback."""
         cache_key = self._cache_key(params)
-        cached = await self._read_cache(cache_key)
+        cached = await self._try_load_cache(cache_key)
         if cached:
             return cached
 
         cache_lock = await self._acquire_cache_lock(cache_key)
         if cache_lock:
-            cached = await self._read_cache(cache_key)
+            cached = await self._try_load_cache(cache_key)
             if cached:
                 await self._release_cache_lock(cache_lock)
                 return cached
@@ -502,12 +506,16 @@ class POISearchSkill(Tool):
             await self._release_cache_lock(cache_lock)
 
     def _max_retries_for_category(self, category: Optional[str]) -> int:
-        """P0 core attractions get more retries; niche categories degrade faster."""
-        if category in CORE_POI_CATEGORIES:
-            return self.retries + 1
-        if category in ("restaurant", "hotel"):
-            return self.retries
-        return max(1, self.retries - 1)
+        """PRD §4.5: P0=3, P1=2, P2=1, P3=0 retries (retry count, not total attempts)."""
+        if category == "attraction":
+            return 3
+        if category == "restaurant":
+            return 0
+        if category == "hotel":
+            return 1
+        if category == "shopping":
+            return 1
+        return 2
 
     @staticmethod
     def _assign_priority(poi: ScoredPOI) -> ScoredPOI:
@@ -535,6 +543,24 @@ class POISearchSkill(Tool):
             params.get("keywords", []),
             params.get("category"),
         )
+
+    async def _fallback(self, params: dict, last_error: Optional[Exception]) -> ToolResult:
+        """Built-in POI lists when API or circuit breaker blocks external search."""
+        city = params.get("city", "")
+        category = params.get("category")
+        builtin = self._get_builtin_pois(city, category)
+        if builtin:
+            reason = "built-in fallback"
+            if last_error:
+                reason += f": {type(last_error).__name__}"
+            return ToolResult(
+                data=builtin,
+                data_source="built_in",
+                confidence=0.7,
+                is_fallback=True,
+                fallback_reason=reason,
+            )
+        return await super()._fallback(params, last_error)
 
     async def _search_and_extract_pois(
         self,

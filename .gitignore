@@ -3,6 +3,11 @@ __pycache__/
 *.egg-info/
 .pytest_cache/
 *.tsbuildinfo
+.env
+models/
+celerybeat-*
+*.db-shm
+*.db-wal
 logs/
 .env
 *.egg
@@ -14,6 +19,8 @@ node_modules/
 frontend/.next/
 celerybeat-schedule
 backend/src/celerybeat-schedule
+backend/src/logs/
 .coverage
 htmlcov/
 .DS_Store
+.claude/

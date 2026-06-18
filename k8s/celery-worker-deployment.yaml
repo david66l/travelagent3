@@ -1,0 +1,319 @@
+# Celery Worker Deployments (M5)
+# One Deployment per queue so each queue can scale independently (PRD §4.7.6 / §12.2).
+# Queues: default, planning, poi, memory + dead-letter inspection.
+# HPA for planning/poi is defined in k8s/hpa.yaml.
+# -----------------------------------------------------------------------------
+# Default queue workers
+# -----------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: celery-worker-default
+  namespace: travel-agent
+  labels:
+    app: celery-worker
+    queue: default
+    tier: worker
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: celery-worker
+      queue: default
+  template:
+    metadata:
+      labels:
+        app: celery-worker
+        queue: default
+        tier: worker
+    spec:
+      containers:
+        - name: worker
+          image: ghcr.io/travelagent/travel-agent-backend:latest
+          imagePullPolicy: Always
+          command:
+            - celery
+            - -A
+            - core.celery_app
+            - worker
+            - -Q
+            - default
+            - -l
+            - info
+            - --concurrency
+            - "4"
+          envFrom:
+            - configMapRef:
+                name: travel-agent-config
+            - secretRef:
+                name: travel-agent-secrets
+          env:
+            - name: PYTHONPATH
+              value: "/app/src"
+          resources:
+            # PRD §12.2: default worker 1–2 CPU, 1–2 Gi
+            requests:
+              cpu: "1"
+              memory: 1Gi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 30"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      terminationGracePeriodSeconds: 60
+---
+# -----------------------------------------------------------------------------
+# Planning queue workers (CPU-heavy itinerary generation)
+# -----------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: celery-worker-planning
+  namespace: travel-agent
+  labels:
+    app: celery-worker
+    queue: planning
+    tier: worker
+spec:
+  replicas: 5
+  selector:
+    matchLabels:
+      app: celery-worker
+      queue: planning
+  template:
+    metadata:
+      labels:
+        app: celery-worker
+        queue: planning
+        tier: worker
+    spec:
+      containers:
+        - name: worker
+          image: ghcr.io/travelagent/travel-agent-backend:latest
+          imagePullPolicy: Always
+          command:
+            - celery
+            - -A
+            - core.celery_app
+            - worker
+            - -Q
+            - planning
+            - -l
+            - info
+            - --concurrency
+            - "2"
+          envFrom:
+            - configMapRef:
+                name: travel-agent-config
+            - secretRef:
+                name: travel-agent-secrets
+          env:
+            - name: PYTHONPATH
+              value: "/app/src"
+          resources:
+            # PRD §12.2: planning worker 2–4 CPU, 2–4 Gi
+            requests:
+              cpu: "2"
+              memory: 2Gi
+            limits:
+              cpu: "4"
+              memory: 4Gi
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 30"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 80
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: queue
+                      operator: In
+                      values:
+                        - planning
+                topologyKey: kubernetes.io/hostname
+      terminationGracePeriodSeconds: 120
+---
+# -----------------------------------------------------------------------------
+# POI queue workers (external API calls)
+# -----------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: celery-worker-poi
+  namespace: travel-agent
+  labels:
+    app: celery-worker
+    queue: poi
+    tier: worker
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: celery-worker
+      queue: poi
+  template:
+    metadata:
+      labels:
+        app: celery-worker
+        queue: poi
+        tier: worker
+    spec:
+      containers:
+        - name: worker
+          image: ghcr.io/travelagent/travel-agent-backend:latest
+          imagePullPolicy: Always
+          command:
+            - celery
+            - -A
+            - core.celery_app
+            - worker
+            - -Q
+            - poi
+            - -l
+            - info
+            - --concurrency
+            - "6"
+          envFrom:
+            - configMapRef:
+                name: travel-agent-config
+            - secretRef:
+                name: travel-agent-secrets
+          env:
+            - name: PYTHONPATH
+              value: "/app/src"
+          resources:
+            # PRD §12.2: poi worker 1–3 CPU, 1–2 Gi
+            requests:
+              cpu: "1"
+              memory: 1Gi
+            limits:
+              cpu: "3"
+              memory: 2Gi
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 30"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      terminationGracePeriodSeconds: 60
+---
+# -----------------------------------------------------------------------------
+# Memory queue workers (archival / cleanup) — low concurrency, reliable
+# -----------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: celery-worker-memory
+  namespace: travel-agent
+  labels:
+    app: celery-worker
+    queue: memory
+    tier: worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: celery-worker
+      queue: memory
+  template:
+    metadata:
+      labels:
+        app: celery-worker
+        queue: memory
+        tier: worker
+    spec:
+      containers:
+        - name: worker
+          image: ghcr.io/travelagent/travel-agent-backend:latest
+          imagePullPolicy: Always
+          command:
+            - celery
+            - -A
+            - core.celery_app
+            - worker
+            - -Q
+            - memory
+            - -l
+            - info
+            - --concurrency
+            - "2"
+          envFrom:
+            - configMapRef:
+                name: travel-agent-config
+            - secretRef:
+                name: travel-agent-secrets
+          env:
+            - name: PYTHONPATH
+              value: "/app/src"
+          resources:
+            # PRD §12.2: memory worker ~ Beat tier, 0.5–1 CPU, 512Mi–1 Gi
+            requests:
+              cpu: 500m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 30"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      terminationGracePeriodSeconds: 60

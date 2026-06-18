@@ -5,12 +5,13 @@ import { CheckCircle, XCircle } from "lucide-react";
 import { useChatStore } from "@/stores/chatStore";
 import { MessageBubble } from "./MessageBubble";
 import { ThinkingBubble } from "./ThinkingBubble";
+import { StreamingText } from "./StreamingText";
 import { cn } from "@/lib/utils";
 
 type SendStatus = "sent" | "queued" | "failed";
 
 interface ChatPanelProps {
-  sendMessage: (content: string) => SendStatus;
+  sendMessage: (content: string) => SendStatus | Promise<SendStatus>;
 }
 
 export function ChatPanel({ sendMessage }: ChatPanelProps) {
@@ -18,30 +19,43 @@ export function ChatPanel({ sendMessage }: ChatPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const store = useChatStore();
 
-  const handleSend = () => {
+  const handleSend = async () => {
     if (!input.trim() || store.isLoading) return;
 
+    const content = input.trim();
+    if (store.isStreaming) {
+      store.stopStreaming();
+      store.setStreamingContent("");
+    }
     store.addMessage({
       role: "user",
-      content: input.trim(),
+      content,
       timestamp: Date.now(),
     });
     store.setLoading(true);
+    setInput("");
 
-    const status = sendMessage(input.trim());
-    if (status === "failed") {
+    try {
+      const status = await sendMessage(content);
+      if (status === "failed") {
+        store.addMessage({
+          role: "assistant",
+          content: "连接已断开，请刷新页面重试。",
+          timestamp: Date.now(),
+        });
+        store.setLoading(false);
+      }
+    } catch {
       store.addMessage({
         role: "assistant",
-        content: "连接已断开，请刷新页面重试。",
+        content: "发送失败，请检查网络后重试。",
         timestamp: Date.now(),
       });
       store.setLoading(false);
     }
-    // "queued" is acceptable: the message will be flushed on reconnect/open.
-    setInput("");
   };
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
     if (store.isLoading) return;
     store.addMessage({
       role: "user",
@@ -49,13 +63,14 @@ export function ChatPanel({ sendMessage }: ChatPanelProps) {
       timestamp: Date.now(),
     });
     store.setLoading(true);
-    const status = sendMessage("确认行程");
-    if (status === "failed") {
+    try {
+      await sendMessage("确认行程");
+    } catch {
       store.setLoading(false);
     }
   };
 
-  const handleModify = () => {
+  const handleModify = async () => {
     if (store.isLoading) return;
     store.addMessage({
       role: "user",
@@ -63,8 +78,9 @@ export function ChatPanel({ sendMessage }: ChatPanelProps) {
       timestamp: Date.now(),
     });
     store.setLoading(true);
-    const status = sendMessage("继续修改行程");
-    if (status === "failed") {
+    try {
+      await sendMessage("继续修改行程");
+    } catch {
       store.setLoading(false);
     }
   };
@@ -108,7 +124,26 @@ export function ChatPanel({ sendMessage }: ChatPanelProps) {
         {store.messages.map((msg, i) => (
           <MessageBubble key={i} role={msg.role} content={msg.content} />
         ))}
-        {store.isLoading && <ThinkingBubble />}
+        {store.isStreaming && (
+          <div className="flex w-full flex-col items-start">
+            <div
+              className={cn(
+                "max-w-[560px] rounded-2xl px-3 py-2.5 text-[13px] leading-relaxed",
+                "bg-[#FFFFFFC2] text-[#111111E6] backdrop-blur-md"
+              )}
+              style={{
+                border: "1px solid rgba(255,255,255,0.8)",
+                boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
+              }}
+            >
+              <StreamingText
+                content={store.streamingContent}
+                isStreaming={store.isStreaming}
+              />
+            </div>
+          </div>
+        )}
+        {store.isLoading && !store.isStreaming && <ThinkingBubble />}
       </div>
 
       {/* Confirmation buttons */}

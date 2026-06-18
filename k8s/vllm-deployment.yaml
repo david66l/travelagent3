@@ -1,0 +1,157 @@
+# vLLM Deployment (M4)
+# Base model: Qwen2.5-14B-Instruct with travel LoRA adapters
+# Resources follow PRD §12.2 (14B model: 8–16 CPU, 32–64 Gi memory, 1×A100)
+# HPA configured in k8s/hpa.yaml (PRD §12.3)
+#
+# Prerequisites:
+# - NVIDIA GPU nodes labeled accelerator=nvidia
+# - NVIDIA Device Plugin + GPU Operator installed
+# - Model weights available in the container image or mounted via PVC
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm
+  namespace: travel-agent
+  labels:
+    app: vllm
+    tier: model
+    version: v1
+spec:
+  # Initial replica count; HPA will scale between minReplicas and maxReplicas
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vllm
+  template:
+    metadata:
+      labels:
+        app: vllm
+        tier: model
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      # Schedule only on GPU nodes
+      nodeSelector:
+        accelerator: nvidia
+      tolerations:
+        - key: "nvidia.com/gpu"
+          operator: "Exists"
+          effect: "NoSchedule"
+      # Spread replicas across nodes for HA
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - vllm
+                topologyKey: kubernetes.io/hostname
+      containers:
+        - name: vllm
+          image: ghcr.io/travelagent/travel-agent-vllm:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: travel-agent-config
+            - secretRef:
+                name: travel-agent-secrets
+          env:
+            # Base model mounted from image; override for staged canary weights
+            - name: VLLM_MODEL
+              value: "Qwen/Qwen2.5-14B-Instruct"
+            # OpenAI-compatible model aliases exposed to backend
+            - name: VLLM_SERVED_MODEL_NAME
+              value: "travel-chat-v1,travel-plan-v1,travel-repair-v1,Qwen2.5-14B-Instruct"
+            # Enable vLLM-Prometheus metrics
+            - name: VLLM_PROMETHEUS_MULTIPROC_DIR
+              value: "/tmp/vllm-metrics"
+          args:
+            - --model
+            - Qwen/Qwen2.5-14B-Instruct
+            - --host
+            - "0.0.0.0"
+            - --port
+            - "8000"
+            - --enable-lora
+            - --lora-modules
+            - travel-chat-v1=/models/adapters/travel-chat-v1
+            - travel-plan-v1=/models/adapters/travel-plan-v1
+            - travel-repair-v1=/models/adapters/travel-repair-v1
+            - --tensor-parallel-size
+            - "1"
+            - --max-model-len
+            - "8192"
+            - --gpu-memory-utilization
+            - "0.85"
+            - --dtype
+            - half
+            - --max-num-seqs
+            - "256"
+            - --enable-prefix-caching
+          resources:
+            # PRD §12.2: vLLM(14B) requests 8 CPU / 32 Gi, limits 16 CPU / 64 Gi, 1 GPU
+            requests:
+              cpu: "8"
+              memory: 32Gi
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "16"
+              memory: 64Gi
+              nvidia.com/gpu: "1"
+          # Readiness: only join Service after model + adapters loaded
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 90
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 60
+          volumeMounts:
+            # LoRA adapters are baked into ghcr.io/travelagent/travel-agent-vllm:latest.
+            # For dynamic/hot-loaded adapters, replace this emptyDir with a PVC
+            # populated by your model registry (MLflow/S3) and adjust --lora-modules paths.
+            - name: metrics-tmp
+              mountPath: /tmp/vllm-metrics
+          # Graceful termination: finish in-flight requests before shutdown
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 60"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+            runAsUser: 999
+            capabilities:
+              drop:
+                - ALL
+      volumes:
+        - name: metrics-tmp
+          emptyDir: {}
+      terminationGracePeriodSeconds: 120

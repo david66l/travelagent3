@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from api.chat_runtime import ConnectionManager, delayed_cancel
+from core.conversation_state import default_conversation_state
 from core.redis_client import redis_client
 from core.memory import memory_manager
 
@@ -60,8 +61,10 @@ class TestConnectionManagerState:
     async def test_load_state_prefers_hot_layer(self):
         manager = ConnectionManager()
         hot = {"phase": "gathering", "turn": 2}
-        with patch.object(memory_manager, "hot_get", new=AsyncMock(return_value=hot)):
-            with patch.object(memory_manager, "warm_get", new=AsyncMock(return_value=None)):
+        with patch.object(
+            memory_manager, "load_state", new=AsyncMock(return_value=hot)
+        ):
+            with patch.object(memory_manager, "hot_set", new=AsyncMock()):
                 state = await manager.load_state("s1")
         assert state["turn"] == 2
 
@@ -69,12 +72,25 @@ class TestConnectionManagerState:
     async def test_load_state_falls_back_to_warm_and_writes_hot(self):
         manager = ConnectionManager()
         warm = {"phase": "gathering", "turn": 1}
-        with patch.object(memory_manager, "hot_get", new=AsyncMock(return_value=None)):
-            with patch.object(memory_manager, "warm_get", new=AsyncMock(return_value=warm)):
-                with patch.object(memory_manager, "hot_set", new=AsyncMock()) as mock_hot_set:
-                    state = await manager.load_state("s1")
+        with patch.object(
+            memory_manager, "load_state", new=AsyncMock(return_value=warm)
+        ):
+            with patch.object(memory_manager, "hot_set", new=AsyncMock()) as mock_hot_set:
+                state = await manager.load_state("s1")
         assert state["turn"] == 1
         mock_hot_set.assert_awaited_once_with("s1", warm)
+
+    @pytest.mark.asyncio
+    async def test_load_state_falls_back_to_cold_archive(self):
+        manager = ConnectionManager()
+        cold = {"phase": "completed", "turn": 4, "destination": "上海"}
+        with patch.object(
+            memory_manager, "load_state", new=AsyncMock(return_value=cold)
+        ):
+            with patch.object(memory_manager, "hot_set", new=AsyncMock()) as mock_hot_set:
+                state = await manager.load_state("s1")
+        assert state["destination"] == "上海"
+        mock_hot_set.assert_awaited_once_with("s1", cold)
 
     @pytest.mark.asyncio
     async def test_load_state_falls_back_to_planning_job_feedback(self):
@@ -88,12 +104,15 @@ class TestConnectionManagerState:
 
         with patch("api.chat_runtime.PlanningJobRepository", return_value=fake_repo):
             with patch("api.chat_runtime.async_session_maker", _fake_session()):
-                with patch.object(memory_manager, "hot_get", new=AsyncMock(return_value=None)):
-                    with patch.object(memory_manager, "warm_get", new=AsyncMock(return_value=None)):
-                        with patch.object(
-                            memory_manager, "hot_set", new=AsyncMock()
-                        ) as mock_hot_set:
-                            state = await manager.load_state("s1")
+                with patch.object(
+                    memory_manager,
+                    "load_state",
+                    new=AsyncMock(return_value=default_conversation_state()),
+                ):
+                    with patch.object(
+                        memory_manager, "hot_set", new=AsyncMock()
+                    ) as mock_hot_set:
+                        state = await manager.load_state("s1")
 
         assert state["turn"] == 5
         mock_hot_set.assert_awaited_once()
@@ -106,12 +125,15 @@ class TestConnectionManagerState:
 
         with patch("api.chat_runtime.PlanningJobRepository", return_value=fake_repo):
             with patch("api.chat_runtime.async_session_maker", _fake_session()):
-                with patch.object(memory_manager, "hot_get", new=AsyncMock(return_value=None)):
-                    with patch.object(memory_manager, "warm_get", new=AsyncMock(return_value=None)):
-                        with patch.object(
-                            memory_manager, "hot_set", new=AsyncMock()
-                        ) as mock_hot_set:
-                            state = await manager.load_state("s1")
+                with patch.object(
+                    memory_manager,
+                    "load_state",
+                    new=AsyncMock(return_value=default_conversation_state()),
+                ):
+                    with patch.object(
+                        memory_manager, "hot_set", new=AsyncMock()
+                    ) as mock_hot_set:
+                        state = await manager.load_state("s1")
 
         assert state["phase"] == "gathering"
         mock_hot_set.assert_awaited_once()
@@ -132,7 +154,7 @@ class TestConnectionManagerState:
                             await manager.save_state("job-1", "s1", state, trigger_archive=True)
 
         fake_repo.update_user_feedback.assert_awaited_once()
-        mock_archive.delay.assert_called_once_with("s1", "user-1")
+        mock_archive.delay.assert_called_once_with("s1", "user-1", None)
 
 
 class TestHelpers:
@@ -241,50 +263,57 @@ async def test_push_job_status_returns_when_job_already_terminal():
 
 
 @pytest.mark.asyncio
-async def test_load_state_ignores_hot_layer_exception():
-    manager = ConnectionManager()
-    warm = {"phase": "gathering", "turn": 1}
-    with patch("api.chat_runtime.memory_manager") as mock_mem:
-        mock_mem.hot_get = AsyncMock(side_effect=RuntimeError("boom"))
-        mock_mem.warm_get = AsyncMock(return_value=warm)
-        mock_mem.hot_set = AsyncMock()
-        state = await manager.load_state("s1")
-    assert state["turn"] == 1
-
-
-@pytest.mark.asyncio
-async def test_load_state_ignores_warm_layer_exception():
+async def test_load_state_ignores_memory_load_exception():
     manager = ConnectionManager()
     fake_repo = MagicMock()
     fake_repo.get_by_session = AsyncMock(return_value=[])
 
     with patch("api.chat_runtime.PlanningJobRepository", return_value=fake_repo):
         with patch("api.chat_runtime.async_session_maker", _fake_session()):
-            with patch("api.chat_runtime.memory_manager") as mock_mem:
-                mock_mem.hot_get = AsyncMock(return_value=None)
-                mock_mem.warm_get = AsyncMock(side_effect=RuntimeError("boom"))
-                mock_mem.hot_set = AsyncMock()
-                state = await manager.load_state("s1")
+            with patch.object(
+                memory_manager,
+                "load_state",
+                new=AsyncMock(side_effect=RuntimeError("boom")),
+            ):
+                with patch.object(memory_manager, "hot_set", new=AsyncMock()):
+                    state = await manager.load_state("s1")
 
     assert state["phase"] == "gathering"
 
 
 @pytest.mark.asyncio
 async def test_load_state_ignores_hot_set_exception_on_write_back():
-    """The PG-fallback write-back hot_set failure must not crash load_state."""
+    """Write-back hot_set failure must not crash load_state."""
     manager = ConnectionManager()
-    fake_repo = MagicMock()
-    fake_repo.get_by_session = AsyncMock(return_value=[])
+    warm = {"phase": "gathering", "turn": 1}
+    with patch.object(
+        memory_manager, "load_state", new=AsyncMock(return_value=warm)
+    ):
+        with patch.object(
+            memory_manager, "hot_set", new=AsyncMock(side_effect=RuntimeError("boom"))
+        ):
+            state = await manager.load_state("s1")
 
-    with patch("api.chat_runtime.PlanningJobRepository", return_value=fake_repo):
-        with patch("api.chat_runtime.async_session_maker", _fake_session()):
-            with patch("api.chat_runtime.memory_manager") as mock_mem:
-                mock_mem.hot_get = AsyncMock(return_value=None)
-                mock_mem.warm_get = AsyncMock(return_value=None)
-                mock_mem.hot_set = AsyncMock(side_effect=RuntimeError("boom"))
-                state = await manager.load_state("s1")
+    assert state["turn"] == 1
 
-    assert state["phase"] == "gathering"
+
+@pytest.mark.asyncio
+async def test_save_gathering_state_reports_session_conflict():
+    manager = ConnectionManager()
+    state = {"phase": "gathering", "turn": 1}
+
+    @asynccontextmanager
+    async def _failing_lock(*args, **kwargs):
+        raise RuntimeError("Timeout acquiring lock")
+        yield  # pragma: no cover
+
+    sent: list[dict[str, Any]] = []
+    with patch.object(memory_manager, "acquire_lock", _failing_lock):
+        with patch.object(manager, "send_json", new=AsyncMock(side_effect=lambda _s, d: sent.append(d))):
+            ok = await manager.save_gathering_state("s1", state)
+
+    assert ok is False
+    assert any(msg.get("code") == "session_conflict" for msg in sent)
 
 
 @pytest.mark.asyncio

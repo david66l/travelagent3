@@ -397,7 +397,7 @@ def _repair_budget(
             poi = pois_by_name.get(act.poi_name)
             if poi is None:
                 continue
-            priority = getattr(poi, "priority", "P2") or "P2"
+            priority = poi.priority or "P2"
             rank = priority_rank.get(priority, 99)
             cost = act.ticket_price or 0.0
             candidates.append((rank, cost, di, ai, act.poi_name))

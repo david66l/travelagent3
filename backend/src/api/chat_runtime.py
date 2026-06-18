@@ -18,8 +18,11 @@ from core.conversation_state import (
 )
 from core.conversation_turn import process_user_turn
 from core.input_guard import sanitize_user_input
+from core.output_safety import sanitize_itinerary_payload
+from core.guest_policy import ensure_guest_can_plan
 from core.database import async_session_maker
 from core.memory import memory_manager
+from core.metrics import incr
 from core.redis_client import redis_client
 from core.settings import settings
 from repositories.planning_job import PlanningJobRepository
@@ -38,6 +41,7 @@ STATE_KEY = "session:{}:state"
 
 def enqueue_planning_job(job_id: str) -> None:
     """Dispatch planning execution to Celery or rely on embedded worker polling."""
+    incr("planning_jobs_created_total")
     if settings.planning_executor == "embedded":
         return
     try:
@@ -90,35 +94,52 @@ class ConnectionManager:
                 logger.warning("SSE queue full for session %s", session_id)
 
     async def load_state(self, session_id: str) -> dict[str, Any]:
+        """Recover session state: memory tiers (hot/warm/cold) then planning job fallback."""
+        state: dict[str, Any]
         try:
-            state = await memory_manager.hot_get(session_id)
-            if state is not None:
-                return self._ensure_schema(state)
+            state = await memory_manager.load_state(session_id)
+            state = self._ensure_schema(state)
         except Exception as exc:
-            logger.warning("Failed to load hot state for %s: %s", session_id, exc)
+            logger.warning("Failed to load memory state for %s: %s", session_id, exc)
+            state = self._ensure_schema(default_conversation_state())
 
-        try:
-            state = await memory_manager.warm_get(session_id)
-            if state is not None:
-                await memory_manager.hot_set(session_id, state)
-                return self._ensure_schema(state)
-        except Exception as exc:
-            logger.warning("Failed to load warm state for %s: %s", session_id, exc)
-
-        async with async_session_maker() as db:
-            repo = PlanningJobRepository(db)
-            jobs = await repo.get_by_session(session_id, limit=1)
-            if jobs and jobs[0].user_feedback:
-                state = deepcopy(jobs[0].user_feedback)
-                state = self._ensure_schema(state)
-            else:
-                state = default_conversation_state()
+        if not self._state_has_session_payload(state):
+            try:
+                async with async_session_maker() as db:
+                    repo = PlanningJobRepository(db)
+                    jobs = await repo.get_by_session(session_id, limit=1)
+                    if jobs and jobs[0].user_feedback:
+                        state = self._ensure_schema(deepcopy(jobs[0].user_feedback))
+            except Exception as exc:
+                logger.warning(
+                    "Failed to load planning job fallback for %s: %s", session_id, exc
+                )
 
         try:
             await memory_manager.hot_set(session_id, state)
         except Exception as exc:
             logger.warning("Failed to write hot state for %s: %s", session_id, exc)
         return cast(dict[str, Any], state)
+
+    def _state_has_session_payload(self, state: dict[str, Any]) -> bool:
+        """True when state carries user/session data beyond an empty default."""
+        if state.get("recent_messages"):
+            return True
+        if state.get("destination"):
+            return True
+        if state.get("conversation_id"):
+            return True
+        if state.get("turn", 0) > 0:
+            return True
+        defaults = default_conversation_state()
+        if state.get("phase") != defaults.get("phase"):
+            return True
+        profile = state.get("profile") or {}
+        default_profile = defaults.get("profile") or {}
+        for key, value in profile.items():
+            if value and value != default_profile.get(key):
+                return True
+        return False
 
     async def save_state(
         self,
@@ -127,37 +148,76 @@ class ConnectionManager:
         state: dict[str, Any],
         *,
         trigger_archive: bool = False,
-    ) -> None:
+    ) -> bool:
+        """Persist planning/completed state. Returns False if another client holds the lock."""
         user_id: str | None = None
-        async with memory_manager.acquire_lock(session_id):
-            state["updated_at"] = int(_time.time())
-            user_id = state.get("user_id")
-            await memory_manager.hot_set(session_id, state)
-            async with async_session_maker() as db:
-                repo = PlanningJobRepository(db)
-                await repo.update_user_feedback(job_id, state)
-                await db.commit()
+        try:
+            async with memory_manager.acquire_lock(
+                session_id, blocking_timeout=0.5
+            ):
+                state["updated_at"] = int(_time.time())
+                user_id = state.get("user_id")
+                await memory_manager.hot_set(session_id, state)
+                async with async_session_maker() as db:
+                    repo = PlanningJobRepository(db)
+                    await repo.update_user_feedback(job_id, state)
+                    await db.commit()
+        except RuntimeError as exc:
+            logger.warning("Session write lock conflict for %s: %s", session_id, exc)
+            await self.send_json(
+                session_id,
+                {
+                    "type": "error",
+                    "code": "session_conflict",
+                    "message": "会话正在其他设备上更新，请稍后重试",
+                },
+            )
+            return False
 
         if trigger_archive and archive_session is not None:
             try:
-                archive_session.delay(session_id, user_id)
+                user_role = state.get("user_role")
+                archive_session.delay(session_id, user_id, user_role)
             except Exception:
                 logger.debug("Failed to enqueue archive_session for %s", session_id)
+        return True
 
-    async def save_gathering_state(self, session_id: str, state: dict[str, Any]) -> None:
-        async with memory_manager.acquire_lock(session_id):
-            state["updated_at"] = int(_time.time())
-            try:
-                await memory_manager.hot_set(session_id, state)
-                await memory_manager.warm_set(session_id, state)
-            except Exception as exc:
-                logger.warning("Failed to persist gathering state for %s: %s", session_id, exc)
-            try:
-                await redis_client.set_json(STATE_KEY.format(session_id), state, ttl=STATE_TTL)
-            except Exception as exc:
-                logger.warning(
-                    "Failed to sync gathering state to Redis for %s: %s", session_id, exc
-                )
+    async def save_gathering_state(self, session_id: str, state: dict[str, Any]) -> bool:
+        """Persist gathering-phase state. Returns False if another client holds the lock."""
+        try:
+            async with memory_manager.acquire_lock(
+                session_id, blocking_timeout=0.1
+            ):
+                state["updated_at"] = int(_time.time())
+                try:
+                    await memory_manager.hot_set(session_id, state)
+                    await memory_manager.warm_set(session_id, state)
+                except Exception as exc:
+                    logger.warning(
+                        "Failed to persist gathering state for %s: %s", session_id, exc
+                    )
+                try:
+                    await redis_client.set_json(
+                        STATE_KEY.format(session_id), state, ttl=STATE_TTL
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "Failed to sync gathering state to Redis for %s: %s",
+                        session_id,
+                        exc,
+                    )
+            return True
+        except RuntimeError as exc:
+            logger.warning("Session write lock conflict for %s: %s", session_id, exc)
+            await self.send_json(
+                session_id,
+                {
+                    "type": "error",
+                    "code": "session_conflict",
+                    "message": "会话正在其他设备上更新，请稍后重试",
+                },
+            )
+            return False
 
     def _ensure_schema(self, state: dict[str, Any]) -> dict[str, Any]:
         defaults = default_conversation_state()
@@ -186,7 +246,9 @@ def format_sse_event(data: dict[str, Any]) -> str:
     else:
         event_name = "message"
     payload = json.dumps(data, ensure_ascii=False)
-    return f"event: {event_name}\ndata: {payload}\n\n"
+    event_id = data.get("event_id")
+    id_line = f"id: {event_id}\n" if event_id is not None else ""
+    return f"event: {event_name}\n{id_line}data: {payload}\n\n"
 
 
 async def process_chat_message(
@@ -195,6 +257,7 @@ async def process_chat_message(
     content: str,
     *,
     conversation_id: UUID | None = None,
+    user_role: str = "guest",
 ) -> str | None:
     """Handle one user message: intent, job creation, status push. Returns job_id if created."""
     safe_content = sanitize_user_input(content.strip())
@@ -204,11 +267,14 @@ async def process_chat_message(
 
     state = await manager.load_state(session_id)
     state["user_id"] = user_id
+    state["user_role"] = user_role
 
     intent_result = await process_user_turn(state, safe_content)
 
     if not is_profile_ready(state["profile"]):
-        await manager.save_gathering_state(session_id, state)
+        saved = await manager.save_gathering_state(session_id, state)
+        if not saved:
+            return None
         await manager.send_json(
             session_id,
             {
@@ -246,6 +312,8 @@ async def process_chat_message(
         user_uuid = None
 
     async with async_session_maker() as db:
+        if user_uuid:
+            await ensure_guest_can_plan(db, user_uuid, user_role)
         repo = PlanningJobRepository(db)
         job = await repo.create(
             session_id=session_id,
@@ -276,14 +344,28 @@ async def process_chat_message(
     return job.id
 
 
+async def publish_token(job_id: str, chunk: str) -> None:
+    """Publish a token chunk to Redis so all SSE subscribers can forward it."""
+    try:
+        await redis_client._client.publish(
+            f"token:{job_id}",
+            json.dumps(
+                {"type": "token", "chunk": chunk, "job_id": job_id},
+                ensure_ascii=False,
+            ),
+        )
+    except Exception as exc:
+        logger.warning("Failed to publish token for job %s: %s", job_id, exc)
+
+
 async def push_job_status(job_id: str, session_id: str, from_event_id: int = 0) -> None:
-    """Push job status events via DB polling + Redis pub/sub."""
+    """Push job status events via DB polling + Redis pub/sub + token stream."""
     last_event_id = from_event_id
 
     async def _is_done(db: AsyncSession) -> bool:
         repo = PlanningJobRepository(db)
         job = await repo.get(job_id)
-        return bool(job and job.status in ("completed", "failed", "cancelled"))
+        return bool(job and job.status in ("completed", "failed", "cancelled", "force_cancelled"))
 
     async def _drain(db: AsyncSession) -> bool:
         nonlocal last_event_id
@@ -291,6 +373,9 @@ async def push_job_status(job_id: str, session_id: str, from_event_id: int = 0) 
         events = await repo.get_events_after(job_id, last_event_id)
         for event in events:
             last_event_id = event.id
+            payload = event.payload
+            if settings.output_safety_enabled and payload:
+                payload = sanitize_itinerary_payload(payload)
             await manager.send_json(
                 session_id,
                 {
@@ -298,7 +383,7 @@ async def push_job_status(job_id: str, session_id: str, from_event_id: int = 0) 
                     "type": "stage",
                     "stage": event.stage,
                     "event_type": event.event_type,
-                    "payload": event.payload,
+                    "payload": payload,
                     "job_id": job_id,
                 },
             )
@@ -325,16 +410,31 @@ async def push_job_status(job_id: str, session_id: str, from_event_id: int = 0) 
         try:
             pubsub = redis_client._client.pubsub()
             await pubsub.subscribe(f"job:status:{job_id}")
+            await pubsub.subscribe(f"token:{job_id}")
             try:
                 async for message in pubsub.listen():
-                    if message["type"] == "message":
-                        async with async_session_maker() as db:
-                            await _drain(db)
+                    if message["type"] != "message":
+                        continue
+                    channel = message.get("channel", "")
+                    data: dict[str, Any] = {}
+                    try:
+                        data = json.loads(message.get("data", "{}"))
+                    except json.JSONDecodeError:
+                        logger.debug("Invalid Redis message on %s", channel)
+                        continue
+
+                    if channel == f"token:{job_id}":
+                        await manager.send_json(session_id, data)
+                        continue
+
+                    async with async_session_maker() as db:
+                        await _drain(db)
                     async with async_session_maker() as db:
                         if await _is_done(db):
                             return
             finally:
                 await pubsub.unsubscribe(f"job:status:{job_id}")
+                await pubsub.unsubscribe(f"token:{job_id}")
         except Exception:
             logger.debug("Redis listener for %s exited", job_id, exc_info=True)
 
@@ -410,4 +510,31 @@ async def delayed_cancel(job_id: str, delay: int) -> None:
         if job and job.status in ("pending", "running"):
             await repo.request_cancel(job_id)
             await db.commit()
+            schedule_cancel_enforcement(job_id)
         await redis_client._client.publish(f"job:cancel:{job_id}", "cancel")
+
+
+def schedule_cancel_enforcement(job_id: str, delay: int = 30) -> None:
+    """After cancel request, force-cancel if worker does not confirm (PRD §4.7)."""
+    try:
+        from worker.planning_tasks import enforce_cancel_deadline
+
+        enforce_cancel_deadline.apply_async(args=[job_id], countdown=delay)
+    except Exception:
+        logger.debug("Failed to schedule force cancel for job %s", job_id)
+
+
+def schedule_disconnect_cleanup(
+    session_id: str,
+    user_id: str | None,
+    job_id: str | None,
+    user_role: str | None = None,
+) -> None:
+    """On SSE/WS disconnect: delayed cancel + delayed archive for registered users."""
+    if job_id:
+        asyncio.create_task(delayed_cancel(job_id, delay=30))
+    if schedule_delayed_archive is not None and user_id and user_role != "guest":
+        try:
+            schedule_delayed_archive.delay(session_id, user_id)
+        except Exception:
+            logger.debug("Failed to enqueue delayed archive for %s", session_id)

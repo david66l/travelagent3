@@ -1,0 +1,110 @@
+# Go Gateway Deployment (M5)
+# Responsibilities: JWT auth, rate limiting, circuit breaker, request_id, routing.
+# Resources follow PRD §12.2: replicas=3, CPU req 1 / lim 2, mem req 512Mi / lim 2Gi
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  namespace: travel-agent
+  labels:
+    app: gateway
+    tier: edge
+    version: v1
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: gateway
+  template:
+    metadata:
+      labels:
+        app: gateway
+        tier: edge
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      # QoS Guaranteed where requests == limits (PRD §12.2)
+      containers:
+        - name: gateway
+          image: ghcr.io/travelagent/travel-agent-gateway:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: travel-agent-config
+            - secretRef:
+                name: travel-agent-secrets
+          env:
+            # Gateway-specific Prometheus port alignment
+            - name: PROMETHEUS_METRICS_PORT
+              value: "8080"
+          resources:
+            requests:
+              cpu: "1"
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 3
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 12
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 10"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65534
+            capabilities:
+              drop:
+                - ALL
+      # Spread across nodes / AZs for HA
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - gateway
+                topologyKey: kubernetes.io/hostname
+            - weight: 90
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - gateway
+                topologyKey: topology.kubernetes.io/zone
+      terminationGracePeriodSeconds: 30

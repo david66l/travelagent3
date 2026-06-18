@@ -84,6 +84,14 @@ _current_session_id: contextvars.ContextVar[Optional[str]] = contextvars.Context
     "_current_session_id", default=None
 )
 
+_current_user_id: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+    "_current_user_id", default=None
+)
+
+_current_user_role: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+    "_current_user_role", default=None
+)
+
 
 def set_current_step_name(name: str) -> None:
     """Set the current step name for this asyncio task."""
@@ -103,6 +111,22 @@ def set_current_session_id(session_id: str) -> None:
 def get_current_session_id() -> Optional[str]:
     """Get the current session id for this asyncio task."""
     return _current_session_id.get()
+
+
+def set_current_user_id(user_id: str) -> None:
+    _current_user_id.set(user_id)
+
+
+def get_current_user_id() -> Optional[str]:
+    return _current_user_id.get()
+
+
+def set_current_user_role(role: str) -> None:
+    _current_user_role.set(role)
+
+
+def get_current_user_role() -> Optional[str]:
+    return _current_user_role.get()
 
 
 # ===== Main Logger =====

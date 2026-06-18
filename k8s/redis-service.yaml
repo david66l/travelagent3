@@ -1,0 +1,41 @@
+# Redis Services (M5)
+# "redis" is the headless service required by the StatefulSet for stable pod DNS.
+# "redis-cluster" is the client seed endpoint; cluster-aware clients discover masters.
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: travel-agent
+  labels:
+    app: redis
+    tier: datastore
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: redis
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: 6379
+    - name: cluster
+      port: 16379
+      targetPort: 16379
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-cluster
+  namespace: travel-agent
+  labels:
+    app: redis
+    tier: datastore
+    role: client-seed
+spec:
+  type: ClusterIP
+  selector:
+    app: redis
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: 6379

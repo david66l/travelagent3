@@ -1,0 +1,10 @@
+{
+  "adapter_id": "travel-chat-v1",
+  "base_model": "Qwen/Qwen2.5-7B-Instruct",
+  "lora_rank": 8,
+  "lora_alpha": 16,
+  "target_modules": ["q_proj", "v_proj"],
+  "status": "ready",
+  "min_eval_exact_match_rate": 0.75,
+  "train_samples": 50
+}

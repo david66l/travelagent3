@@ -1,0 +1,220 @@
+# Redis Cluster StatefulSet (M5)
+# Topology: 3 masters + 3 replicas (PRD §4.7.6)
+# - Headless Service "redis" provides stable pod DNS: redis-0.redis, redis-1.redis, ...
+# - ClusterIP Service "redis-cluster" is the client seed endpoint.
+# - Init container bootstraps the cluster once all 6 pods are ready.
+#
+# Persistence:
+# - AOF everysec + RDB snapshots (mixed mode)
+# - maxmemory 8 Gi per node, volatile-lru eviction
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis
+  namespace: travel-agent
+  labels:
+    app: redis
+    tier: datastore
+spec:
+  serviceName: redis
+  replicas: 6
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+        tier: datastore
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "6379"
+    spec:
+      # Ensure master/replica pairs don't land on the same node
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: app
+                    operator: In
+                    values:
+                      - redis
+              topologyKey: kubernetes.io/hostname
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - redis
+                topologyKey: topology.kubernetes.io/zone
+      initContainers:
+        - name: cluster-bootstrap
+          image: redis:7-alpine
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              # Wait until all 6 pods have an IP
+              EXPECTED=6
+              while true; do
+                READY=0
+                for i in 0 1 2 3 4 5; do
+                  if nslookup "redis-${i}.redis" >/dev/null 2>&1; then
+                    READY=$((READY+1))
+                  fi
+                done
+                if [ "$READY" -ge "$EXPECTED" ]; then
+                  break
+                fi
+                echo "Waiting for Redis pods: $READY/$EXPECTED"
+                sleep 2
+              done
+
+              # Build cluster endpoint list
+              NODES=""
+              for i in 0 1 2 3 4 5; do
+                NODES="${NODES} redis-${i}.redis:6379"
+              done
+
+              # Check if cluster is already configured
+              FIRST_NODE=$(echo $NODES | awk '{print $1}')
+              if redis-cli -h "$FIRST_NODE" cluster info 2>/dev/null | grep -q "cluster_state:ok"; then
+                echo "Redis cluster already healthy."
+                exit 0
+              fi
+
+              # Create cluster with 1 replica per master
+              echo "Creating Redis cluster..."
+              redis-cli --cluster create ${NODES} --cluster-replicas 1 --cluster-yes
+              echo "Redis cluster created."
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          command:
+            - redis-server
+          args:
+            - /etc/redis/redis.conf
+          ports:
+            - name: redis
+              containerPort: 6379
+            - name: cluster
+              containerPort: 16379
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          resources:
+            # PRD §12.2 / §4.7.6: 1–2 CPU, 4–8 Gi per node; maxmemory 8 Gi
+            requests:
+              cpu: "1"
+              memory: 4Gi
+            limits:
+              cpu: "2"
+              memory: 8Gi
+          readinessProbe:
+            exec:
+              command:
+                - redis-cli
+                - ping
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            exec:
+              command:
+                - redis-cli
+                - ping
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          startupProbe:
+            exec:
+              command:
+                - redis-cli
+                - ping
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 30
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: config
+              mountPath: /etc/redis
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 999
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+      volumes:
+        - name: config
+          configMap:
+            name: redis-config
+            items:
+              - key: redis.conf
+                path: redis.conf
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 20Gi
+---
+# Redis node configuration (cluster + persistence + memory policies)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis-config
+  namespace: travel-agent
+data:
+  redis.conf: |
+    # Network
+    port 6379
+    bind 0.0.0.0
+    protected-mode no
+
+    # Cluster mode
+    cluster-enabled yes
+    cluster-config-file /data/nodes.conf
+    cluster-node-timeout 5000
+    cluster-require-full-coverage no
+
+    # Persistence (mixed AOF + RDB)
+    appendonly yes
+    appendfsync everysec
+    auto-aof-rewrite-percentage 100
+    auto-aof-rewrite-min-size 64mb
+    save 900 1
+    save 300 10
+    save 60 10000
+
+    # Memory
+    maxmemory 8gb
+    maxmemory-policy volatile-lru
+
+    # Logging
+    loglevel notice
+
+    # Disable dangerous commands
+    rename-command FLUSHALL ""
+    rename-command FLUSHDB  ""

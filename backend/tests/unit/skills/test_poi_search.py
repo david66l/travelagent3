@@ -2,7 +2,8 @@
 
 import pytest
 from unittest.mock import AsyncMock, patch
-from schemas import ScoredPOI
+from schemas import ScoredPOI, ToolResult
+from core.local_cache import tool_local_cache
 from skills.poi_search import POISearchSkill
 
 
@@ -11,6 +12,32 @@ class TestPOISearchSkill:
 
     def setup_method(self):
         self.skill = POISearchSkill()
+
+    @pytest.fixture(autouse=True)
+    async def _clear_l1(self):
+        await tool_local_cache.clear()
+        yield
+        await tool_local_cache.clear()
+
+    @pytest.mark.asyncio
+    async def test_run_for_category_uses_l1_cache(self, mock_redis):
+        params = {"city": "北京", "category": "attraction"}
+        cache_key = self.skill._cache_key(params)
+        cached = ToolResult(
+            data=[ScoredPOI(name="故宫", category="attraction", score=0.9)],
+            data_source="api",
+            confidence=0.9,
+        )
+        await tool_local_cache.set(cache_key, cached.model_dump())
+        mock_redis.get_json = AsyncMock(return_value=None)
+
+        result = await self.skill._run_for_category(params)
+
+        assert result.data_source == "api"
+        poi = result.data[0]
+        name = poi.name if hasattr(poi, "name") else poi["name"]
+        assert name == "故宫"
+        mock_redis.get_json.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_search_pois_cache_hit(self, mock_redis):
@@ -22,7 +49,7 @@ class TestPOISearchSkill:
                 "data_source": "api",
             }
         )
-        result = await self.skill.search_pois("北京", ["历史"])
+        result = await self.skill.search_pois("北京", ["历史"], category="attraction")
         assert len(result) == 1
         assert result[0].name == "故宫"
         assert result[0].data_source == "api"
@@ -107,7 +134,8 @@ class TestPOISearchSkill:
         cleaned = self.skill._clean_json_response(text)
         assert cleaned == '{"pois": []}'
 
-    def test_clean_json_response_invalid(self):
-        text = "not json"
-        cleaned = self.skill._clean_json_response(text)
-        assert cleaned == ""
+    def test_max_retries_for_category_prd_table(self):
+        assert self.skill._max_retries_for_category("attraction") == 3
+        assert self.skill._max_retries_for_category("restaurant") == 0
+        assert self.skill._max_retries_for_category("hotel") == 1
+        assert self.skill._max_retries_for_category("shopping") == 1

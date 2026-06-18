@@ -12,7 +12,7 @@ from planner.core.models import (
     EnrichedItinerary,
 )
 from planner.core.heuristic_strategy import build_strategy
-from planner.core.daily_scheduler import build_schedule
+from planner.core.daily_scheduler import build_schedule, detect_remote_pois
 from planner.core.rule_validator import validate
 from planner.core.repair import generate_repairs, apply_repair, run_repair_loop
 from planner.core.fact_guard import (
@@ -34,6 +34,7 @@ __all__ = [
     "EnrichedItinerary",
     "build_strategy",
     "build_schedule",
+    "detect_remote_pois",
     "validate",
     "generate_repairs",
     "apply_repair",

@@ -30,10 +30,21 @@ logger = logging.getLogger(__name__)
 # --------------------------------------------------------------------------- #
 
 _REASON_TEMPLATES: dict[str, str] = {
+    # 北京景点
     "故宫": "世界文化遗产，明清两代皇宫，中华文明的象征",
     "天坛": "明清代帝王祭天场所，建筑学杰作",
     "颐和园": "中国现存最大的皇家园林，昆明湖与万寿山相映成趣",
     "长城": "世界七大奇迹之一，中华民族的脊梁",
+    "南锣鼓巷": "老北京胡同文化代表，美食与文艺小店林立",
+    "798艺术区": "工业遗址改造的当代艺术圣地",
+    "鸟巢": "2008年奥运会主体育场，现代建筑奇迹",
+    "雍和宫": "北京最大的藏传佛教寺院，香火鼎盛",
+    "圆明园": "清代皇家园林遗址，历史沧桑与湖光山色交织",
+    "恭王府": "清代规模最大的一座王府，半部清代史尽在其中",
+    "北海公园": "中国现存最古老最完整的皇家园林之一",
+    "什刹海": "老北京水乡风貌，酒吧与胡同文化交融的休闲胜地",
+    "前门大街": "北京中轴线上的老字号商业街，京味文化聚集地",
+    # 上海景点
     "外滩": "万国建筑博览群，上海最经典的城市名片",
     "东方明珠": "上海地标性建筑，俯瞰浦江两岸的绝佳位置",
     "豫园": "明代江南园林代表作，感受老上海的风雅",
@@ -41,22 +52,87 @@ _REASON_TEMPLATES: dict[str, str] = {
     "田子坊": "石库门里弄里的创意艺术区，适合闲逛拍照",
     "新天地": "石库门与现代时尚的完美融合",
     "上海博物馆": "馆藏丰富的综合性博物馆，历史爱好者必去",
-    "南锣鼓巷": "老北京胡同文化代表，美食与文艺小店林立",
-    "798艺术区": "工业遗址改造的当代艺术圣地",
-    "鸟巢": "2008年奥运会主体育场，现代建筑奇迹",
-    "雍和宫": "北京最大的藏传佛教寺院，香火鼎盛",
+    "上海迪士尼": "中国内地首座迪士尼主题乐园，亲子与童话梦想之地",
+    "朱家角古镇": "沪上水乡古镇，小桥流水人家的江南韵味",
+    "上海中心大厦": "中国第一高楼，云端俯瞰魔都天际线",
+    "城隍庙": "上海老城厢文化地标，小吃与民俗风情汇集",
+    # 杭州景点
+    "西湖": "中国十大风景名胜之一，湖光山色与人文古迹交相辉映",
+    "灵隐寺": "千年古刹，江南禅宗五山之一，飞来峰石刻艺术瑰宝",
+    "雷峰塔": "西湖十景之一雷峰夕照，登塔俯瞰西湖全景",
+    "三潭印月": "西湖第一胜境，人民币一元纸币背面图案",
+    "断桥残雪": "西湖十景之首，白娘子与许仙相遇之地",
+    "龙井村": "中国十大名茶之首龙井茶原产地，茶园梯田美不胜收",
+    "西溪湿地": "中国首个国家湿地公园，城市中的天然氧吧",
+    "岳王庙": "纪念民族英雄岳飞，精忠报国的历史见证",
+    "九溪烟树": "西湖新十景，溪水潺潺古道清幽",
+    "千岛湖": "天下第一秀水，千岛错落湖光山色如诗如画",
+    "宋城": "大型宋代文化主题公园，千古情演出震撼人心",
+    "河坊街": "杭州历史商业街区，老字号与江南小吃云集",
+    # 南京景点
+    "中山陵": "中国近代建筑史上第一陵，392级台阶象征三民主义与五权宪法",
+    "夫子庙": "中国四大文庙之一，秦淮河畔千年儒学圣地，夜游灯会最是迷人",
+    "秦淮河": "六朝金粉地，十里秦淮河，夜游画舫最是南京风情",
+    "老门东": "明清老城南风貌区，青砖黛瓦间藏着南京最地道的市井烟火",
+    "南京大牌档": "南京餐饮名片，一站式品尝盐水鸭、鸭血粉丝等地道金陵美食",
+    "盐水鸭": "金陵名菜之首，皮白肉嫩肥而不腻，有六朝风味白门佳品之誉",
+    "鸭血粉丝汤": "南京街头灵魂小吃，鸭血嫩滑粉丝爽口，一碗暖到心底",
+    "小笼包": "皮薄汤鲜肉馅饱满，轻轻提慢慢移，先开窗后喝汤",
+    "明孝陵": "明清皇家第一陵，世界文化遗产，石象路秋色尤为动人",
+    "总统府": "中国近代史遗址博物馆，见证民国风云变幻",
+    "鸡鸣寺": "南朝第一寺，春日樱花大道堪称南京最美风景",
+    "玄武湖": "江南三大名湖之一，皇家园林湖泊，城市中心的绿洲",
+    "牛首山": "佛顶骨舍利供奉地，现代佛宫艺术与山水园林相得益彰",
+    # 成都景点
+    "宽窄巷子": "成都三大历史文化保护区之一，青砖黛瓦间品地道川西民居风情",
+    "锦里": "西蜀第一街，三国文化主题商业街，夜游灯火璀璨最是巴蜀韵味",
+    "武侯祠": "中国唯一君臣合祀祠庙，三国迷必访的蜀汉文化圣地",
+    "大熊猫基地": "全球最大的大熊猫繁育研究基地，近距离观察国宝的憨态可掬",
+    "杜甫草堂": "诗圣杜甫流寓成都时的故居，中国文学史上的圣地",
+    "春熙路": "成都最繁华的商业中心，潮流购物与地道美食并存",
+    "太古里": "开放式低密街区，传统川西建筑与现代时尚完美融合",
+    "青城山": "道教发源地之一，天下幽之誉，避暑修仙的清凉胜地",
+    "都江堰": "世界文化遗产，两千年前的水利工程至今造福天府之国",
+    "文殊院": "成都市中心千年古刹，香火鼎盛的佛教圣地",
+    "人民公园": "成都慢生活缩影，鹤鸣茶社里喝一碗盖碗茶",
+    "九眼桥": "成都夜生活地标，锦江两岸灯火与酒吧街相映成趣",
+    # 西安景点
+    "兵马俑": "世界第八大奇迹，秦始皇陵陪葬坑，两千年前的军团依然震撼人心",
+    "大雁塔": "唐代玄奘法师为保存佛经而建，西安的文化地标",
+    "回民街": "西安著名美食街，肉夹馍羊肉泡馍biangbiang面一站吃遍",
+    "城墙": "中国现存规模最大保存最完整的古代城垣，骑行一圈穿越千年",
+    "钟楼": "西安城市中心，晨钟暮鼓六百年，登楼俯瞰古城四方",
+    "大唐不夜城": "盛唐文化主题步行街，灯火璀璨梦回长安",
+    "大唐芙蓉园": "中国第一个全方位展示盛唐风貌的大型皇家园林式文化主题公园",
+    "华清宫": "唐玄宗与杨贵妃爱情故事发生地，温泉文化与历史遗迹交融",
+    "陕西历史博物馆": "华夏珍宝库，周秦汉唐文明的一站式沉浸体验",
+    "小雁塔": "唐代佛教建筑艺术瑰宝，晨钟暮鼓位列关中八景",
+    "永兴坊": "陕西非遗美食文化街区，摔碗酒与百余种小吃汇聚",
+    "碑林博物馆": "中国书法艺术宝库，历代名碑石刻荟萃",
+    # 厦门景点
+    "鼓浪屿": "海上花园，万国建筑博览，厦门最经典的城市名片",
+    "南普陀寺": "闽南佛教圣地，背山面海，千年古刹",
+    "厦门大学": "中国最美大学之一，芙蓉湖畔书香与海景交融",
+    "环岛路": "黄金海岸线，骑行观海，厦门最浪漫的滨海大道",
+    "曾厝垵": "文艺渔村蜕变的小清新聚落，适合闲逛拍照",
+    "中山路步行街": "厦门最繁华的商业街，骑楼建筑与闽南风情交织",
+    "胡里山炮台": "现存世界最大古炮，见证近代海防历史",
+    "沙茶面": "厦门特色面食，沙茶酱香浓，一碗地道闽南味",
+    "集美学村": "嘉庚精神发源地，龙舟池畔闽南建筑与学府气息交融",
+    "厦门园林植物园": "热带雨林区与多肉植物区，网红打卡与自然科普兼具",
 }
 
 
-def _template_reason(poi_name: str, category: str) -> str:
+def _template_reason(poi_name: str, category: str, tags: list[str] | None = None) -> str:
     """Single-activity fallback when LLM enrichment fails."""
     if poi_name in _REASON_TEMPLATES:
         return _REASON_TEMPLATES[poi_name]
     if category == "restaurant":
-        return "口碑推荐"
+        return f"在{poi_name}品味地道风味"
     if category == "attraction":
-        return f"推荐游览{poi_name}"
-    return f"体验{poi_name}"
+        tag_part = "、".join(tags[:2]) if tags else "探索"
+        return f"{poi_name}，适合{tag_part}的好去处"
+    return f"体验{poi_name}的当地特色"
 
 
 def _template_theme(day_activities: list[Activity]) -> str:
@@ -115,9 +191,15 @@ _BUILD_DAY_ENRICHMENT_PROMPT = """请为以下一日行程生成主题和每个�
 async def _llm_enrich_day_batch(
     day: DayPlan,
     profile: UserProfile,
+    skip_names: Optional[set[str]] = None,
 ) -> Optional[dict]:
     """Call LLM to enrich a whole day (theme + all activities). Returns parsed JSON dict or None."""
+    skip_names = skip_names or set()
     if not day.activities:
+        return None
+
+    # If all activities are already prefilled, skip the LLM call entirely.
+    if all(a.poi_name in skip_names for a in day.activities):
         return None
 
     interests = "、".join(profile.interests) if profile.interests else "无特殊偏好"
@@ -126,6 +208,8 @@ async def _llm_enrich_day_batch(
 
     activity_lines = []
     for act in day.activities:
+        if act.poi_name in skip_names:
+            continue
         time_str = f" {act.start_time}-{act.end_time}" if act.start_time and act.end_time else ""
         activity_lines.append(f"- {time_str} {act.poi_name} [{act.category}]")
 
@@ -159,9 +243,27 @@ async def _llm_enrich_day_batch(
         return None
 
 
+def _find_category(poi_name: str, day: DayPlan) -> str:
+    for a in day.activities:
+        if a.poi_name == poi_name:
+            return a.category
+    return "attraction"
+
+
+def _find_tags(poi_name: str, day: DayPlan) -> list[str]:
+    for a in day.activities:
+        if a.poi_name == poi_name:
+            return a.tags or []
+    return []
+
+
+GENERIC_PATTERNS = ["推荐游览", "值得一游", "口碑推荐", "推荐", "不错的地方"]
+
+
 async def _enrich_day_batch(
     day: DayPlan,
     profile: UserProfile,
+    skip_names: Optional[set[str]] = None,
 ) -> bool:
     """Try to enrich an entire day with one LLM call.
 
@@ -169,7 +271,8 @@ async def _enrich_day_batch(
     On failure, leaves ``day`` unchanged and returns False so the caller can
     fall back to per-activity enrichment.
     """
-    batch_result = await _llm_enrich_day_batch(day, profile)
+    skip_names = skip_names or set()
+    batch_result = await _llm_enrich_day_batch(day, profile, skip_names=skip_names)
     if not batch_result:
         return False
 
@@ -183,6 +286,19 @@ async def _enrich_day_batch(
     if not isinstance(raw_items, list):
         return False
 
+    # P3: quality guard — replace generic LLM output with template fallback
+    for item in raw_items:
+        if not isinstance(item, dict):
+            continue
+        reason = str(item.get("recommendation_reason", "")).strip()
+        if any(p in reason for p in GENERIC_PATTERNS):
+            poi_name = str(item.get("poi_name", "")).strip()
+            item["recommendation_reason"] = _template_reason(
+                poi_name,
+                _find_category(poi_name, day),
+                _find_tags(poi_name, day),
+            )
+
     result_by_name: dict[str, dict] = {}
     for item in raw_items:
         if isinstance(item, dict) and item.get("poi_name"):
@@ -192,6 +308,10 @@ async def _enrich_day_batch(
     batch_valid = True
 
     for activity in day.activities:
+        if activity.poi_name in skip_names:
+            new_activities.append(activity)
+            continue
+
         item = result_by_name.get(activity.poi_name)
         if not item:
             batch_valid = False
@@ -310,7 +430,9 @@ async def _enrich_activity_with_retry(
             # LLM call failed — try again or fallback
             if attempt < max_retries:
                 continue
-            enriched.recommendation_reason = _template_reason(activity.poi_name, activity.category)
+            enriched.recommendation_reason = _template_reason(
+                activity.poi_name, activity.category, activity.tags
+            )
             return enriched
 
         reason, tags = llm_result
@@ -333,7 +455,9 @@ async def _enrich_activity_with_retry(
         enriched = deepcopy(activity)
 
     # All retries exhausted — single-activity template fallback
-    enriched.recommendation_reason = _template_reason(activity.poi_name, activity.category)
+    enriched.recommendation_reason = _template_reason(
+        activity.poi_name, activity.category, activity.tags
+    )
     return enriched
 
 
@@ -349,11 +473,13 @@ async def enrich(
     """Enrich itinerary with LLM-generated themes and recommendation reasons.
 
     Strategy:
-    1. Try to enrich each day with a single LLM call (theme + all activities).
+    1. Prefill known POIs with high-quality templates, skipping the LLM call
+       for those activities entirely.
+    2. Try to enrich each day with a single LLM call (theme + all activities).
        This is cheaper because the shared context is paid for once per day.
-    2. If the day-batch call fails for a day, fall back to per-activity LLM
+    3. If the day-batch call fails for a day, fall back to per-activity LLM
        enrichment with per-activity validation and retry.
-    3. If a single activity still cannot be enriched, use a template fallback
+    4. If a single activity still cannot be enriched, use a template fallback
        for that activity only.
 
     Returns (enriched_itinerary, proposal_text).  If the entire enrichment
@@ -363,15 +489,31 @@ async def enrich(
         enriched = deepcopy(itinerary)
 
         for day in enriched:
-            # Primary path: one LLM call per day
-            batch_ok = await _enrich_day_batch(day, profile)
+            # P0: prefill known POIs with templates and skip them in LLM
+            prefilled: set[str] = set()
+            for act in day.activities:
+                if act.poi_name in _REASON_TEMPLATES:
+                    act.recommendation_reason = _REASON_TEMPLATES[act.poi_name]
+                    prefilled.add(act.poi_name)
+            if prefilled:
+                day.has_prefilled = True
+
+            # If every activity is prefilled, just generate a rule-based theme.
+            if len(prefilled) == len(day.activities):
+                if not day.theme:
+                    day.theme = _template_theme(day.activities)
+                continue
+
+            # Primary path: one LLM call per day (only for non-prefilled activities)
+            batch_ok = await _enrich_day_batch(day, profile, skip_names=prefilled)
 
             if not batch_ok:
                 # Fallback path: per-activity LLM + rule-based theme
                 if not day.theme:
                     day.theme = _template_theme(day.activities)
                 for i, activity in enumerate(day.activities):
-                    day.activities[i] = await _enrich_activity_with_retry(activity, profile)
+                    if activity.poi_name not in prefilled:
+                        day.activities[i] = await _enrich_activity_with_retry(activity, profile)
 
         proposal = _build_proposal(enriched, profile)
         return enriched, proposal
@@ -437,6 +579,8 @@ def _build_proposal(itinerary: list[DayPlan], profile: UserProfile) -> str:
             lines.append(f"{i}. **{act.poi_name}**{time_str}{cost_str}")
             if act.recommendation_reason:
                 lines.append(f"   _{act.recommendation_reason}_")
+        if day.budget_note:
+            lines.append(day.budget_note)
         lines.append("")
 
     # Footer

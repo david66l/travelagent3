@@ -16,14 +16,14 @@ import { cn } from "@/lib/utils";
 export default function Home() {
   const { sendMessage, reconnect } = useChat();
   const store = useChatStore();
-  const { activeView, activeTab } = store;
+  const { activeView, activeTab, refreshTripStatuses } = store;
 
   // 定期刷新行程状态（upcoming → active → completed）
   useEffect(() => {
-    store.refreshTripStatuses();
-    const interval = setInterval(() => store.refreshTripStatuses(), 60000);
+    refreshTripStatuses();
+    const interval = setInterval(() => refreshTripStatuses(), 60000);
     return () => clearInterval(interval);
-  }, []);
+  }, [refreshTripStatuses]);
 
   const handleNewChat = () => {
     store.setActiveView("chat");

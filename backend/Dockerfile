@@ -1,5 +1,6 @@
-# Backend Dockerfile for TravelAgent2
-# Multi-stage build for smaller production image
+# Backend Dockerfile for TravelAgent2 (M5)
+# Multi-stage build for smaller production FastAPI image.
+# Image: ghcr.io/travelagent/travel-agent-backend:latest
 
 # ── Builder stage ──
 FROM python:3.13-slim AS builder
@@ -33,28 +34,30 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
+# Create non-root user
+RUN groupadd -r appgroup && useradd -r -g appgroup -d /app appuser
+
 # Copy virtual environment from builder
 COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 ENV PYTHONPATH="/app/src"
 
-# Create non-root user
-RUN groupadd -r appgroup && useradd -r -g appgroup appuser
+# Copy application code, data, and migrations
+COPY --chown=appuser:appgroup src/ ./src/
+COPY --chown=appuser:appgroup data/ ./data/
+COPY --chown=appuser:appgroup seed_data/ ./seed_data/
+COPY --chown=appuser:appgroup alembic.ini ./
+COPY --chown=appuser:appgroup migrations/ ./migrations/
 
-# Copy application code
-COPY src/ ./src/
-COPY seed_data/ ./seed_data/
-
-# Set ownership
-RUN chown -R appuser:appgroup /app
+# Ensure tmp dirs are writable for prometheus multiprocess and uvicorn
+RUN mkdir -p /tmp/prometheus && chown -R appuser:appgroup /app /tmp/prometheus
 
 USER appuser
 
-# Expose port
 EXPOSE 8000
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD curl -sf http://localhost:8000/api/health || exit 1
 
 # Run with uvicorn

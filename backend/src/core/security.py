@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 
 import bcrypt
 from jose import JWTError, jwt
+from jose.exceptions import ExpiredSignatureError
 
 from core.exceptions import UnauthorizedException
 from core.redis_client import redis_client
@@ -25,6 +26,10 @@ def verify_password(password: str, hashed: str) -> bool:
 
 def _token_hash(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _user_ban_key(user_id: str) -> str:
+    return f"jwt_banned_user:{user_id}"
 
 
 def _now() -> datetime:
@@ -78,15 +83,17 @@ def decode_token(token: str) -> dict[str, Any]:
     """Decode and validate a JWT.
 
     Raises:
-        UnauthorizedException: If the token is invalid or expired.
+        UnauthorizedException: With PRD codes TOKEN_EXPIRED / TOKEN_INVALID.
     """
     try:
         payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
+    except ExpiredSignatureError as exc:
+        raise UnauthorizedException("Token expired", code="TOKEN_EXPIRED") from exc
     except JWTError as exc:
-        raise UnauthorizedException("Invalid or expired token") from exc
+        raise UnauthorizedException("Invalid token", code="TOKEN_INVALID") from exc
 
     if "sub" not in payload or "type" not in payload:
-        raise UnauthorizedException("Malformed token")
+        raise UnauthorizedException("Malformed token", code="TOKEN_INVALID")
 
     return payload
 
@@ -100,7 +107,18 @@ def _remaining_ttl(exp: int) -> int:
 
 async def blacklist_token(token: str) -> None:
     """Add a token hash to the Redis blacklist with its remaining TTL."""
-    payload = decode_token(token)
+    try:
+        payload = decode_token(token)
+    except UnauthorizedException as exc:
+        if exc.code != "TOKEN_EXPIRED":
+            raise
+        # Allow blacklisting expired tokens (logout edge case).
+        payload = jwt.decode(
+            token,
+            settings.jwt_secret,
+            algorithms=[settings.jwt_algorithm],
+            options={"verify_exp": False},
+        )
     ttl = _remaining_ttl(payload["exp"])
     if ttl <= 0:
         return
@@ -114,6 +132,21 @@ async def is_token_blacklisted(token: str) -> bool:
     return await redis_client.get(key) is not None
 
 
+async def is_user_banned(user_id: str) -> bool:
+    """True when admin has revoked all tokens for this user."""
+    return await redis_client.get(_user_ban_key(user_id)) is not None
+
+
+async def ban_user_tokens(user_id: str, ttl_seconds: int | None = None) -> None:
+    """Ban all outstanding tokens for a user until max token lifetime elapses."""
+    if ttl_seconds is None:
+        ttl_seconds = max(
+            settings.refresh_token_expire_days * 86400,
+            settings.guest_token_expire_hours * 3600,
+        )
+    await redis_client.set(_user_ban_key(user_id), "1", ttl=ttl_seconds)
+
+
 __all__ = [
     "hash_password",
     "verify_password",
@@ -123,4 +156,6 @@ __all__ = [
     "decode_token",
     "blacklist_token",
     "is_token_blacklisted",
+    "is_user_banned",
+    "ban_user_tokens",
 ]

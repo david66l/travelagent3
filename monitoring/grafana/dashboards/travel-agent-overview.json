@@ -1,0 +1,33 @@
+{
+  "title": "Travel Agent Overview",
+  "uid": "travel-agent-overview",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Planning Jobs Created",
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+      "targets": [{"expr": "planning_jobs_created_total", "refId": "A"}]
+    },
+    {
+      "type": "stat",
+      "title": "Planning Jobs Completed",
+      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
+      "targets": [{"expr": "planning_jobs_completed_total", "refId": "A"}]
+    },
+    {
+      "type": "graph",
+      "title": "HTTP Request Rate",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
+      "targets": [{"expr": "sum(rate(http_requests_total[1m]))", "refId": "A"}]
+    },
+    {
+      "type": "graph",
+      "title": "LLM Token Usage",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12},
+      "targets": [{"expr": "sum(rate(llm_token_usage_total[5m])) by (model)", "refId": "A"}]
+    }
+  ]
+}

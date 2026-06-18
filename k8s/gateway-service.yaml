@@ -1,0 +1,19 @@
+# Go Gateway Service (M5)
+# Ingress sends all traffic here; Gateway routes to backend/frontend.
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway
+  namespace: travel-agent
+  labels:
+    app: gateway
+    tier: edge
+spec:
+  type: ClusterIP
+  selector:
+    app: gateway
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+      protocol: TCP

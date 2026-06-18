@@ -1,0 +1,36 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: backend
+  namespace: travel-agent
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      containers:
+        - name: backend
+          image: ghcr.io/your-org/travel-agent-backend:latest
+          ports:
+            - containerPort: 8000
+          readinessProbe:
+            httpGet:
+              path: /api/ready
+              port: 8000
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 8000
+  strategy:
+    canary:
+      steps:
+        - setWeight: 20
+        - pause: {duration: 2m}
+        - setWeight: 50
+        - pause: {duration: 5m}
+        - setWeight: 100

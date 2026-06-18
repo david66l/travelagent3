@@ -1,0 +1,78 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": "-- Grafana --",
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "graphTooltip": 0,
+  "panels": [
+    {
+      "title": "Cost circuit breaker",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "cost_circuit_breaker_active",
+          "legendFormat": "active"
+        }
+      ]
+    },
+    {
+      "title": "Daily LLM tokens",
+      "type": "graph",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "targets": [
+        {
+          "expr": "cost_daily_tokens_total",
+          "legendFormat": "tokens"
+        }
+      ]
+    },
+    {
+      "title": "Daily external API cost (CNY)",
+      "type": "graph",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "targets": [
+        {
+          "expr": "cost_daily_external_api_cny",
+          "legendFormat": "cny"
+        }
+      ]
+    },
+    {
+      "title": "External API calls",
+      "type": "graph",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "targets": [
+        {
+          "expr": "sum(rate(external_api_calls_total[5m])) by (api_name)",
+          "legendFormat": "{{api_name}}"
+        }
+      ]
+    },
+    {
+      "title": "LLM request P99",
+      "type": "graph",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(llm_request_duration_seconds_bucket[5m])) by (le, model))",
+          "legendFormat": "{{model}}"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 16,
+  "title": "Travel Agent — Cost & Performance",
+  "uid": "travel-agent-cost",
+  "version": 1
+}

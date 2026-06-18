@@ -43,12 +43,22 @@ INTENT_PROMPT = """你是旅行Agent系统的意图识别专家。分析用户�
 
 ## 输出格式
 以JSON格式输出（user_entities 为扁平的键值对，不需要 scope 标记）：
+{
     "missing_required": ["缺失的必需字段"],
     "missing_recommended": ["缺失的建议字段"],
     "preference_changes": [{"field": "字段", "old_value": "旧值", "new_value": "新值"}],
     "clarification_questions": ["追问问题"],
+    "disambiguation_candidates": [
+        {"field": "destination", "candidates": [{"value": "城市", "reason": "推荐理由"}]}
+    ],
     "reasoning": "判断理由"
 }
+
+## 歧义消解规则
+- 用户说模糊词（如"南方"/"周边游"/"好玩的地方"）时，给出 disambiguation_candidates
+- 每个候选附带简洁推荐理由（≤15字）
+- "南方" → 推荐 厦门（6月淡季机票便宜）/ 成都（美食多节奏慢）/ 三亚（海边度假）
+- "性价比高" → 不生成候选，而是追问预算范围
 
 必需字段：destination, travel_days
 建议字段：travel_dates, travelers_count, budget_range, travelers_type

@@ -1,0 +1,27 @@
+# Optional vLLM inference (M4). Requires NVIDIA GPU on the host.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.vllm.yml --profile vllm up -d
+# Set VLLM_ENABLED=true and VLLM_BASE_URL=http://vllm:8000/v1 in backend .env
+
+services:
+  vllm:
+    profiles: ["vllm"]
+    image: vllm/vllm-openai:latest
+    container_name: travel_agent_vllm
+    command:
+      - --model
+      - meta-llama/Llama-3.2-3B-Instruct
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "8000"
+      - --enable-lora
+      - --lora-modules
+      - travel-chat-v1=/adapters/travel-chat-v1
+      - travel-plan-v1=/adapters/travel-plan-v1
+      - travel-repair-v1=/adapters/travel-repair-v1
+    volumes:
+      - ./ml/adapters:/adapters:ro
+    ports:
+      - "8001:8000"
+    networks:
+      - travel_agent_network

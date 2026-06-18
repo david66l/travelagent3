@@ -1,0 +1,10 @@
+{
+  "adapter_id": "travel-plan-v1",
+  "base_model": "Qwen/Qwen2.5-7B-Instruct",
+  "lora_rank": 16,
+  "lora_alpha": 32,
+  "target_modules": ["q_proj", "v_proj"],
+  "status": "ready",
+  "min_eval_exact_match_rate": 0.8,
+  "train_samples": 50
+}

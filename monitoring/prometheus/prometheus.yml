@@ -1,0 +1,135 @@
+# Prometheus configuration for TravelAgent2 (M5)
+# Scrape interval: 15s (PRD requirement)
+# Targets: Gateway, FastAPI, Celery (via celery-exporter), vLLM, Redis, Postgres
+# Run as part of docker-compose.observability.yml or deploy to K8s monitoring namespace.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: travel-agent-prod
+    replica: "{{.ExternalURL}}"
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+scrape_configs:
+  # -------------------------------------------------------------------------
+  # Prometheus self-monitoring
+  # -------------------------------------------------------------------------
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+        labels:
+          service: prometheus
+
+  # -------------------------------------------------------------------------
+  # Go Gateway (PRD §4.1 / §5.4)
+  # -------------------------------------------------------------------------
+  - job_name: travel-agent-gateway
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["gateway:8080"]
+        labels:
+          service: gateway
+          namespace: travel-agent
+
+  # -------------------------------------------------------------------------
+  # FastAPI Backend (PRD §5.4)
+  # -------------------------------------------------------------------------
+  - job_name: travel-agent-backend
+    metrics_path: /api/v1/metrics
+    static_configs:
+      - targets: ["backend:8000"]
+        labels:
+          service: backend
+          namespace: travel-agent
+
+  # -------------------------------------------------------------------------
+  # Celery workers (PRD §4.7 / §5.4)
+  # Requires deploying a Celery Prometheus exporter, e.g.:
+  #   https://github.com/danihodovic/celery-exporter
+  # -------------------------------------------------------------------------
+  - job_name: travel-agent-celery
+    static_configs:
+      - targets: ["celery-exporter:9808"]
+        labels:
+          service: celery
+          namespace: travel-agent
+
+  # -------------------------------------------------------------------------
+  # vLLM inference (PRD §8.1 / §5.4)
+  # -------------------------------------------------------------------------
+  - job_name: travel-agent-vllm
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["vllm:8000"]
+        labels:
+          service: vllm
+          namespace: travel-agent
+
+  # -------------------------------------------------------------------------
+  # Redis Cluster (PRD §4.7.6)
+  # Requires Redis Prometheus exporter sidecar or standalone deployment.
+  # Targets list all 6 cluster pods.
+  # -------------------------------------------------------------------------
+  - job_name: travel-agent-redis
+    static_configs:
+      - targets:
+          - redis-0.redis:9121
+          - redis-1.redis:9121
+          - redis-2.redis:9121
+          - redis-3.redis:9121
+          - redis-4.redis:9121
+          - redis-5.redis:9121
+        labels:
+          service: redis
+          namespace: travel-agent
+
+  # -------------------------------------------------------------------------
+  # PostgreSQL (PRD §6 / §5.4)
+  # Requires postgres_exporter sidecar or standalone deployment.
+  # -------------------------------------------------------------------------
+  - job_name: travel-agent-postgres
+    static_configs:
+      - targets:
+          - postgres-0.postgres:9187
+          - postgres-1.postgres:9187
+        labels:
+          service: postgres
+          namespace: travel-agent
+
+  # -------------------------------------------------------------------------
+  # Kubernetes pod discovery (when deployed inside cluster)
+  # -------------------------------------------------------------------------
+  - job_name: kubernetes-pods
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names:
+            - travel-agent
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+        action: keep
+        regex: true
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+        action: replace
+        target_label: __metrics_path__
+        regex: (.+)
+      - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+        action: replace
+        regex: ([^:]+)(?::\d+)?;(\d+)
+        replacement: $1:$2
+        target_label: __address__
+      - action: labelmap
+        regex: __meta_kubernetes_pod_label_(.+)
+      - source_labels: [__meta_kubernetes_namespace]
+        action: replace
+        target_label: kubernetes_namespace
+      - source_labels: [__meta_kubernetes_pod_name]
+        action: replace
+        target_label: kubernetes_pod_name
