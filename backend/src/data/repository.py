@@ -12,6 +12,8 @@ from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID, uuid4
 
+from sqlalchemy import text
+
 from core.database import async_session_maker
 from data.collectors.amap import RawPOI
 
@@ -50,31 +52,32 @@ class DataRepository:
     ) -> list[Attraction]:
         """结构化查询景点 — 过滤轮椅/步行强度/标签。"""
         async with async_session_maker() as db:
-            query = """
+            sql = """
                 SELECT id, name, city, category, lat, lng,
                        ticket_price, open_time, close_time,
                        duration_minutes, walk_intensity,
                        tags, suitable_for, source
                 FROM attractions
-                WHERE city = $1 AND status != 'deprecated'
+                WHERE city = :city AND status != 'deprecated'
             """
-            params = [city]
+            params: dict = {"city": city}
 
             if max_walk_intensity is not None:
-                params.append(max_walk_intensity)
-                query += f" AND walk_intensity <= ${len(params)}"
+                sql += " AND walk_intensity <= :max_walk"
+                params["max_walk"] = max_walk_intensity
 
             if wheelchair_only:
-                query += " AND wheelchair_accessible = true"
+                sql += " AND wheelchair_accessible = true"
 
             if avoid_tags:
-                params.append(avoid_tags)
-                query += f" AND NOT (tags && ${len(params)}::text[])"
+                sql += " AND NOT (tags && :avoid_tags::text[])"
+                params["avoid_tags"] = avoid_tags
 
-            query += " ORDER BY ticket_price NULLS LAST LIMIT $" + str(len(params) + 1)
-            params.append(limit)
+            sql += " ORDER BY ticket_price NULLS LAST LIMIT :limit"
+            params["limit"] = limit
 
-            rows = await db.fetch(query, *params)
+            result = await db.execute(text(sql), params)
+            rows = result.mappings().all()
             return [Attraction(**dict(r)) for r in rows]
 
     async def search_restaurants(
@@ -88,28 +91,29 @@ class DataRepository:
     ) -> list[dict]:
         """查询餐厅 — 按口味/忌口/价格过滤。"""
         async with async_session_maker() as db:
-            query = """
+            sql = """
                 SELECT * FROM restaurants
-                WHERE city = $1 AND status != 'deprecated'
+                WHERE city = :city AND status != 'deprecated'
             """
-            params = [city]
+            params: dict = {"city": city}
 
             if food_prefs:
-                params.append(food_prefs)
-                query += f" AND tags && ${len(params)}::text[]"
+                sql += " AND tags && :food_prefs::text[]"
+                params["food_prefs"] = food_prefs
 
             if avoid_foods:
-                params.append(avoid_foods)
-                query += f" AND NOT (tags && ${len(params)}::text[])"
+                sql += " AND NOT (tags && :avoid_foods::text[])"
+                params["avoid_foods"] = avoid_foods
 
             if max_price is not None:
-                params.append(max_price)
-                query += f" AND avg_price <= ${len(params)}"
+                sql += " AND avg_price <= :max_price"
+                params["max_price"] = max_price
 
-            query += " ORDER BY rating DESC NULLS LAST LIMIT $" + str(len(params) + 1)
-            params.append(limit)
+            sql += " ORDER BY rating DESC NULLS LAST LIMIT :limit"
+            params["limit"] = limit
 
-            rows = await db.fetch(query, *params)
+            result = await db.execute(text(sql), params)
+            rows = result.mappings().all()
             return [dict(r) for r in rows]
 
     async def search_knowledge(
@@ -126,59 +130,78 @@ class DataRepository:
         embedding = embedder.encode_single(query_text)
 
         async with async_session_maker() as db:
-            rows = await db.fetch(
-                """
-                SELECT content, content_type,
-                       1 - (embedding <=> $1::vector) AS similarity
-                FROM knowledge_tips
-                WHERE ($2::text IS NULL OR city = $2)
-                ORDER BY embedding <=> $1::vector
-                LIMIT $3
-                """,
-                embedding,
-                city,
-                top_k,
+            result = await db.execute(
+                text("""
+                    SELECT content, content_type,
+                           1 - (embedding <=> (:embedding)::vector) AS similarity
+                    FROM knowledge_tips
+                    WHERE ((:city)::text IS NULL OR city = :city)
+                    ORDER BY embedding <=> (:embedding)::vector
+                    LIMIT :top_k
+                """),
+                {"embedding": str(embedding), "city": city, "top_k": top_k},
             )
+            rows = result.mappings().all()
             return [dict(r) for r in rows]
 
     async def upsert_attraction(self, raw: RawPOI) -> UUID:
         """增量更新景点 — 只更新动态字段。"""
         async with async_session_maker() as db:
-            # 查找已存在记录
-            existing = await db.fetchrow(
-                "SELECT id FROM attractions WHERE name = $1 AND city = $2",
-                raw.name, raw.city,
+            result = await db.execute(
+                text("SELECT id FROM attractions WHERE name = :name AND city = :city"),
+                {"name": raw.name, "city": raw.city},
             )
+            existing = result.mappings().first()
 
             if existing:
-                # 只更新动态字段
                 await db.execute(
-                    """
-                    UPDATE attractions
-                    SET ticket_price = $1, open_time = $2, close_time = $3,
-                        source_updated_at = $4
-                    WHERE id = $5
-                    """,
-                    raw.ticket_price, raw.open_time, raw.close_time,
-                    raw.source_updated_at, existing["id"],
+                    text("""
+                        UPDATE attractions
+                        SET ticket_price = :ticket_price,
+                            open_time = :open_time,
+                            close_time = :close_time,
+                            source_updated_at = :source_updated_at
+                        WHERE id = :id
+                    """),
+                    {
+                        "ticket_price": raw.ticket_price,
+                        "open_time": raw.open_time,
+                        "close_time": raw.close_time,
+                        "source_updated_at": raw.source_updated_at,
+                        "id": existing["id"],
+                    },
                 )
+                await db.commit()
                 return existing["id"]
-            else:
-                # 新 POI 完整入库
-                new_id = uuid4()
-                await db.execute(
-                    """
+
+            new_id = uuid4()
+            await db.execute(
+                text("""
                     INSERT INTO attractions (id, name, city, category, lat, lng,
                         address, ticket_price, open_time, close_time,
                         tags, source, source_updated_at)
-                    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-                    """,
-                    new_id, raw.name, raw.city, raw.category,
-                    raw.lat, raw.lng, raw.address,
-                    raw.ticket_price, raw.open_time, raw.close_time,
-                    raw.tags, raw.source, raw.source_updated_at,
-                )
-                return new_id
+                    VALUES (:id, :name, :city, :category, :lat, :lng,
+                        :address, :ticket_price, :open_time, :close_time,
+                        :tags, :source, :source_updated_at)
+                """),
+                {
+                    "id": new_id,
+                    "name": raw.name,
+                    "city": raw.city,
+                    "category": raw.category,
+                    "lat": raw.lat,
+                    "lng": raw.lng,
+                    "address": raw.address,
+                    "ticket_price": raw.ticket_price,
+                    "open_time": raw.open_time,
+                    "close_time": raw.close_time,
+                    "tags": raw.tags,
+                    "source": raw.source,
+                    "source_updated_at": raw.source_updated_at,
+                },
+            )
+            await db.commit()
+            return new_id
 
     async def upsert_knowledge_tip(
         self, city: str, content: str, content_type: str
@@ -191,12 +214,18 @@ class DataRepository:
 
         async with async_session_maker() as db:
             await db.execute(
-                """
-                INSERT INTO knowledge_tips (city, content, content_type, embedding)
-                VALUES ($1, $2, $3, $4::vector)
-                """,
-                city, content, content_type, embedding,
+                text("""
+                    INSERT INTO knowledge_tips (city, content, content_type, embedding)
+                    VALUES (:city, :content, :content_type, (:embedding)::vector)
+                """),
+                {
+                    "city": city,
+                    "content": content,
+                    "content_type": content_type,
+                    "embedding": str(embedding),
+                },
             )
+            await db.commit()
 
 
 # 全局单例

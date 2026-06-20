@@ -1,12 +1,14 @@
 import json
+import logging
 import time
 import asyncio
 from typing import Any, Optional, TypeVar
 
 from openai import AsyncOpenAI, APIStatusError
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from core.cost_circuit_breaker import is_cost_circuit_active, record_daily_tokens
+from core.json_extract import extract_json_text
 from core.metrics import (
     record_llm_duration,
     record_llm_tokens,
@@ -20,11 +22,13 @@ from core.user_tier import resolve_tier
 
 T = TypeVar("T", bound=BaseModel)
 
+logger = logging.getLogger(__name__)
+
 
 class LLMClient:
     def __init__(self):
         base_url = settings.vllm_base_url if settings.vllm_enabled else settings.openai_base_url
-        api_key = settings.vllm_api_key if settings.vllm_enabled else settings.openai_api_key
+        api_key = settings.vllm_api_key if settings.vllm_enabled else (settings.deepseek_api_key or settings.openai_api_key)
         self.client = AsyncOpenAI(
             api_key=api_key,
             base_url=base_url,
@@ -42,10 +46,21 @@ class LLMClient:
                 timeout=settings.llm_timeout,
             )
 
+    def _uses_local_llm(self, model_name: str) -> bool:
+        if not settings.local_llm_enabled:
+            return False
+        local_names = {
+            name
+            for name in (settings.local_llm_model, settings.small_model)
+            if name
+        }
+        return model_name in local_names
+
     def _client_for_model(self, model_name: str) -> tuple[AsyncOpenAI, str]:
         """根据模型名返回对应的客户端和实际模型名。"""
-        if settings.local_llm_enabled and model_name == settings.local_llm_model:
-            return self._local_client or self.client, model_name
+        if self._uses_local_llm(model_name):
+            resolved = settings.local_llm_model or model_name
+            return self._local_client or self.client, resolved
         return self.client, model_name
 
     async def _create_completion(self, **kwargs: Any) -> Any:
@@ -106,6 +121,31 @@ class LLMClient:
         self._log_usage(response, model=model, tier=tier, duration_s=duration)
         return response.choices[0].message.content or ""
 
+    def _parse_structured(self, content: str, response_model: type[T]) -> T:
+        cleaned = extract_json_text(content)
+        return response_model.model_validate_json(cleaned)
+
+    async def _completion_json(
+        self,
+        *,
+        model: str,
+        messages: list[dict[str, str]],
+        temperature: float,
+        max_tokens: int,
+        tier: str,
+    ) -> str:
+        start = time.monotonic()
+        response = await self._create_completion(
+            model=model,
+            messages=messages,  # type: ignore
+            response_format={"type": "json_object"},
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+        duration = time.monotonic() - start
+        self._log_usage(response, model=model, tier=tier, duration_s=duration)
+        return response.choices[0].message.content or "{}"
+
     async def structured_call(
         self,
         messages: list[dict[str, str]],
@@ -114,18 +154,43 @@ class LLMClient:
         task_type: Optional[str] = None,
     ) -> T:
         model, prepared_messages, tier = await self._prepare_request(messages, task_type)
-        start = time.monotonic()
-        response = await self._create_completion(
+        temp = temperature if temperature is not None else 0.3
+        max_tokens = settings.llm_max_tokens
+
+        content = await self._completion_json(
             model=model,
-            messages=prepared_messages,  # type: ignore
-            response_format={"type": "json_object"},
-            temperature=temperature or 0.3,
-            max_tokens=settings.llm_max_tokens,
+            messages=prepared_messages,
+            temperature=temp,
+            max_tokens=max_tokens,
+            tier=tier,
         )
-        duration = time.monotonic() - start
-        self._log_usage(response, model=model, tier=tier, duration_s=duration)
-        content = response.choices[0].message.content or "{}"
-        return response_model.model_validate_json(content)
+        try:
+            return self._parse_structured(content, response_model)
+        except (ValidationError, json.JSONDecodeError, ValueError) as first_exc:
+            logger.warning(
+                "Structured output parse failed (%s); retrying once with repair prompt",
+                first_exc,
+            )
+            repair_messages = [
+                *prepared_messages,
+                {"role": "assistant", "content": content},
+                {
+                    "role": "user",
+                    "content": (
+                        "你的上一次输出无法解析为合法 JSON，或未包含 schema 要求的字段。"
+                        "请只输出一个 JSON 对象，不要 markdown 代码块，不要额外解释。"
+                        f"解析错误：{first_exc}"
+                    ),
+                },
+            ]
+            repaired = await self._completion_json(
+                model=model,
+                messages=repair_messages,
+                temperature=0.1,
+                max_tokens=max_tokens,
+                tier=tier,
+            )
+            return self._parse_structured(repaired, response_model)
 
     async def json_chat(
         self,
@@ -146,7 +211,7 @@ class LLMClient:
         duration = time.monotonic() - start
         self._log_usage(response, model=model, tier=tier, duration_s=duration)
         content = response.choices[0].message.content or "{}"
-        return json.loads(content)
+        return json.loads(extract_json_text(content))
 
     async def stream_chat(
         self,

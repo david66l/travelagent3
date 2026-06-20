@@ -24,11 +24,14 @@ MAX_RECENT_MESSAGES = 10
 # Fields that hold a single value (overwrite on ``set``).
 SCALAR_FIELDS = frozenset(
     {
+        "origin",
         "destination",
         "travel_days",
         "travel_dates",
         "travelers_count",
         "travelers_type",
+        "has_elderly",
+        "has_children",
         "pace",
         "budget_range",
         "accommodation_preference",
@@ -59,11 +62,14 @@ PERSONAL_FIELDS = frozenset(
 # Fields that are scoped to the current trip (reset per trip).
 TRIP_FIELDS = frozenset(
     {
+        "origin",
         "destination",
         "travel_days",
         "travel_dates",
         "travelers_count",
         "travelers_type",
+        "has_elderly",
+        "has_children",
         "budget_range",
         "special_requests",
     }
@@ -91,11 +97,14 @@ def default_conversation_state() -> dict[str, Any]:
             },
             # Trip-scoped preferences — reset when starting a new trip.
             "trip": {
+                "origin": None,
                 "destination": None,
                 "travel_days": None,
                 "travel_dates": None,
-                "travelers_count": 1,
+                "travelers_count": None,
                 "travelers_type": None,
+                "has_elderly": None,
+                "has_children": None,
                 "budget_range": None,
                 "special_requests": [],
             },
@@ -138,12 +147,15 @@ def merge_profile(profile: dict[str, Any], patch: ProfilePatch) -> dict[str, Any
         }
     if "trip" not in merged:
         merged["trip"] = {
+            "origin": merged.get("origin"),
             "destination": merged.get("destination"),
             "travel_days": merged.get("travel_days"),
             "travel_dates": merged.get("travel_dates"),
-            "travelers_count": merged.get("travelers_count", 1),
-            "travelers_type": merged.get("travelers_type"),
-            "budget_range": merged.get("budget_range"),
+        "travelers_count": merged.get("travelers_count"),
+        "travelers_type": merged.get("travelers_type"),
+        "has_elderly": merged.get("has_elderly"),
+        "has_children": merged.get("has_children"),
+        "budget_range": merged.get("budget_range"),
             "special_requests": merged.get("special_requests") or [],
         }
 
@@ -226,16 +238,23 @@ def append_message(
 
 
 def is_profile_ready(profile: dict[str, Any]) -> bool:
-    """True when the minimum required trip fields are present."""
-    trip = profile.get("trip", profile)  # tolerate flat pre-migration profiles
-    return bool(trip.get("destination") and trip.get("travel_days"))
+    """True when all required trip planning fields are present."""
+    from agents.demand_parser import DemandParserAgent
+
+    return DemandParserAgent.profile_is_complete(flatten_profile(profile))
 
 
 def flatten_profile(profile: dict[str, Any]) -> dict[str, Any]:
     """Merge personal + trip into a flat dict for downstream consumers (Pipeline, LLM).
 
     Trip fields take precedence over personal fields when both exist.
+    Also tolerates already-flat profiles by treating them as the trip scope.
     """
+    if not isinstance(profile, dict):
+        return {}
+    # Already flat: no nested personal/trip keys present.
+    if "trip" not in profile and "personal" not in profile:
+        return dict(profile)
     personal = profile.get("personal", {})
     trip = profile.get("trip", {})
     return {**personal, **trip}  # trip overwrites same-key personal fields (shouldn't overlap)

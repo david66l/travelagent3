@@ -16,7 +16,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import StreamingResponse
 
-from agent.runner import runner as agent_runner
+from graph.runner import runner as graph_runner
 from api.deps import get_conversation_service, get_current_user
 from api.v1.schemas import ChatMessageRequest
 from core.database import async_session_maker
@@ -205,29 +205,30 @@ async def _run_agent_and_notify(
 ):
     """后台运行 Agent 并通过 Redis Pub/Sub 推送结果。"""
     try:
-        result = await agent_runner.invoke(
-            content,
+        result = await graph_runner.run(
+            user_input=content,
             session_id=session_id,
             user_id=user_id,
-            user_role=user_role,
         )
 
-        # 推送每个阶段
-        for msg in result.get("messages", []):
-            await redis_client._client.publish(
-                f"session:{session_id}:events",
-                json.dumps(
-                    {
-                        "type": "message",
-                        "role": msg.get("role", "assistant"),
-                        "content": msg.get("content", ""),
-                        "message_type": msg.get("type"),
-                        "itinerary": msg.get("itinerary"),
-                        "warnings": msg.get("warnings"),
-                    },
-                    ensure_ascii=False,
-                ),
-            )
+        # 推送最终消息
+        await redis_client._client.publish(
+            f"session:{session_id}:events",
+            json.dumps(
+                {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": result.get("content", ""),
+                    "message_type": result.get("message_type"),
+                    "itinerary": result.get("itinerary"),
+                    "output_pdf_url": result.get("output_pdf_url"),
+                    "output_excel_url": result.get("output_excel_url"),
+                    "output_map_url": result.get("output_map_url"),
+                    "warnings": result.get("warnings", []),
+                },
+                ensure_ascii=False,
+            ),
+        )
 
         # 推送完成
         await redis_client._client.publish(
@@ -239,10 +240,13 @@ async def _run_agent_and_notify(
         try:
             state = {
                 "profile": {
-                    "destination": result.get("profile", {}).get("destination"),
-                    "travel_days": result.get("profile", {}).get("travel_days"),
+                    "destination": (result.get("itinerary") or [{}])[0].get("destination")
+                    if result.get("itinerary")
+                    else None,
                 },
-                "recent_messages": result.get("messages", [])[-20:],
+                "recent_messages": [
+                    {"role": "assistant", "content": result.get("content", "")}
+                ],
                 "phase": "completed",
             }
             await redis_client.set_json(

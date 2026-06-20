@@ -1,8 +1,11 @@
 """FastAPI application entry point."""
 
+import logging
 import os
 import sys
 from contextlib import asynccontextmanager
+
+logger = logging.getLogger(__name__)
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -24,25 +27,50 @@ from middleware.metrics_middleware import MetricsMiddleware  # noqa: E402
 from middleware.request_context import RequestContextMiddleware  # noqa: E402
 from core.tracing import setup_tracing  # noqa: E402
 from worker.planning_worker import start_worker, stop_worker  # noqa: E402
+from graph.graph import build_graph, set_graph  # noqa: E402
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver  # noqa: E402
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan: startup and shutdown."""
     await init_db()
-    await redis_client.connect()
-    await redis_cache_client.connect()
-    await redlock.connect()
-    if settings.planning_executor == "embedded":
-        await start_worker()
 
-    yield
+    # LangSmith tracing — auto-instruments all LangGraph/LangChain calls
+    if settings.langsmith_api_key:
+        import os as _os
+        _os.environ["LANGSMITH_TRACING"] = "true"
+        _os.environ["LANGSMITH_ENDPOINT"] = settings.langsmith_endpoint
+        _os.environ["LANGSMITH_API_KEY"] = settings.langsmith_api_key
+        _os.environ["LANGSMITH_PROJECT"] = settings.langsmith_project
+        logger.info(
+            "LangSmith tracing enabled: project=%s endpoint=%s",
+            settings.langsmith_project, settings.langsmith_endpoint,
+        )
 
-    if settings.planning_executor == "embedded":
-        await stop_worker()
-    await redis_client.disconnect()
-    await redis_cache_client.disconnect()
-    await redlock.disconnect()
+    # LangGraph persistent checkpoints. The async context manager must stay open
+    # for the whole application lifetime so the psycopg connection pool remains
+    # valid. See: https://langchain-ai.github.io/langgraph/concepts/persistence/
+    async with AsyncPostgresSaver.from_conn_string(settings.database_url_sync) as checkpointer:
+        await checkpointer.setup()  # idempotent: creates checkpoint tables
+        graph = build_graph(checkpointer=checkpointer)
+        app.state.graph = graph
+        set_graph(graph)
+        logger.info("TravelAgent graph compiled with AsyncPostgresSaver")
+
+        await redis_client.connect()
+        await redis_cache_client.connect()
+        await redlock.connect()
+        if settings.planning_executor == "embedded":
+            await start_worker()
+
+        yield
+
+        if settings.planning_executor == "embedded":
+            await stop_worker()
+        await redis_client.disconnect()
+        await redis_cache_client.disconnect()
+        await redlock.disconnect()
 
 
 def create_app() -> FastAPI:

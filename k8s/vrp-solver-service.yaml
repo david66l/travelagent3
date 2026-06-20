@@ -1,0 +1,19 @@
+# VRP Solver Service (M5)
+# Internal ClusterIP service used by backend to offload CP-SAT solving.
+apiVersion: v1
+kind: Service
+metadata:
+  name: vrp-solver
+  namespace: travel-agent
+  labels:
+    app: vrp-solver
+    tier: solver
+spec:
+  type: ClusterIP
+  selector:
+    app: vrp-solver
+  ports:
+    - name: http
+      port: 8001
+      targetPort: 8001
+      protocol: TCP

@@ -20,6 +20,7 @@ frontend/.next/
 celerybeat-schedule
 backend/src/celerybeat-schedule
 backend/src/logs/
+backend/outputs/
 .coverage
 htmlcov/
 .DS_Store

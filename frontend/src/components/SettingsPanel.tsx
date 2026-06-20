@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useChatStore } from "@/stores/chatStore";
+import { cn } from "@/lib/utils";
 
 interface PreferenceConfig {
   id: string;
@@ -36,17 +37,9 @@ export function SettingsPanel() {
   };
 
   return (
-    <div
-      className="flex h-full flex-col gap-2.5 rounded-3xl p-3.5"
-      style={{
-        background: "rgba(255,255,255,0.66)",
-        backdropFilter: "blur(24px)",
-        WebkitBackdropFilter: "blur(24px)",
-        border: "1px solid rgba(255,255,255,0.79)",
-      }}
-    >
+    <div className="glass-card flex h-full flex-col gap-2.5 rounded-3xl p-3.5">
       {/* Header */}
-      <h2 className="text-lg font-semibold text-[#111111]">
+      <h2 className="text-lg font-semibold text-ink">
         行程偏好设置
       </h2>
 
@@ -55,25 +48,20 @@ export function SettingsPanel() {
         {prefs.map((pref) => (
           <div
             key={pref.id}
-            className="flex flex-col gap-1.5 rounded-xl p-3"
-            style={{ background: "rgba(255,255,255,0.8)" }}
+            className="flex flex-col gap-1.5 rounded-xl bg-canvas-soft p-3"
           >
-            <span className="text-sm text-[#111111]">{pref.label}</span>
+            <span className="text-sm text-ink">{pref.label}</span>
             <div className="flex flex-wrap gap-1.5">
               {pref.options.map((opt) => (
                 <button
                   key={opt}
                   onClick={() => updatePref(pref.id, opt)}
-                  className="rounded-lg px-2.5 py-1 text-xs transition-colors"
-                  style={
+                  className={cn(
+                    "rounded-lg px-2.5 py-1 text-xs transition-colors",
                     pref.value === opt
-                      ? { background: "#111111", color: "#FFFFFF" }
-                      : {
-                          background: "rgba(255,255,255,0.6)",
-                          color: "#333333",
-                          border: "1px solid rgba(255,255,255,0.8)",
-                        }
-                  }
+                      ? "bg-ink text-canvas"
+                      : "border border-hairline bg-canvas text-body hover:bg-primary-pale"
+                  )}
                 >
                   {opt}
                 </button>
@@ -87,14 +75,13 @@ export function SettingsPanel() {
       <div className="flex gap-2">
         <button
           onClick={() => store.setActiveView("itinerary")}
-          className="flex-1 rounded-xl py-2.5 text-center text-sm text-[#333333] transition-colors"
-          style={{ background: "rgba(255,255,255,0.8)" }}
+          className="flex-1 rounded-xl bg-canvas-soft py-2.5 text-center text-sm text-body transition-colors hover:bg-primary-pale"
         >
           关闭
         </button>
         <button
           onClick={handleSave}
-          className="flex-1 rounded-xl bg-[#111111] py-2.5 text-center text-sm font-medium text-white transition-colors hover:bg-[#333333]"
+          className="btn-primary-dark flex-1 py-2.5 text-center text-sm"
         >
           {saved ? "已保存" : "保存策略"}
         </button>

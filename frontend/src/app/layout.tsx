@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
-import { Geist, JetBrains_Mono } from "next/font/google";
+import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 
-const geist = Geist({
+const inter = Inter({
   subsets: ["latin"],
-  variable: "--font-geist",
+  variable: "--font-inter",
 });
 
 const jetbrainsMono = JetBrains_Mono({
@@ -25,7 +25,7 @@ export default function RootLayout({
   return (
     <html lang="zh-CN" suppressHydrationWarning>
       <body
-        className={`${geist.variable} ${jetbrainsMono.variable} h-screen overflow-hidden gradient-bg`}
+        className={`${inter.variable} ${jetbrainsMono.variable} h-screen overflow-hidden bg-canvas-soft text-ink`}
       >
         {children}
       </body>

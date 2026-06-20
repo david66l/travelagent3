@@ -39,3 +39,20 @@ async def readiness_check() -> dict:
         return {"status": "ready", "redis": "ok"}
     except Exception as exc:
         return {"status": "degraded", "redis": str(exc)}
+
+
+@router.get("/health/dependencies")
+async def dependency_health() -> dict:
+    """Health report for third-party dependencies."""
+    from monitoring.health_checker import ThirdPartyHealthChecker
+
+    checker = ThirdPartyHealthChecker()
+    return await checker.health_report()
+
+
+@router.get("/health/congestion")
+async def congestion_status() -> dict:
+    """Current system congestion signals."""
+    from monitoring.congestion_detector import CongestionDetector
+
+    return await CongestionDetector().detect()

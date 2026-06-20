@@ -1,30 +1,37 @@
-"""外部事件 Webhook 端点 + 缺 5 工具定义。"""
+"""External event webhook endpoints (PRD §7.5)."""
 
 from fastapi import APIRouter, Request
+
 from core.responses import success_response
+from perception.webhook_handler import WebhookHandler
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
-
-# 事件缓冲队列
-_event_queue: list[dict] = []
 
 
 @router.post("/events")
 async def receive_event(request: Request):
-    """接收外部事件（天气、景区公告、航班变更）。"""
+    """Receive external events (weather, attraction closure, traffic, flight changes)."""
     body = await request.json()
-    _event_queue.append(body)
-    return success_response(data={"received": True, "event_type": body.get("type")})
+    ok, error = WebhookHandler.validate(body)
+    if not ok:
+        return success_response(data={"received": False, "error": error}, status_code=400)
+
+    await WebhookHandler.enqueue(body)
+    return success_response(
+        data={"received": True, "event_type": body.get("type")},
+        status_code=202,
+    )
 
 
 @router.get("/events/pending")
-async def list_pending():
-    """列出待处理事件（供 DynamicReplanner 消费）。"""
-    return success_response(data={"events": _event_queue})
+async def list_pending(limit: int = 100):
+    """List pending replan events from Redis without removing them."""
+    events = await WebhookHandler.list_pending(limit=limit)
+    return success_response(data={"events": events})
 
 
 @router.delete("/events/clear")
 async def clear_events():
-    """清空事件队列。"""
-    _event_queue.clear()
+    """Clear the replan event queue."""
+    await WebhookHandler.clear()
     return success_response(data={"cleared": True})

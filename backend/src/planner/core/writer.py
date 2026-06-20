@@ -489,11 +489,17 @@ async def enrich(
         enriched = deepcopy(itinerary)
 
         for day in enriched:
-            # P0: prefill known POIs with templates and skip them in LLM
+            # P0: prefill — 保护已有好描述的 POI，不送 LLM
             prefilled: set[str] = set()
+            GENERIC = {"推荐游览", "值得一游", "口碑推荐", "推荐去看看", "推荐"}
             for act in day.activities:
+                reason = (act.recommendation_reason or "").strip()
+                # 1. 模板里的直接用模板
                 if act.poi_name in _REASON_TEMPLATES:
                     act.recommendation_reason = _REASON_TEMPLATES[act.poi_name]
+                    prefilled.add(act.poi_name)
+                # 2. 草稿已有非通用好描述 → 保留，不送 LLM
+                elif reason and not any(g in reason for g in GENERIC) and len(reason) >= 4:
                     prefilled.add(act.poi_name)
             if prefilled:
                 day.has_prefilled = True

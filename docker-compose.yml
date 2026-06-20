@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    image: ankane/pgvector:latest
     container_name: travel_agent_postgres
     environment:
       POSTGRES_USER: travelagent
@@ -43,6 +43,7 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://travelagent:travelagent123@postgres:5432/travel_agent
       REDIS_URL: redis://redis:6379/0
+      VRP_SOLVER_URL: http://vrp_solver:8001
     ports:
       - "8000:8000"
     depends_on:
@@ -50,8 +51,33 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      vrp_solver:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:8000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - travel_agent_network
+    restart: unless-stopped
+
+  vrp_solver:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: travel_agent_vrp_solver
+    command: uv run python -m vrp_solver_service.main
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://travelagent:travelagent123@postgres:5432/travel_agent
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8001:8001"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8001/health"]
       interval: 10s
       timeout: 5s
       retries: 5

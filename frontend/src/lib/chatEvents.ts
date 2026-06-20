@@ -3,6 +3,7 @@ import {
   type ConfirmedInfo,
   type PreferencePanel,
 } from "@/stores/chatStore";
+import { labelForStage, resolveActivityPhase } from "@/lib/stageLabels";
 
 export function profileToConfirmedInfo(profile: unknown): ConfirmedInfo | null {
   if (!profile || typeof profile !== "object") return null;
@@ -71,7 +72,24 @@ export function handleChatEvent(
     refs.activeJobIdRef.current = data.job_id as string;
     refs.lastEventIdRef.current = 0;
     store.setJobStatus("pending");
-    store.setCurrentStage("等待处理");
+    store.setCurrentStage("正在规划…");
+    store.setActivityPhase("planning");
+    store.setLoading(true);
+    store.setNeedsClarification(false);
+    return;
+  }
+
+  if (type === "intent_ready") {
+    const content =
+      (data.content as string) || "意图识别已完成，接下来将进行大致的规划。";
+    applyProfileFromServer(data.profile);
+    store.addMessage({
+      role: "assistant",
+      content,
+      timestamp: Date.now(),
+    });
+    store.setActivityPhase("planning");
+    store.setCurrentStage("正在规划…");
     store.setLoading(true);
     store.setNeedsClarification(false);
     return;
@@ -86,12 +104,67 @@ export function handleChatEvent(
     store.setNeedsClarification(true);
     store.setLoading(false);
     store.setCurrentStage(null);
+    store.setActivityPhase("idle");
     applyProfileFromServer(data.profile);
     store.addMessage({
       role: "assistant",
       content: text,
       timestamp: Date.now(),
     });
+    return;
+  }
+
+  if (type === "message" && data.role === "assistant") {
+    const content = (data.content as string) || "";
+    const itinerary = data.itinerary as Parameters<typeof store.setItinerary>[0] | undefined;
+    const outputUrls = {
+      pdf: (data.output_pdf_url as string) || undefined,
+      excel: (data.output_excel_url as string) || undefined,
+      map: (data.output_map_url as string) || undefined,
+    };
+    store.setLoading(false);
+    store.setCurrentStage("完成");
+    store.setActivityPhase("idle");
+    store.setNeedsClarification(false);
+    if (itinerary) {
+      store.setItinerary(itinerary);
+    }
+    store.setOutputUrls(outputUrls);
+    if (content) {
+      store.addMessage({
+        role: "assistant",
+        content,
+        timestamp: Date.now(),
+      });
+    }
+    store.saveChatSnapshot();
+    return;
+  }
+
+  if (type === "final") {
+    const payload = data.payload as Record<string, unknown> | undefined;
+    const content = (payload?.content as string) || "";
+    const itinerary = payload?.itinerary as Parameters<typeof store.setItinerary>[0] | undefined;
+    const outputUrls = {
+      pdf: (payload?.output_pdf_url as string) || undefined,
+      excel: (payload?.output_excel_url as string) || undefined,
+      map: (payload?.output_map_url as string) || undefined,
+    };
+    store.setLoading(false);
+    store.setCurrentStage("完成");
+    store.setActivityPhase("idle");
+    if (itinerary) {
+      store.setItinerary(itinerary);
+    }
+    store.setOutputUrls(outputUrls);
+    if (content) {
+      store.addMessage({
+        role: "assistant",
+        content,
+        timestamp: Date.now(),
+      });
+    }
+    store.saveChatSnapshot();
     return;
   }
 
@@ -110,10 +183,18 @@ export function handleChatEvent(
     const stage = data.stage as string;
     store.setJobStatus(stage);
 
-    if (stage === "running") {
-      store.setCurrentStage("正在规划...");
-    } else if (stage === "draft_ready") {
-      store.setCurrentStage("行程草稿已生成");
+    const phase = resolveActivityPhase(stage);
+    if (phase !== "idle") {
+      store.setActivityPhase(phase);
+    }
+
+    const stageLabel = labelForStage(stage);
+    if (stageLabel) {
+      store.setLoading(true);
+      store.setCurrentStage(stageLabel);
+    }
+
+    if (stage === "draft_ready") {
       const payload = data.payload as Record<string, unknown> | undefined;
       if (payload?.itinerary_draft) {
         store.setItinerary(
@@ -121,7 +202,9 @@ export function handleChatEvent(
         );
       }
     } else if (stage === "itinerary_final") {
-      store.setCurrentStage("行程已优化");
+      if (!stageLabel) {
+        store.setCurrentStage("行程已优化");
+      }
       const payload = data.payload as Record<string, unknown> | undefined;
       if (payload?.itinerary_final) {
         store.setItinerary(
@@ -129,11 +212,14 @@ export function handleChatEvent(
         );
       }
     } else if (stage === "writing") {
-      store.setCurrentStage("正在润色文案...");
+      if (!stageLabel) {
+        store.setCurrentStage("正在润色文案...");
+      }
     } else if (stage === "completed") {
       refs.activeJobIdRef.current = null;
       refs.lastEventIdRef.current = 0;
       store.setCurrentStage("完成");
+      store.setActivityPhase("idle");
       store.setLoading(false);
       store.setNeedsClarification(false);
       const payload = data.payload as Record<string, unknown> | undefined;
@@ -162,6 +248,7 @@ export function handleChatEvent(
     } else if (stage === "failed" || stage === "cancelled") {
       refs.activeJobIdRef.current = null;
       refs.lastEventIdRef.current = 0;
+      store.setActivityPhase("idle");
       store.setCurrentStage(stage === "failed" ? "处理失败" : "已取消");
       store.setLoading(false);
       if (store.isStreaming) {
@@ -215,6 +302,7 @@ export function handleChatEvent(
     }
     store.setLoading(false);
     store.setCurrentStage(null);
+    store.setActivityPhase("idle");
     return;
   }
 

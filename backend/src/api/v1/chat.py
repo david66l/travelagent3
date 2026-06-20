@@ -19,6 +19,7 @@ from api.chat_runtime import (
 )
 from api.deps import get_conversation_service, get_current_user
 from api.v1.schemas import ChatMessageRequest
+from perception import AttachmentParser, build_text_perception
 from core.database import async_session_maker
 from core.exceptions import NotFoundException, RateLimitException
 from core.input_safety import validate_user_input
@@ -27,11 +28,21 @@ from core.redis_client import redis_client
 from core.responses import success_response
 from core.settings import settings
 from models import User
+from monitoring.rate_limit_controller import RateLimitCostController
 from repositories.planning_job import PlanningJobRepository
 from services import ConversationService
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 logger = logging.getLogger(__name__)
+
+# Global singleton: PaddleOCR is expensive to initialize, so share one parser
+# across requests. Lazy-loading happens on first attachment parse.
+_attachment_parser = AttachmentParser()
+
+
+def get_attachment_parser() -> AttachmentParser:
+    """Dependency provider for the shared attachment parser."""
+    return _attachment_parser
 
 
 def _session_id_for(conversation_id: UUID) -> str:
@@ -167,30 +178,64 @@ async def chat_stream(
 
 @router.post("/message")
 async def chat_message(
+    request: Request,
     body: ChatMessageRequest,
     user: User = Depends(get_current_user),
     service: ConversationService = Depends(get_conversation_service),
+    parser: AttachmentParser = Depends(get_attachment_parser),
 ):
     """Submit a user message; results are pushed on the SSE stream."""
     await _ensure_conversation(body.conversation_id, user, service)
     session_id = _session_id_for(body.conversation_id)
 
+    # Unified rate / quota / cost guard.
+    controller = RateLimitCostController()
+    await controller.check_request_allowed(
+        str(user.id),
+        user.role,
+        ip=request.client.host if request.client else None,
+        concurrent_sse=False,
+        estimated_tokens=0,
+    )
+
+    # --- Perception layer: unify text + attachments ---
+    attachment_metas = await parser.parse_many(
+        [att.model_dump() for att in (body.attachments or [])]
+    )
+
+    extracted_texts: list[str] = []
+    for meta in attachment_metas:
+        if meta.get("extracted_text"):
+            extracted_texts.append(meta["extracted_text"])
+
+    user_input = body.content
+    if extracted_texts:
+        user_input = f"{body.content}\n\n[附件内容]\n" + "\n---\n".join(extracted_texts)
+
+    perception = build_text_perception(user_input)
+    perception["attachments_meta"] = attachment_metas
+    # --- end perception layer ---
+
     if settings.input_safety_enabled:
         try:
-            validate_user_input(body.content)
+            validate_user_input(user_input)
         except Exception:
             record_prompt_injection_blocked()
             raise
 
-    await service.add_message(body.conversation_id, "user", body.content)
+    message_metadata = {"attachments_meta": attachment_metas} if attachment_metas else None
+    await service.add_message(
+        body.conversation_id, "user", user_input, metadata=message_metadata
+    )
 
     asyncio.create_task(
         process_chat_message(
             session_id,
             str(user.id),
-            body.content,
+            user_input,
             conversation_id=body.conversation_id,
             user_role=user.role,
+            attachments_meta=attachment_metas,
         )
     )
 
@@ -199,6 +244,7 @@ async def chat_message(
             "conversation_id": str(body.conversation_id),
             "status": "accepted",
             "stream": body.stream,
+            "attachments_parsed": len(attachment_metas),
         },
         status_code=202,
     )

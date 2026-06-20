@@ -114,12 +114,9 @@ class PlanningWorker:
         # Start cancel watcher
         cancel_task = asyncio.create_task(self._cancel_watcher(job.id))
 
+        status = "completed"
         try:
-            # Import pipeline here to avoid circular imports
-            from pipeline.planning_pipeline import PlanningPipeline
-
-            pipeline = PlanningPipeline(worker=self)
-            await pipeline.run(job)
+            status = await self._run_graph_for_job(job, cancel_event)
         finally:
             self._cancel_events.pop(job.id, None)
             heartbeat_task.cancel()
@@ -132,6 +129,12 @@ class PlanningWorker:
                 await cancel_task
             except asyncio.CancelledError:
                 pass
+
+        if status == "completed":
+            async with async_session_maker() as db:
+                repo = PlanningJobRepository(db)
+                await repo.release(job.id, self.worker_id, "completed")
+                await db.commit()
 
     async def _heartbeat_loop(self, job_id: str):
         """Renew lease every HEARTBEAT_INTERVAL seconds."""
@@ -166,6 +169,81 @@ class PlanningWorker:
                     break
         finally:
             await pubsub.unsubscribe(f"job:cancel:{job_id}")
+
+    # ------------------------------------------------------------------ #
+    # Graph execution
+    # ------------------------------------------------------------------ #
+
+    async def _run_graph_for_job(
+        self,
+        job: PlanningJob,
+        cancel_event: asyncio.Event,
+    ) -> str:
+        """Execute the new LangGraph runner for a PlanningJob.
+
+        Maps graph streaming events to PlanningJobEvent rows so that legacy
+        SSE/WS clients polling push_job_status() still receive stage updates.
+        Returns 'completed' or 'cancelled'.
+        """
+        from graph.runner import stream_graph_events
+
+        session_id = job.session_id or str(job.id)
+        user_id = job.user_id or "anonymous"
+        user_input = job.user_input or ""
+
+        feedback = job.user_feedback or {}
+        recent = feedback.get("recent_messages", [])
+        messages: list[dict] = []
+        if isinstance(recent, list):
+            messages = [
+                {"role": m.get("role", "user"), "content": m.get("content", "")}
+                for m in recent[-10:]
+                if isinstance(m, dict)
+            ]
+
+        await self.record_stage(job, "running", {"stage": "running"})
+
+        final_payload: dict = {}
+        try:
+            async for event in stream_graph_events(
+                session_id=session_id,
+                user_id=user_id,
+                user_input=user_input,
+                messages=messages,
+                conversation_state=feedback if isinstance(feedback, dict) else None,
+            ):
+                if cancel_event.is_set():
+                    await self.record_stage(job, "cancelled", {"stage": "cancelled"})
+                    async with async_session_maker() as db:
+                        repo = PlanningJobRepository(db)
+                        await repo.release(job.id, self.worker_id, "cancelled")
+                        await db.commit()
+                    return "cancelled"
+
+                event_type = event.get("type")
+                stage = event.get("stage", event_type)
+                payload = event.get("payload") or {}
+
+                if event_type == "thinking":
+                    await self.record_stage(job, stage or "running", payload)
+                elif event_type == "tool_call":
+                    await self.record_stage(job, "tools_executed", payload)
+                elif event_type == "partial":
+                    await self.record_stage(job, stage or "writing", payload)
+                elif event_type == "final":
+                    final_payload = dict(payload)
+                    break
+                elif event_type == "error":
+                    raise RuntimeError(payload.get("error", "graph error"))
+                else:
+                    await self.record_stage(job, stage or "running", payload)
+        except Exception:
+            logger.exception("Graph execution failed for job %s", job.id)
+            raise
+
+        # Persist final result as completed.
+        await self.record_stage(job, "completed", final_payload)
+        return "completed"
 
     # ------------------------------------------------------------------ #
     # Cancellation API

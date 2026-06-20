@@ -200,18 +200,43 @@ class Itinerary(Base):
     __table_args__ = (Index("ix_itineraries_user_created", "user_id", "created_at"),)
 
 
-# Import planning job models at the end to avoid circular imports and
-# register them with Base metadata.
-from models.planning_job import PlanningJob, PlanningJobEvent  # noqa: E402, F401
+# Import data-layer and log models at the end to avoid circular imports and
+# register them with Base metadata. These tables already exist in migrations
+# but were missing from ORM, which caused alembic autogenerate to drop them.
+from models.attraction import Attraction  # noqa: E402, F401
+from models.city_info import CityInfo  # noqa: E402, F401
+from models.data_audit_log import DataAuditLog  # noqa: E402, F401
 from models.dead_letter_archive import DeadLetterArchive  # noqa: E402, F401
+from models.hotel import Hotel  # noqa: E402, F401
+from models.knowledge_tip import KnowledgeTip  # noqa: E402, F401
+from models.planning_job import PlanningJob, PlanningJobEvent  # noqa: E402, F401
+from models.planning_log import PlanningLog  # noqa: E402, F401
+from models.restaurant import Restaurant  # noqa: E402, F401
+from models.spot_distance import SpotDistanceMulti  # noqa: E402, F401
+from models.transport_hub import TransportHub  # noqa: E402, F401
+from models.user_modification_log import UserModificationLog  # noqa: E402, F401
+from models.user_profile_vector import UserProfileVector  # noqa: E402, F401
+from models.user_trip_history import UserTripHistory  # noqa: E402, F401
 
 __all__ = [
     "User",
     "UserProfile",
+    "UserProfileVector",
     "Conversation",
     "Message",
     "Itinerary",
     "PlanningJob",
     "PlanningJobEvent",
     "DeadLetterArchive",
+    "Attraction",
+    "Restaurant",
+    "Hotel",
+    "KnowledgeTip",
+    "CityInfo",
+    "TransportHub",
+    "DataAuditLog",
+    "SpotDistanceMulti",
+    "UserTripHistory",
+    "PlanningLog",
+    "UserModificationLog",
 ]

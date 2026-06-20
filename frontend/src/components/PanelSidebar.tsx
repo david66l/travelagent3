@@ -20,21 +20,13 @@ export function PanelSidebar() {
       : 1;
 
   return (
-    <div
-      className="flex h-full flex-col gap-2.5 rounded-3xl p-3"
-      style={{
-        background: "rgba(255,255,255,0.66)",
-        backdropFilter: "blur(24px)",
-        WebkitBackdropFilter: "blur(24px)",
-        border: "1px solid rgba(255,255,255,0.79)",
-      }}
-    >
+    <div className="glass-card flex h-full flex-col gap-2.5 rounded-3xl p-3">
       {/* Budget Section */}
       <div className="flex flex-col gap-2.5">
-        <h3 className="text-base font-semibold text-[#111111]">预算预览</h3>
+        <h3 className="text-base font-semibold text-ink">预算预览</h3>
 
         {!budgetPanel ? (
-          <p className="text-xs text-[#111111]/30">暂无预算数据</p>
+          <p className="text-xs text-mute/60">暂无预算数据</p>
         ) : (
           <>
             {/* Summary Cards Row */}
@@ -45,39 +37,27 @@ export function PanelSidebar() {
             </div>
 
             {/* Progress Card */}
-            <div
-              className="flex flex-col gap-2 rounded-xl p-3"
-              style={{ background: "rgba(255,255,255,0.8)" }}
-            >
+            <div className="flex flex-col gap-2 rounded-xl bg-canvas-soft p-3">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-[#333333]">
+                <span className="text-xs font-semibold text-body">
                   预算使用率
                 </span>
-                <span className="text-xs font-bold text-[#111111]">
+                <span className="text-xs font-bold text-ink">
                   {usagePercent.toFixed(1)}% 已用
                 </span>
               </div>
-              <div
-                className="h-2.5 w-full overflow-hidden rounded-full"
-                style={{ background: "#E7E8E5" }}
-              >
+              <div className="h-2.5 w-full overflow-hidden rounded-full bg-hairline-soft">
                 <div
-                  className="h-full rounded-full"
-                  style={{
-                    width: `${Math.min(usagePercent, 100)}%`,
-                    background: "#FF8400",
-                  }}
+                  className="h-full rounded-full bg-primary"
+                  style={{ width: `${Math.min(usagePercent, 100)}%` }}
                 />
               </div>
             </div>
 
             {/* Category Breakdown */}
             {breakdownEntries.length > 0 && (
-              <div
-                className="flex flex-col gap-2 rounded-xl p-3"
-                style={{ background: "rgba(255,255,255,0.8)" }}
-              >
-                <span className="text-xs font-semibold text-[#333333]">
+              <div className="flex flex-col gap-2 rounded-xl bg-canvas-soft p-3">
+                <span className="text-xs font-semibold text-body">
                   分类支出
                 </span>
                 {breakdownEntries.map(([key, val]) => {
@@ -85,22 +65,18 @@ export function PanelSidebar() {
                   return (
                     <div key={key} className="flex flex-col gap-1.5">
                       <div className="flex items-center justify-between">
-                        <span className="text-xs text-[#111111]/70">
+                        <span className="text-xs text-body">
                           {translateBudgetKey(key)}
                         </span>
-                        <span className="text-xs font-medium text-[#111111]">
+                        <span className="text-xs font-medium text-ink">
                           ¥{val?.toLocaleString() ?? "0"}
                         </span>
                       </div>
-                      <div
-                        className="h-2 w-full overflow-hidden rounded-full"
-                        style={{ background: "#E7E8E5" }}
-                      >
+                      <div className="h-2 w-full overflow-hidden rounded-full bg-hairline-soft">
                         <div
-                          className="h-full rounded-full"
+                          className="h-full rounded-full bg-primary"
                           style={{
                             width: `${pct}%`,
-                            background: "#FF8400",
                           }}
                         />
                       </div>
@@ -115,15 +91,12 @@ export function PanelSidebar() {
 
       {/* Preference Section */}
       <div className="flex flex-col gap-2">
-        <h3 className="text-base font-semibold text-[#111111]">偏好</h3>
+        <h3 className="text-base font-semibold text-ink">偏好</h3>
 
         {!preferencePanel ? (
-          <p className="text-xs text-[#111111]/30">暂无偏好数据</p>
+          <p className="text-xs text-mute/60">暂无偏好数据</p>
         ) : (
-          <div
-            className="flex flex-col gap-2 rounded-xl p-3"
-            style={{ background: "rgba(255,255,255,0.8)" }}
-          >
+          <div className="flex flex-col gap-2 rounded-xl bg-canvas-soft p-3">
             {preferencePanel.destination && (
               <PrefLine label="目的地" value={preferencePanel.destination} />
             )}
@@ -181,12 +154,9 @@ export function PanelSidebar() {
 
 function BudgetCard({ label, value }: { label: string; value: string }) {
   return (
-    <div
-      className="flex flex-1 flex-col gap-1 rounded-xl p-2.5"
-      style={{ background: "rgba(255,255,255,0.8)" }}
-    >
-      <span className="text-xs font-medium text-[#666666]">{label}</span>
-      <span className="text-lg font-bold text-[#111111]">{value}</span>
+    <div className="flex flex-1 flex-col gap-1 rounded-xl bg-canvas-soft p-2.5">
+      <span className="text-xs font-medium text-mute">{label}</span>
+      <span className="text-lg font-bold text-ink">{value}</span>
     </div>
   );
 }
@@ -194,10 +164,10 @@ function BudgetCard({ label, value }: { label: string; value: string }) {
 function PrefLine({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-start gap-2">
-      <span className="shrink-0 text-xs font-medium text-[#111111]/50">
+      <span className="shrink-0 text-xs font-medium text-mute">
         {label}:
       </span>
-      <span className="text-[13px] text-[#111111]">{value}</span>
+      <span className="text-[13px] text-ink">{value}</span>
     </div>
   );
 }

@@ -1,6 +1,6 @@
 """Pydantic request/response schemas for v1 API."""
 
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, AliasChoices, model_validator
@@ -77,10 +77,20 @@ class CreatePlanningJobRequest(BaseModel):
     input_requirements: Optional[dict] = None
 
 
+class AttachmentItem(BaseModel):
+    """A user attachment: image, PDF, audio, generic file, or URL."""
+
+    type: Literal["image", "pdf", "audio", "file", "url"] = "file"
+    mime_type: str = "application/octet-stream"
+    source: str = Field(..., min_length=1, description="Base64 data URI or public URL")
+    filename: Optional[str] = None
+
+
 class ChatMessageRequest(BaseModel):
     conversation_id: UUID
     content: str = Field(..., min_length=1, max_length=8000)
     stream: bool = True
+    attachments: Optional[list[AttachmentItem]] = Field(default=None, max_length=5)
 
 
 class PlanningJobResponse(BaseModel):

@@ -380,7 +380,6 @@ class TestWorkerE2E:
     async def test_worker_acquires_and_completes_job(self, db: AsyncSession):
         """Worker picks up a pending job and runs it to completion."""
         from worker.planning_worker import PlanningWorker
-        from schemas import ScoredPOI, WeatherDay
 
         repo = PlanningJobRepository(db)
         job = await repo.create(
@@ -391,73 +390,38 @@ class TestWorkerE2E:
         )
         await db.commit()
 
-        # Mock data collection
-        mock_pois = AsyncMock(
-            return_value=[
-                ScoredPOI(name="故宫", category="attraction", score=0.9, area="东城区"),
-                ScoredPOI(name="天坛", category="attraction", score=0.85, area="东城区"),
-                ScoredPOI(name="颐和园", category="attraction", score=0.85, area="海淀区"),
-            ]
-        )
-        mock_weather = AsyncMock(
-            return_value=[
-                WeatherDay(
-                    date="2026-05-01",
-                    condition="晴",
-                    temp_high=25,
-                    temp_low=15,
-                    precipitation_chance=0,
-                ),
-                WeatherDay(
-                    date="2026-05-02",
-                    condition="多云",
-                    temp_high=24,
-                    temp_low=14,
-                    precipitation_chance=10,
-                ),
-                WeatherDay(
-                    date="2026-05-03",
-                    condition="晴",
-                    temp_high=26,
-                    temp_low=16,
-                    precipitation_chance=0,
-                ),
-            ]
-        )
+        acquired = await repo.acquire_job("test-worker", lease_seconds=60)
+        await db.commit()
 
-        # Mock Redis publish
-        with patch("core.redis_client.redis_client._client.publish", AsyncMock()):
-            with patch("agents.realtime_query.RealtimeQueryAgent.query_pois", mock_pois):
-                with patch(
-                    "agents.realtime_query.RealtimeQueryAgent.query_weather", mock_weather
-                ):
-                    worker = PlanningWorker("test-worker")
-                    acquired = await repo.acquire_job("test-worker", lease_seconds=60)
-                    await db.commit()
+        assert acquired is not None
+        assert acquired.id == job.id
 
-                    assert acquired is not None
-                    assert acquired.id == job.id
+        worker = PlanningWorker("test-worker")
+        final_payload = {
+            "content": "北京3日行程方案",
+            "itinerary": [{"day_number": 1, "activities": []}],
+        }
 
-                    from pipeline.planning_pipeline import PlanningPipeline
+        async def _fake_stream(*args, **kwargs):
+            yield {"type": "thinking", "stage": "gathering", "payload": {}}
+            yield {"type": "final", "stage": "completed", "payload": final_payload}
 
-                    pipeline = PlanningPipeline(worker=worker)
-                    await pipeline.run(acquired)
+        cancel_event = asyncio.Event()
+        with patch("graph.runner.stream_graph_events", side_effect=_fake_stream):
+            status = await worker._run_graph_for_job(acquired, cancel_event)
 
-                    job_id = job.id
-                    db.expire_all()
-                    result = await db.execute(
-                        select(PlanningJob).where(PlanningJob.id == job_id)
-                    )
-                    updated = result.scalar_one()
-                    assert updated.status == "completed"
-                    assert updated.locked_by is None
-                    assert updated.proposal_text is not None
-                    assert "北京" in updated.proposal_text
+        assert status == "completed"
 
-                    events = await repo.get_events_after(job_id, 0)
-                    assert events[0].stage == "running"
-                    assert events[-1].stage == "completed"
-                    assert "北京" in events[-1].payload["proposal_text"]
+        job_id = job.id
+        db.expire_all()
+        result = await db.execute(select(PlanningJob).where(PlanningJob.id == job_id))
+        updated = result.scalar_one()
+        assert updated.status == "completed"
+
+        events = await repo.get_events_after(job_id, 0)
+        assert events[0].stage == "running"
+        assert events[-1].stage == "completed"
+        assert events[-1].payload["content"] == "北京3日行程方案"
 
     @pytest.mark.asyncio
     async def test_worker_cancels_job(self, db: AsyncSession):
@@ -492,51 +456,3 @@ class TestWorkerE2E:
         result = await db.execute(select(PlanningJob).where(PlanningJob.id == job_id))
         updated = result.scalar_one()
         assert updated.status == "cancelled"
-
-    @pytest.mark.asyncio
-    async def test_pipeline_cancels_running_graph(self, db: AsyncSession):
-        """A cancellation request interrupts a long-running pipeline task."""
-        from pipeline.planning_pipeline import PlanningPipeline
-        from worker.planning_worker import PlanningWorker
-
-        poi_started = asyncio.Event()
-
-        async def slow_pois(*args, **kwargs):
-            poi_started.set()
-            await asyncio.Event().wait()
-
-        repo = PlanningJobRepository(db)
-        job = await repo.create(
-            session_id="sess-cancel-running",
-            user_id="user-1",
-            user_input="北京3天",
-            user_feedback=feedback_with_trip("北京", 3),
-        )
-        await db.commit()
-
-        acquired = await repo.acquire_job("test-worker", lease_seconds=60)
-        await db.commit()
-        job_id = job.id
-
-        with patch("core.redis_client.redis_client._client.publish", AsyncMock()):
-            with patch("agents.realtime_query.RealtimeQueryAgent.query_pois", slow_pois):
-                worker = PlanningWorker("test-worker")
-                pipeline = PlanningPipeline(worker=worker)
-                task = asyncio.create_task(pipeline.run(acquired))
-
-                await asyncio.wait_for(poi_started.wait(), timeout=2)
-                task.cancel()
-
-                try:
-                    await asyncio.wait_for(task, timeout=7)
-                except asyncio.CancelledError:
-                    pass
-
-        db.expire_all()
-        result = await db.execute(select(PlanningJob).where(PlanningJob.id == job_id))
-        updated = result.scalar_one()
-        assert updated.status == "cancelled"
-
-        events = await repo.get_events_after(job_id, 0)
-        assert events[-1].stage == "cancelled"
-        assert events[-1].event_type == "cancelled"

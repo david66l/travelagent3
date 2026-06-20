@@ -45,3 +45,43 @@ groups:
           severity: warning
         annotations:
           summary: "Daily external API cost estimate exceeds 800 CNY"
+      - alert: HighFallbackRate
+        expr: |
+          sum(rate(fallback_total[5m])) /
+          (sum(rate(external_api_calls_total[5m])) + sum(rate(fallback_total[5m]))) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "External dependency fallback rate > 50%"
+      - alert: HighSolveLatency
+        expr: histogram_quantile(0.99, sum(rate(solve_latency_seconds_bucket[5m])) by (le)) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Itinerary solver P99 latency > 10s"
+      - alert: HighRetrievalLatency
+        expr: histogram_quantile(0.99, sum(rate(retrieval_latency_seconds_bucket[5m])) by (le)) > 3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "RAG retrieval P99 latency > 3s"
+      - alert: TooManyActiveSessions
+        expr: active_sessions > 1000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Active SSE sessions exceed 1000"
+      - alert: DependencyUnhealthy
+        expr: |
+          sum by (name) (
+            label_replace(up{job=~"backend|gateway"}, "name", "$1", "instance", "(.*)")
+          ) < 1
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Core dependency health check failing"

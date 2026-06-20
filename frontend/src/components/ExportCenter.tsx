@@ -2,9 +2,10 @@
 
 import { useState } from "react";
 import jsPDF from "jspdf";
-import * as XLSX from "xlsx";
+import writeXlsxFile from "write-excel-file/browser";
 import { saveAs } from "file-saver";
 import { useChatStore } from "@/stores/chatStore";
+import { cn } from "@/lib/utils";
 
 const formats = [
   { id: "pdf", label: "PDF 文档" },
@@ -48,34 +49,29 @@ export function ExportCenter() {
   const hasData = itinerary.length > 0;
 
   return (
-    <div
-      className="flex h-full flex-col gap-3.5 rounded-4xl p-4"
-      style={{
-        background: "rgba(255,255,255,0.64)",
-        backdropFilter: "blur(30px)",
-        border: "1px solid rgba(255,255,255,0.7)",
-      }}
-    >
+    <div className="glass-card flex h-full flex-col gap-3.5 rounded-4xl p-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-semibold text-[#111111]">{tripTitle}</h2>
+        <h2 className="text-2xl font-semibold text-ink">{tripTitle}</h2>
         <button
           onClick={() => store.setActiveView("itinerary")}
-          className="rounded-xl bg-[#111111] px-3 py-2 text-xs font-medium text-white"
+          className="rounded-xl bg-canvas-soft px-3 py-2 text-xs font-medium text-body transition-colors hover:bg-primary-pale"
         >
           关闭
         </button>
       </div>
 
       {/* Format selector */}
-      <div className="flex flex-col gap-2 rounded-[18px] p-3.5" style={{ background: "rgba(255,255,255,0.55)" }}>
-        <h3 className="text-base font-semibold text-[#111111]">格式选择</h3>
+      <div className="flex flex-col gap-2 rounded-3xl bg-canvas-soft p-3.5">
+        <h3 className="text-base font-semibold text-ink">格式选择</h3>
         <div className="flex flex-col gap-2">
           {formats.map((f) => (
             <button key={f.id} onClick={() => setSelectedFormat(f.id)}
-              className="w-full rounded-xl px-3 py-2.5 text-left text-sm transition-colors"
-              style={selectedFormat === f.id
-                ? { background: "#111111", color: "#FFFFFF" }
-                : { background: "rgba(255,255,255,0.65)", color: "#111111" }}
+              className={cn(
+                "w-full rounded-xl px-3 py-2.5 text-left text-sm transition-colors",
+                selectedFormat === f.id
+                  ? "bg-ink text-canvas"
+                  : "bg-canvas text-ink hover:bg-primary-pale"
+              )}
             >{f.label}</button>
           ))}
         </div>
@@ -83,10 +79,12 @@ export function ExportCenter() {
 
       {/* Export button */}
       <button onClick={handleExport} disabled={!hasData || exporting}
-        className="rounded-xl px-4 py-3 text-sm font-semibold transition-all"
-        style={hasData
-          ? { background: "#111111", color: "#FFFFFF" }
-          : { background: "#E5E5E5", color: "#999", cursor: "not-allowed" }}
+        className={cn(
+          "rounded-xl px-4 py-3 text-sm font-semibold transition-all",
+          hasData
+            ? "btn-primary-dark"
+            : "bg-hairline text-mute cursor-not-allowed"
+        )}
       >
         {exporting ? "导出中..." : `导出 ${selectedFormat.toUpperCase()}`}
       </button>
@@ -131,11 +129,11 @@ function exportPDF(itinerary: any[]) {
   doc.save(`trip-${Date.now()}.pdf`);
 }
 
-function exportExcel(itinerary: any[]) {
-  const wsData: any[][] = [["天数", "时间", "地点", "费用", "推荐理由"]];
+async function exportExcel(itinerary: any[]) {
+  const data: (string | number)[][] = [["天数", "时间", "地点", "费用", "推荐理由"]];
   for (const day of itinerary) {
     for (const act of day.activities || []) {
-      wsData.push([
+      data.push([
         `Day ${day.day_number}`,
         act.start_time ? `${act.start_time}-${act.end_time}` : "",
         act.poi_name,
@@ -144,10 +142,8 @@ function exportExcel(itinerary: any[]) {
       ]);
     }
   }
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(wsData), "行程");
-  const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
-  saveAs(new Blob([buf]), `trip-${Date.now()}.xlsx`);
+  const blob = await writeXlsxFile(data, { sheet: "行程" }).toBlob();
+  saveAs(blob, `trip-${Date.now()}.xlsx`);
 }
 
 function exportJSON(itinerary: any[]) {

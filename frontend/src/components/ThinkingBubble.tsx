@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useChatStore } from "@/stores/chatStore";
 import { Loader2 } from "lucide-react";
-import { cn } from "@/lib/utils";
 
 function fmtDur(seconds: number): string {
   if (seconds < 1) return `${(seconds * 1000).toFixed(0)}ms`;
@@ -47,25 +46,16 @@ export function ThinkingBubble() {
     };
   }, [store.isLoading]);
 
-  const stageLabel = currentStage || "正在规划…";
+  const stageLabel = currentStage || "让我思考一下…";
 
   return (
     <div className="flex w-full flex-col items-start">
-      <div
-        className={cn(
-          "max-w-[560px] rounded-2xl px-3 py-2.5 text-[13px] leading-relaxed",
-          "bg-[#FFFFFFC2] text-[#111111E6] backdrop-blur-md"
-        )}
-        style={{
-          border: "1px solid rgba(255,255,255,0.8)",
-          boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
-        }}
-      >
+      <div className="glass-message-ai max-w-[560px] px-3 py-2.5 text-[13px] leading-relaxed">
         <div className="flex items-center gap-2">
-          <Loader2 className="h-4 w-4 animate-spin text-[#111111]/50" />
-          <span className="text-[#111111]/80">{stageLabel}</span>
+          <Loader2 className="h-4 w-4 animate-spin text-mute" />
+          <span className="text-body">{stageLabel}</span>
           {displayElapsed > 0.5 && (
-            <span className="font-mono text-[11px] text-[#111111]/40">
+            <span className="font-mono text-[11px] text-mute/60">
               {fmtDur(displayElapsed)}
             </span>
           )}

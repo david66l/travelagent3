@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 
 from core.redis_client import redis_client
 from core.settings import settings
 from core.metrics import set_daily_cost_gauges
+
+logger = logging.getLogger(__name__)
 
 _DAY_KEY = "cost:day"
 _HOUR_GPU_KEY = "cost:gpu:hour"
@@ -33,10 +36,13 @@ async def record_daily_tokens(tokens: int) -> int:
 
 
 async def get_daily_tokens() -> int:
-    raw = await redis_client.get(f"{_DAY_KEY}:tokens:{_day_suffix()}")
     try:
+        raw = await redis_client.get(f"{_DAY_KEY}:tokens:{_day_suffix()}")
         return int(raw or 0)
     except (TypeError, ValueError):
+        return 0
+    except Exception as exc:
+        logger.warning("Cost circuit: Redis unavailable for daily tokens: %s", exc)
         return 0
 
 
@@ -55,10 +61,13 @@ async def record_external_api_cost(cny: float) -> float:
 
 
 async def get_daily_external_api_cost() -> float:
-    raw = await redis_client.get(f"{_DAY_KEY}:api_cost:{_day_suffix()}")
     try:
+        raw = await redis_client.get(f"{_DAY_KEY}:api_cost:{_day_suffix()}")
         return int(raw or 0) / 1000.0
     except (TypeError, ValueError):
+        return 0.0
+    except Exception as exc:
+        logger.warning("Cost circuit: Redis unavailable for API cost: %s", exc)
         return 0.0
 
 
@@ -74,10 +83,13 @@ async def record_hourly_gpu_cost(cny: float) -> float:
 
 
 async def get_hourly_gpu_cost() -> float:
-    raw = await redis_client.get(f"{_HOUR_GPU_KEY}:{_hour_suffix()}")
     try:
+        raw = await redis_client.get(f"{_HOUR_GPU_KEY}:{_hour_suffix()}")
         return int(raw or 0) / 1000.0
     except (TypeError, ValueError):
+        return 0.0
+    except Exception as exc:
+        logger.warning("Cost circuit: Redis unavailable for GPU cost: %s", exc)
         return 0.0
 
 
@@ -86,21 +98,25 @@ async def is_cost_circuit_active() -> bool:
     if not settings.cost_circuit_breaker_enabled:
         return False
 
-    manual = await redis_client.get("cost:circuit:manual")
-    if manual == "1":
-        return True
+    try:
+        manual = await redis_client.get("cost:circuit:manual")
+        if manual == "1":
+            return True
 
-    tokens = await get_daily_tokens()
-    if tokens > settings.cost_circuit_breaker_daily_tokens:
-        return True
+        tokens = await get_daily_tokens()
+        if tokens > settings.cost_circuit_breaker_daily_tokens:
+            return True
 
-    api_cost = await get_daily_external_api_cost()
-    if api_cost > settings.cost_circuit_breaker_daily_api_cost_cny:
-        return True
+        api_cost = await get_daily_external_api_cost()
+        if api_cost > settings.cost_circuit_breaker_daily_api_cost_cny:
+            return True
 
-    gpu_cost = await get_hourly_gpu_cost()
-    if gpu_cost > settings.cost_circuit_breaker_hourly_gpu_cost_cny:
-        return True
+        gpu_cost = await get_hourly_gpu_cost()
+        if gpu_cost > settings.cost_circuit_breaker_hourly_gpu_cost_cny:
+            return True
+    except Exception as exc:
+        logger.warning("Cost circuit check failed; fail-open (LLM allowed): %s", exc)
+        return False
 
     return False
 

@@ -37,7 +37,7 @@ export default function Home() {
       <TopBar />
 
       {/* Mobile tab bar */}
-      <div className="flex border-b border-white/30 bg-white/40 backdrop-blur-md md:hidden">
+      <div className="flex border-b border-hairline bg-canvas-soft/60 backdrop-blur-md md:hidden">
         {(["chat", "itinerary", "panels"] as const).map((tab) => (
           <button
             key={tab}
@@ -45,8 +45,8 @@ export default function Home() {
             className={cn(
               "flex-1 px-4 py-2.5 text-sm font-medium",
               activeTab === tab
-                ? "border-b-2 border-[#111111] text-[#111111]"
-                : "text-[#111111]/50"
+                ? "border-b-2 border-ink text-ink"
+                : "text-mute"
             )}
           >
             {tab === "chat" && "对话"}
@@ -78,7 +78,11 @@ export default function Home() {
           {activeView === "itinerary" && (
             <>
               <div className="flex-1">
-                <ItineraryPanel />
+                <ItineraryPanel
+                  onModify={async (msg) => {
+                    await sendMessage(msg);
+                  }}
+                />
               </div>
               <div className="w-[350px]">
                 <PanelSidebar />
@@ -110,7 +114,11 @@ export default function Home() {
             </div>
           )}
           {activeTab === "itinerary" && (
-            <ItineraryPanel />
+            <ItineraryPanel
+              onModify={async (msg) => {
+                await sendMessage(msg);
+              }}
+            />
           )}
           {activeTab === "panels" && (
             <PanelSidebar />

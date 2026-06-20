@@ -8,8 +8,9 @@
 from __future__ import annotations
 
 import logging
-import os
 from typing import Optional
+
+from core.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -24,26 +25,13 @@ class FallbackSearcher:
         if self._collector is None:
             from data.collectors.amap import AmapCollector
 
-            # 从 .env 读取 Key
-            key = os.environ.get("AMAP_KEY") or os.environ.get("GAODE_API_KEY") or ""
+            # 统一从 settings 读取高德 Key
+            key = settings.amap_key
             if not key:
-                # 尝试读 .env 文件
-                env_paths = [
-                    os.path.join(os.getcwd(), ".env"),
-                    os.path.join(os.path.dirname(__file__), "..", "..", "..", ".env"),
-                    "/Volumes/PS2000/AI项目/面试项目/TravelAgent2/.env",
-                ]
-                for p in env_paths:
-                    if os.path.exists(p):
-                        with open(p) as f:
-                            for line in f:
-                                if "GAODE_API_KEY" in line or "AMAP_KEY" in line:
-                                    key = line.split("=", 1)[1].strip().strip('"').strip("'")
-                                    break
-                    if key:
-                        break
+                logger.warning("AMAP_KEY not configured in settings")
+                return None
 
-            self._collector = AmapCollector(key) if key else None
+            self._collector = AmapCollector(key)
 
         return self._collector
 

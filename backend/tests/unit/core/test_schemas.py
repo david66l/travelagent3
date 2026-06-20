@@ -19,7 +19,7 @@ class TestUserProfile:
 
     def test_defaults(self):
         p = UserProfile()
-        assert p.travelers_count == 1
+        assert p.travelers_count is None
         assert p.pace == "moderate"
         assert p.food_preferences == []
         assert p.interests == []

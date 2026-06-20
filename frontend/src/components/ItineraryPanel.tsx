@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useChatStore } from "@/stores/chatStore";
 import { DayCard } from "./DayCard";
+import { ItineraryToolbar } from "./ItineraryToolbar";
 import { CheckCircle2, Loader2 } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 type StageKey =
   | "intent_ready"
@@ -54,7 +56,7 @@ const STAGES: StageInfo[] = [
 
 function normalizeStage(stage: string | null): StageKey | null {
   if (!stage) return null;
-  if (stage === "running") return "intent_ready";
+  if (stage === "running" || stage === "planning") return "intent_ready";
   if (STAGES.some((s) => s.key === stage)) return stage as StageKey;
   if (stage === "failed" || stage === "cancelled") return null;
   return null;
@@ -70,20 +72,20 @@ function StageProgress({ currentStage }: { currentStage: string | null }) {
   if (activeIndex < 0) return null;
 
   return (
-    <div className="rounded-2xl border border-white/60 bg-white/50 p-3 backdrop-blur-md">
+    <div className="glass-card p-3">
       <div className="mb-2 flex items-center justify-between">
-        <span className="text-xs font-medium text-[#111111]/80">
+        <span className="text-xs font-medium text-ink">
           {STAGES[activeIndex]?.label}
         </span>
-        <span className="text-[10px] text-[#111111]/50">
+        <span className="text-[10px] text-mute">
           {activeIndex + 1} / {STAGES.length}
         </span>
       </div>
 
       {/* Progress bar */}
-      <div className="mb-3 h-1.5 w-full overflow-hidden rounded-full bg-[#111111]/10">
+      <div className="mb-3 h-1.5 w-full overflow-hidden rounded-full bg-hairline-soft">
         <div
-          className="h-full rounded-full bg-[#111111] transition-all duration-500 ease-out"
+          className="h-full rounded-full bg-primary transition-all duration-500 ease-out"
           style={{ width: `${((activeIndex + 1) / STAGES.length) * 100}%` }}
         />
       </div>
@@ -97,25 +99,24 @@ function StageProgress({ currentStage }: { currentStage: string | null }) {
             <div key={stage.key} className="flex items-start gap-2">
               <div className="mt-0.5">
                 {isCompleted ? (
-                  <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                  <CheckCircle2 className="h-4 w-4 text-positive" />
                 ) : isActive ? (
-                  <Loader2 className="h-4 w-4 animate-spin text-[#111111]" />
+                  <Loader2 className="h-4 w-4 animate-spin text-ink" />
                 ) : (
-                  <div className="h-4 w-4 rounded-full border-2 border-[#111111]/20" />
+                  <div className="h-4 w-4 rounded-full border-2 border-hairline" />
                 )}
               </div>
               <div className="flex-1">
                 <p
-                  className={`text-xs font-medium ${
-                    isActive || isCompleted
-                      ? "text-[#111111]"
-                      : "text-[#111111]/40"
-                  }`}
+                  className={cn(
+                    "text-xs font-medium",
+                    isActive || isCompleted ? "text-ink" : "text-mute"
+                  )}
                 >
                   {stage.label}
                 </p>
                 {isActive && (
-                  <p className="text-[10px] text-[#111111]/60">
+                  <p className="text-[10px] text-body">
                     {stage.description}
                   </p>
                 )}
@@ -128,9 +129,13 @@ function StageProgress({ currentStage }: { currentStage: string | null }) {
   );
 }
 
-export function ItineraryPanel() {
+interface ItineraryPanelProps {
+  onModify?: (message: string) => void | Promise<void>;
+}
+
+export function ItineraryPanel({ onModify }: ItineraryPanelProps) {
   const store = useChatStore();
-  const { itinerary, currentTrip, currentStage, isLoading } = store;
+  const { itinerary, currentTrip, jobStatus, isLoading, waitingForConfirmation, activityPhase } = store;
   const [activeDay, setActiveDay] = useState(0);
 
   // Reset active day when itinerary changes or shrinks
@@ -147,22 +152,14 @@ export function ItineraryPanel() {
   const tripTitle = currentTrip ? `${currentTrip.title}` : "行程编排台";
 
   return (
-    <div
-      className="flex h-full flex-col gap-2.5 rounded-3xl p-3.5"
-      style={{
-        background: "rgba(255,255,255,0.66)",
-        backdropFilter: "blur(24px)",
-        WebkitBackdropFilter: "blur(24px)",
-        border: "1px solid rgba(255,255,255,0.79)",
-      }}
-    >
+    <div className="glass-card flex h-full flex-col gap-2.5 rounded-3xl p-3.5">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-[#111111]">{tripTitle}</h2>
+        <h2 className="text-lg font-semibold text-ink">{tripTitle}</h2>
         {itinerary && (
           <button
             onClick={() => store.setActiveView("export")}
-            className="rounded-xl bg-[#111111] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#333333]"
+            className="btn-primary-dark px-3 py-1.5 text-xs"
           >
             导出
           </button>
@@ -170,12 +167,23 @@ export function ItineraryPanel() {
       </div>
 
       {/* Stage indicator */}
-      {isLoading && currentStage && <StageProgress currentStage={currentStage} />}
+      {isLoading && activityPhase === "planning" && jobStatus && (
+        <StageProgress currentStage={jobStatus} />
+      )}
+
+      {/* HITL toolbar */}
+      {itinerary && itinerary.length > 0 && (
+        <ItineraryToolbar
+          onModify={onModify ?? (() => {})}
+          isLoading={isLoading}
+          waitingForConfirmation={waitingForConfirmation}
+        />
+      )}
 
       {!itinerary || itinerary.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center text-center">
-          <p className="text-sm text-[#111111]/30">行程将在这里展示</p>
-          <p className="mt-1 text-xs text-[#111111]/20">开始聊天来生成行程</p>
+          <p className="text-sm text-mute/60">行程将在这里展示</p>
+          <p className="mt-1 text-xs text-mute/40">开始聊天来生成行程</p>
         </div>
       ) : (
         <>
@@ -185,12 +193,12 @@ export function ItineraryPanel() {
               <button
                 key={day.day_number}
                 onClick={() => setActiveDay(idx)}
-                className="rounded-full px-3 py-2 text-xs font-medium transition-colors"
-                style={
+                className={cn(
+                  "rounded-full px-3 py-2 text-xs font-medium transition-colors",
                   idx === activeDay
-                    ? { background: "#111111", color: "#FFFFFF" }
-                    : { background: "rgba(255,255,255,0.78)", color: "#333333" }
-                }
+                    ? "bg-ink text-canvas"
+                    : "bg-canvas-soft text-body hover:bg-primary-pale"
+                )}
               >
                 第 {day.day_number} 天
               </button>
@@ -199,7 +207,13 @@ export function ItineraryPanel() {
 
           {/* Day Content */}
           <div className="flex-1 overflow-y-auto scrollbar-thin">
-            {itinerary[activeDay] && <DayCard day={itinerary[activeDay]} />}
+            {itinerary[activeDay] && (
+              <DayCard
+                day={itinerary[activeDay]}
+                onModify={onModify}
+                isLoading={isLoading}
+              />
+            )}
           </div>
         </>
       )}

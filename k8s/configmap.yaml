@@ -60,15 +60,19 @@ data:
   # Database (populated from secret DATABASE_URL; this is a fallback for non-secret aware tools)
   # DATABASE_URL: see secret.yaml
   # LLM / vLLM (M4)
+  LLM_MODEL: "deepseek-v4-flash"
+  LOCAL_LLM_ENABLED: "false"
   VLLM_BASE_URL: "http://vllm:8000/v1"
   VLLM_API_KEY: "not-needed"
   VLLM_ENABLED: "true"
   VLLM_MAX_RETRIES: "3"
-  DEFAULT_MODEL: "travel-plan-v1"
-  SMALL_MODEL: "travel-chat-v1"
-  REPAIR_MODEL: "travel-repair-v1"
+  DEFAULT_MODEL: "deepseek-v4-flash"
+  SMALL_MODEL: "deepseek-v4-flash"
+  REPAIR_MODEL: "deepseek-v4-flash"
   # Search / external APIs (keys in secret)
   SEARCH_ENGINE: "tavily"
+  # VRP solver microservice (M5)
+  VRP_SOLVER_URL: "http://vrp-solver:8001"
   # Metrics (M5)
   METRICS_PATH: "/api/v1/metrics"
   PROMETHEUS_MULTIPROC_DIR: "/tmp/prometheus"

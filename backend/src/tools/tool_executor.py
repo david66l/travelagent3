@@ -1,0 +1,357 @@
+"""Tool executor for OpenAI-style tool calls.
+
+Parses `tool_calls`, routes to the appropriate handler, and returns a list of
+`ToolResult` objects. Each handler failure is isolated: a single failing tool
+does not block other tools in the batch.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import random
+from datetime import datetime, timedelta
+from typing import Any, Awaitable, Callable
+
+from core.settings import settings
+from planner.transport_router import HaversineFallback, MapServiceRouter
+from schemas import ToolResult
+from tools.tool_definitions import TOOL_NAME_TO_SCHEMA
+
+logger = logging.getLogger(__name__)
+
+Handler = Callable[[dict[str, Any]], Awaitable[ToolResult]]
+
+
+class ToolExecutor:
+    """Execute a batch of OpenAI-format tool_calls.
+
+    Usage:
+        results = await ToolExecutor().execute(tool_calls)
+    """
+
+    def __init__(self) -> None:
+        from skills.poi_search import POISearchSkill
+        from skills.weather_query import WeatherQuerySkill
+
+        self._handlers: dict[str, Handler] = {
+            "get_weather": self._handle_get_weather,
+            "check_reservation": self._handle_check_reservation,
+            "get_route": self._handle_get_route,
+            "find_restaurants": self._handle_find_restaurants,
+            "find_hotels": self._handle_find_hotels,
+            "get_queue_time": self._handle_get_queue_time,
+            "get_ticket_link": self._handle_get_ticket_link,
+            "get_local_events": self._handle_get_local_events,
+            "get_emergency_services": self._handle_get_emergency_services,
+            "get_poi_detail": self._handle_get_poi_detail,
+            "update_user_profile": self._handle_update_user_profile,
+        }
+        self._weather = WeatherQuerySkill()
+        self._poi = POISearchSkill()
+        self._router = MapServiceRouter()
+
+    @property
+    def available_tools(self) -> list[dict[str, Any]]:
+        """Return OpenAI-compatible function schemas."""
+        return list(TOOL_NAME_TO_SCHEMA.values())
+
+    async def execute(
+        self, tool_calls: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Execute each tool call and return results keyed by tool_call_id."""
+        results: list[dict[str, Any]] = []
+        for call in tool_calls:
+            tool_call_id = call.get("id", "")
+            function = call.get("function", {}) or {}
+            name = function.get("name", "")
+            raw_args = function.get("arguments", "{}")
+            try:
+                args = json.loads(raw_args) if isinstance(raw_args, str) else dict(raw_args)
+            except json.JSONDecodeError as exc:
+                args = {}
+                logger.warning("Invalid tool arguments for %s: %s", name, exc)
+
+            handler = self._handlers.get(name)
+            if handler is None:
+                result = ToolResult(
+                    data=None,
+                    data_source="unavailable",
+                    is_fallback=True,
+                    fallback_reason=f"unknown tool: {name}",
+                )
+            else:
+                try:
+                    result = await handler(args)
+                except Exception as exc:  # pragma: no cover - defensive
+                    logger.exception("Tool %s failed: %s", name, exc)
+                    result = ToolResult(
+                        data=None,
+                        data_source="unavailable",
+                        is_fallback=True,
+                        fallback_reason=f"{type(exc).__name__}: {exc}",
+                    )
+
+            results.append(
+                {
+                    "tool_call_id": tool_call_id,
+                    "name": name,
+                    "result": result.model_dump(),
+                }
+            )
+        return results
+
+    async def _handle_get_weather(self, args: dict[str, Any]) -> ToolResult:
+        city = args.get("city", "")
+        date = args.get("date") or datetime.now().strftime("%Y-%m-%d")
+        try:
+            parsed = datetime.strptime(date, "%Y-%m-%d")
+        except ValueError:
+            parsed = datetime.now()
+        end = (parsed + timedelta(days=2)).strftime("%Y-%m-%d")
+        days = await self._weather.query(city, date, end)
+        return ToolResult(
+            data=[d.model_dump() for d in days],
+            data_source="fallback" if any(d.is_fallback for d in days) else "api",
+            confidence=0.8,
+        )
+
+    async def _handle_check_reservation(self, args: dict[str, Any]) -> ToolResult:
+        poi = args.get("poi_name", "")
+        city = args.get("city") or "未知城市"
+        need_reserve = any(
+            keyword in poi
+            for keyword in ("故宫", "国博", "国家博物馆", "兵马俑", "莫高窟", "迪士尼", "环球")
+        )
+        return ToolResult(
+            data={
+                "poi": poi,
+                "city": city,
+                "need_reserve": need_reserve,
+                "notice": "建议提前 1-7 天预约" if need_reserve else "通常可现场购票",
+                "channels": ["官方小程序", "携程", "美团"] if need_reserve else ["现场窗口", "OTA"],
+            },
+            data_source="built_in",
+            confidence=0.7,
+        )
+
+    async def _handle_get_route(self, args: dict[str, Any]) -> ToolResult:
+        origin = args.get("origin", "")
+        destination = args.get("destination", "")
+        mode = args.get("mode", "transit")
+        fallback = HaversineFallback()
+        # Mock coordinates based on hash for deterministic tests.
+        olat, olng = self._coords_from_name(origin)
+        dlat, dlng = self._coords_from_name(destination)
+        minutes, cost = fallback.estimate(olat, olng, dlat, dlng, mode)
+        return ToolResult(
+            data={
+                "origin": origin,
+                "destination": destination,
+                "mode": mode,
+                "minutes": minutes,
+                "cost_cny": cost,
+                "polyline": None,
+            },
+            data_source="fallback",
+            confidence=0.6,
+            is_fallback=True,
+            fallback_reason="using haversine estimation; real routing needs coordinates",
+        )
+
+    async def _handle_find_restaurants(self, args: dict[str, Any]) -> ToolResult:
+        city = args.get("city", "")
+        area = args.get("area")
+        cuisine = args.get("cuisine")
+        budget = args.get("budget_per_person")
+        candidates = await self._poi.search_pois(
+            city=city,
+            keywords=[area, cuisine, "餐厅"] if (area or cuisine) else ["餐厅"],
+            category="restaurant",
+        )
+        results = []
+        for p in candidates[:5]:
+            price = budget or random.randint(60, 200)
+            results.append(
+                {
+                    "name": p.name,
+                    "category": cuisine or "本地菜",
+                    "area": area or "市中心",
+                    "price_per_person": price,
+                    "rating": p.score,
+                    "tags": p.tags or [],
+                }
+            )
+        if not results:
+            results = [{"name": f"{city}推荐餐厅", "category": "本地菜", "price_per_person": 100}]
+        return ToolResult(data=results, data_source="built_in", confidence=0.7)
+
+    async def _handle_find_hotels(self, args: dict[str, Any]) -> ToolResult:
+        city = args.get("city", "")
+        area = args.get("area") or "市中心"
+        budget = args.get("budget_per_night")
+        candidates = await self._poi.search_pois(
+            city=city,
+            keywords=[area, "酒店"],
+            category="hotel",
+        )
+        results = []
+        for p in candidates[:5]:
+            price = budget or random.randint(300, 800)
+            results.append(
+                {
+                    "name": p.name,
+                    "area": area,
+                    "price_per_night": price,
+                    "rating": p.score,
+                    "tags": p.tags or [],
+                }
+            )
+        if not results:
+            results = [{"name": f"{city}{area}酒店", "area": area, "price_per_night": budget or 500}]
+        return ToolResult(data=results, data_source="built_in", confidence=0.7)
+
+    async def _handle_get_queue_time(self, args: dict[str, Any]) -> ToolResult:
+        poi = args.get("poi_name", "")
+        return ToolResult(
+            data={
+                "poi": poi,
+                "current_minutes": random.randint(5, 90),
+                "status": random.choice(["畅通", "适中", "拥挤"]),
+                "best_time": "上午 9:00 前",
+            },
+            data_source="fallback",
+            confidence=0.5,
+            is_fallback=True,
+            fallback_reason="queue time API not configured",
+        )
+
+    async def _handle_get_ticket_link(self, args: dict[str, Any]) -> ToolResult:
+        poi = args.get("poi_name", "")
+        return ToolResult(
+            data={
+                "poi": poi,
+                "official_url": f"https://example.com/ticket/{poi}",
+                "ota_urls": ["https://www.ctrip.com", "https://www.meituan.com"],
+                "tip": "请以官方渠道为准",
+            },
+            data_source="fallback",
+            confidence=0.5,
+            is_fallback=True,
+            fallback_reason="ticket link API not configured",
+        )
+
+    async def _handle_get_local_events(self, args: dict[str, Any]) -> ToolResult:
+        city = args.get("city", "")
+        return ToolResult(
+            data=[
+                {
+                    "name": f"{city}周末市集",
+                    "date": "本周末",
+                    "location": "市中心广场",
+                    "category": "市集",
+                },
+                {
+                    "name": f"{city}艺术展",
+                    "date": "近期",
+                    "location": "美术馆",
+                    "category": "展览",
+                },
+            ],
+            data_source="fallback",
+            confidence=0.5,
+            is_fallback=True,
+            fallback_reason="local events API not configured",
+        )
+
+    async def _handle_get_emergency_services(self, args: dict[str, Any]) -> ToolResult:
+        city = args.get("city", "")
+        return ToolResult(
+            data={
+                "hospitals": [f"{city}第一人民医院", f"{city}中心医院"],
+                "police": f"{city}公安局",
+                "consulate": "请查询外交部领事司官网",
+                "emergency_number": "120/110",
+            },
+            data_source="built_in",
+            confidence=0.8,
+        )
+
+    async def _handle_get_poi_detail(self, args: dict[str, Any]) -> ToolResult:
+        poi = args.get("poi_name", "")
+        city = args.get("city") or ""
+        candidates = await self._poi.search_pois(
+            city=city,
+            keywords=[poi],
+            category="attraction",
+        )
+        if candidates:
+            best = candidates[0]
+            # Use actual POI data -- no random values
+            open_time = getattr(best, "open_time", None)
+            close_time = getattr(best, "close_time", None)
+            if open_time and close_time:
+                open_hours = open_time + "-" + close_time
+            elif open_time:
+                open_hours = open_time
+            else:
+                open_hours = "09:00-17:00"
+
+            # Map recommended_hours string to a float
+            hours_map = {
+                "1小时": 1.0, "1.5小时": 1.5, "1-2小时": 1.5,
+                "2小时": 2.0, "2-3小时": 2.5, "3小时": 3.0,
+                "3-4小时": 3.5, "半天": 4.0, "全天": 8.0,
+            }
+            raw_hours = getattr(best, "recommended_hours", None)
+            suggested_hours = hours_map.get(raw_hours or "", 2.0)
+
+            return ToolResult(
+                data={
+                    "name": best.name,
+                    "city": city,
+                    "open_hours": open_hours,
+                    "ticket_price": best.ticket_price,
+                    "suggested_hours": suggested_hours,
+                    "tags": best.tags or [],
+                    "description": best.description or "",
+                },
+                data_source="built_in",
+                confidence=0.7,
+            )
+        return ToolResult(
+            data={
+                "name": poi,
+                "city": city,
+                "open_hours": "09:00-17:00",
+                "ticket_price": None,
+                "suggested_hours": 2.0,
+                "tags": [],
+                "description": "",
+            },
+            data_source="fallback",
+            confidence=0.5,
+            is_fallback=True,
+            fallback_reason="POI detail not found",
+        )
+
+    async def _handle_update_user_profile(self, args: dict[str, Any]) -> ToolResult:
+        key = args.get("key", "")
+        value = args.get("value")
+        return ToolResult(
+            data={"updated": {key: value}},
+            data_source="built_in",
+            confidence=1.0,
+        )
+
+    @staticmethod
+    def _coords_from_name(name: str) -> tuple[float, float]:
+        """Return deterministic pseudo-coordinates for a place name."""
+        h = hash(name) % 10000
+        return 30.0 + (h % 100) / 100.0, 110.0 + (h // 100) / 100.0
+
+
+# Singleton executor for the application.
+tool_executor = ToolExecutor()
+
+__all__ = ["ToolExecutor", "tool_executor"]

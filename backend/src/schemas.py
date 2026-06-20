@@ -5,10 +5,11 @@ from pydantic import BaseModel, Field, field_validator
 
 
 class UserProfile(BaseModel):
+    origin: Optional[str] = None
     destination: Optional[str] = None
     travel_days: Optional[int] = None
     travel_dates: Optional[str] = None
-    travelers_count: int = 1
+    travelers_count: Optional[int] = None
     travelers_type: Optional[str] = None  # 独自/情侣/亲子/朋友/父母
     budget_range: Optional[float] = None
     food_preferences: list[str] = Field(default_factory=list)
@@ -141,12 +142,16 @@ class IntentResult(BaseModel):
         "chitchat",
     ]
     confidence: float = Field(ge=0.0, le=1.0)
+    sentiment: Literal["positive", "neutral", "negative", "urgent"] = "neutral"
     user_entities: dict = Field(default_factory=dict)
+    slots: Optional[dict] = Field(default=None, description="Structured TravelSlots as dict")
     patch: ProfilePatch = Field(default_factory=ProfilePatch)
     missing_required: list[str] = Field(default_factory=list)
     missing_recommended: list[str] = Field(default_factory=list)
     preference_changes: list[dict] = Field(default_factory=list)
     clarification_questions: list[str] = Field(default_factory=list)
+    disambiguation_candidates: list[dict] = Field(default_factory=list)
+    feasibility_report: Optional[dict] = Field(default=None, description="Feasibility check result")
     reasoning: str = ""
 
     @field_validator(
@@ -154,6 +159,7 @@ class IntentResult(BaseModel):
         "missing_required",
         "missing_recommended",
         "clarification_questions",
+        "disambiguation_candidates",
         mode="before",
     )
     @classmethod

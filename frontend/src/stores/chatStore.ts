@@ -98,6 +98,12 @@ export interface BriefDayPlan {
 }
 
 // === 对话快照 ===
+export interface OutputUrls {
+  pdf?: string;
+  excel?: string;
+  map?: string;
+}
+
 export interface ChatSnapshot {
   id: string;
   title: string;
@@ -138,6 +144,10 @@ export interface ChatState {
   jobId: string | null;
   currentStage: string | null;
   jobStatus: string | null;
+  activityPhase: "idle" | "gathering" | "planning";
+
+  // Exported artifact URLs from the graph runtime
+  outputUrls: OutputUrls | null;
 
   // Streaming text state
   streamingContent: string;
@@ -172,6 +182,8 @@ export interface ChatState {
   setJobId: (id: string | null) => void;
   setCurrentStage: (stage: string | null) => void;
   setJobStatus: (status: string | null) => void;
+  setActivityPhase: (phase: "idle" | "gathering" | "planning") => void;
+  setOutputUrls: (urls: OutputUrls | null) => void;
 
   // Streaming text setters
   appendStreamingContent: (chunk: string) => void;
@@ -222,6 +234,8 @@ export const useChatStore = create<ChatState>()(
       jobId: null,
       currentStage: null,
       jobStatus: null,
+      activityPhase: "idle",
+      outputUrls: null,
 
       streamingContent: "",
       isStreaming: false,
@@ -368,6 +382,8 @@ export const useChatStore = create<ChatState>()(
       setJobId: (id) => set({ jobId: id }),
       setCurrentStage: (stage) => set({ currentStage: stage }),
       setJobStatus: (status) => set({ jobStatus: status }),
+      setActivityPhase: (phase) => set({ activityPhase: phase }),
+      setOutputUrls: (urls) => set({ outputUrls: urls }),
 
       appendStreamingContent: (chunk) =>
         set((state) => ({
@@ -461,6 +477,8 @@ export const useChatStore = create<ChatState>()(
           jobId: null,
           currentStage: null,
           jobStatus: null,
+          activityPhase: "idle",
+          outputUrls: null,
           streamingContent: "",
           isStreaming: false,
         });

@@ -56,8 +56,8 @@ export function Sidebar({ onNewChat }: SidebarProps) {
         className={cn(
           "w-full rounded-[10px] px-2.5 py-2 text-[13px] font-medium transition-colors",
           activeView === "itinerary"
-            ? "bg-[#111111] text-white"
-            : "bg-white text-[#111111] hover:bg-[#f2f2f2]"
+            ? "bg-ink text-canvas"
+            : "bg-canvas text-ink hover:bg-primary-pale"
         )}
       >
         当前行程
@@ -69,9 +69,9 @@ export function Sidebar({ onNewChat }: SidebarProps) {
           onClick={() => setDialogExpanded(!dialogExpanded)}
           className="flex items-center justify-between px-1 py-0.5"
         >
-          <span className="text-sm font-semibold text-[#111111]/85">对话</span>
+          <span className="text-sm font-semibold text-ink">对话</span>
           <span
-            className="text-sm font-semibold text-[#111111]/50 transition-transform"
+            className="text-sm font-semibold text-mute transition-transform"
             style={{ transform: dialogExpanded ? "rotate(0deg)" : "rotate(-90deg)" }}
           >
             ▾
@@ -80,7 +80,7 @@ export function Sidebar({ onNewChat }: SidebarProps) {
         {dialogExpanded && (
           <div className="flex flex-col gap-1.5">
             {chatSnapshots.length === 0 ? (
-              <p className="px-2 py-1.5 text-xs text-[#111111]/30">暂无对话</p>
+              <p className="px-2 py-1.5 text-xs text-mute/60">暂无对话</p>
             ) : (
               chatSnapshots.map((chat) => (
                 <button
@@ -89,7 +89,7 @@ export function Sidebar({ onNewChat }: SidebarProps) {
                     restoreChat(chat.id);
                     setActiveView("chat");
                   }}
-                  className="w-full px-2.5 py-2 text-left text-[13px] font-medium transition-colors chat-item-inactive"
+                  className="w-full px-2.5 py-2 text-left text-[13px] font-medium transition-colors chat-item-inactive text-ink"
                 >
                   {chat.title}
                 </button>
@@ -105,9 +105,9 @@ export function Sidebar({ onNewChat }: SidebarProps) {
           onClick={() => setTripExpanded(!tripExpanded)}
           className="flex items-center justify-between px-1 py-0.5"
         >
-          <span className="text-sm font-semibold text-[#111111]/85">历史行程</span>
+          <span className="text-sm font-semibold text-ink">历史行程</span>
           <span
-            className="text-sm font-semibold text-[#111111]/50 transition-transform"
+            className="text-sm font-semibold text-mute transition-transform"
             style={{ transform: tripExpanded ? "rotate(0deg)" : "rotate(-90deg)" }}
           >
             ▾
@@ -116,7 +116,7 @@ export function Sidebar({ onNewChat }: SidebarProps) {
         {tripExpanded && (
           <div className="flex flex-col gap-1.5">
             {trips.length === 0 ? (
-              <p className="px-2 py-1.5 text-xs text-[#111111]/30">暂无行程</p>
+              <p className="px-2 py-1.5 text-xs text-mute/60">暂无行程</p>
             ) : (
               trips.map((trip) => (
                 <button
@@ -125,10 +125,10 @@ export function Sidebar({ onNewChat }: SidebarProps) {
                     loadTrip(trip.id);
                     setActiveView("itinerary");
                   }}
-                  className="flex w-full items-center justify-between px-2.5 py-2 text-left text-[13px] font-medium transition-colors chat-item-inactive"
+                  className="flex w-full items-center justify-between px-2.5 py-2 text-left text-[13px] font-medium transition-colors chat-item-inactive text-ink"
                 >
                   <span>{trip.title}</span>
-                  <span className="text-[11px] text-[#111111]/40">
+                  <span className="text-[11px] text-mute/60">
                     {trip.status === "active"
                       ? "(进行中)"
                       : trip.status === "upcoming"

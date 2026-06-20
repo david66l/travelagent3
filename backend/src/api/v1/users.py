@@ -3,8 +3,9 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.deps import get_current_user, get_user_service, require_admin
+from api.deps import get_current_user, get_db, get_user_service, require_admin
 from api.v1.schemas import (
     UserProfileRequest,
     UserProfileResponse,
@@ -64,6 +65,18 @@ async def get_user(
     if user is None:
         raise NotFoundException("User", user_id)
     return success_response(data=UserResponse.model_validate(user).model_dump())
+
+
+@router.delete("/me/data")
+async def delete_my_data(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete all data belonging to the current user (one-click deletion)."""
+    from privacy import delete_all_user_data
+
+    counts = await delete_all_user_data(str(user.id), db)
+    return success_response(data=counts)
 
 
 @router.post("/{user_id}/ban")

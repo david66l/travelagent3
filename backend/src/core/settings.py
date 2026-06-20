@@ -1,7 +1,9 @@
+import hashlib
 import os
 import re
 import secrets
 import warnings
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Literal
 
@@ -18,6 +20,7 @@ class Settings(BaseSettings):
         env_file=_ENV_FILE,
         env_file_encoding="utf-8",
         extra="ignore",
+        populate_by_name=True,
     )
 
     # Database (default is local dev only; production must override via DATABASE_URL)
@@ -34,10 +37,11 @@ class Settings(BaseSettings):
     # Comma-separated Redis URLs for Redlock (multi-master); empty → state DB only
     redis_redlock_urls: str = ""
 
-    # LLM / vLLM
-    openai_api_key: str = ""
-    openai_base_url: str = "https://api.openai.com/v1"
-    llm_model: str = "gpt-4o-mini"
+    # LLM — 非意图任务走 DeepSeek，意图识别走本地 Qwen
+    openai_api_key: str = ""  # 备用 (OpenAI Key)
+    deepseek_api_key: str = ""  # DeepSeek API Key
+    openai_base_url: str = "https://api.deepseek.com/v1"
+    llm_model: str = "deepseek-chat"  # DeepSeek-V3 (最新旗舰)
     llm_temperature: float = 0.7
     llm_max_tokens: int = 4096
     llm_timeout: int = 60
@@ -60,6 +64,7 @@ class Settings(BaseSettings):
     # App
     app_host: str = "0.0.0.0"
     app_port: int = 8000
+    public_app_url: str | None = None  # external URL for generated download links
     debug: bool = False
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
 
@@ -83,6 +88,12 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 7
     guest_token_expire_hours: int = 24
+
+    # Privacy
+    # If PRIVACY_ENCRYPTION_KEY is not provided, a deterministic key is derived
+    # from JWT_SECRET at startup.  This is process-only and will not survive
+    # restarts until PRIVACY_ENCRYPTION_KEY is explicitly set.
+    privacy_encryption_key: str = ""
 
     # Rate limiting
     rate_limit_ip_per_minute: int = 60
@@ -144,8 +155,14 @@ class Settings(BaseSettings):
     planning_executor: str = "celery"
 
     # External APIs
-    amap_key: str = ""
+    amap_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("AMAP_KEY", "GAODE_API_KEY"),
+    )
     weather_key: str = ""
+
+    # VRP solver microservice
+    vrp_solver_url: str = "http://localhost:8001"
 
     # Tool / circuit breaker
     tool_timeout_seconds: float = 3.0
@@ -170,6 +187,12 @@ class Settings(BaseSettings):
     # MLflow (M5)
     mlflow_tracking_uri: str = ""
     mlflow_registry_uri: str = ""
+
+    # LangSmith tracing (M5 §4.10.5)
+    langsmith_tracing: bool = False
+    langsmith_endpoint: str = "https://api.smith.langchain.com"
+    langsmith_api_key: str = ""
+    langsmith_project: str = "TravelAgent"
 
     # AI safety (M5 §4.9)
     input_safety_enabled: bool = True
@@ -208,6 +231,19 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
+
+def _apply_langsmith_env(cfg: Settings) -> None:
+    """Sync LangSmith settings into os.environ for SDK + @traceable decorators."""
+    if not cfg.langsmith_api_key:
+        return
+    os.environ["LANGSMITH_TRACING"] = "true" if cfg.langsmith_tracing else "false"
+    os.environ["LANGSMITH_API_KEY"] = cfg.langsmith_api_key
+    os.environ["LANGSMITH_ENDPOINT"] = cfg.langsmith_endpoint
+    os.environ["LANGSMITH_PROJECT"] = cfg.langsmith_project
+
+
+_apply_langsmith_env(settings)
+
 # Reject the unsafe placeholder explicitly.
 if settings.jwt_secret == "your-secret-key-change-in-production":
     raise ValueError(
@@ -223,6 +259,20 @@ if not settings.jwt_secret:
         "JWT_SECRET is not configured. A one-time random secret has been generated "
         "for this process only. Set JWT_SECRET in your .env file for persistent "
         "sessions across restarts.",
+        RuntimeWarning,
+        stacklevel=2,
+    )
+
+# Dev-only fallback: derive a deterministic privacy key from JWT_SECRET if none
+# was configured.  This is process-only when JWT_SECRET is also process-only.
+if not settings.privacy_encryption_key:
+    settings.privacy_encryption_key = hashlib.sha256(
+        settings.jwt_secret.encode("utf-8")
+    ).hexdigest()
+    warnings.warn(
+        "PRIVACY_ENCRYPTION_KEY is not configured. A deterministic key has been "
+        "derived from JWT_SECRET for this process only. Set PRIVACY_ENCRYPTION_KEY "
+        "in your .env file for persistent encryption across restarts.",
         RuntimeWarning,
         stacklevel=2,
     )

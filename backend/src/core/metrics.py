@@ -104,6 +104,35 @@ HTTP_DURATION = Histogram(
     buckets=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0),
 )
 
+# Alias / business-facing metric names required by the operations layer.
+REQUEST_TOTAL = HTTP_REQUESTS
+LLM_LATENCY = LLM_REQUEST_DURATION
+
+SOLVE_LATENCY = Histogram(
+    "solve_latency_seconds",
+    "Itinerary solver latency",
+    ["strategy"],
+    buckets=(0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0),
+)
+
+RETRIEVAL_LATENCY = Histogram(
+    "retrieval_latency_seconds",
+    "RAG POI retrieval latency",
+    ["source"],
+    buckets=(0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0),
+)
+
+ACTIVE_SESSIONS = Gauge(
+    "active_sessions",
+    "Current number of active SSE sessions",
+)
+
+FALLBACK_TOTAL = Counter(
+    "fallback_total",
+    "Fallback responses from external dependencies",
+    ["source", "reason"],
+)
+
 PROMPT_INJECTION_BLOCKED = Counter(
     "prompt_injection_blocked_total",
     "Blocked prompt-injection attempts",
@@ -204,6 +233,22 @@ def record_http_request(method: str, endpoint: str, status_code: int, duration_s
         status_code=str(status_code),
     ).inc()
     HTTP_DURATION.labels(method=method, endpoint=endpoint).observe(duration_s)
+
+
+def record_solve_latency(duration_s: float, strategy: str = "default") -> None:
+    SOLVE_LATENCY.labels(strategy=str(strategy)).observe(duration_s)
+
+
+def record_retrieval_latency(duration_s: float, source: str = "rag") -> None:
+    RETRIEVAL_LATENCY.labels(source=str(source)).observe(duration_s)
+
+
+def record_fallback(source: str, reason: str = "fallback") -> None:
+    FALLBACK_TOTAL.labels(source=str(source), reason=str(reason)).inc()
+
+
+def set_active_sessions(count: int) -> None:
+    ACTIVE_SESSIONS.set(int(count))
 
 
 def render_prometheus() -> str:

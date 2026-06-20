@@ -14,17 +14,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.conversation_state import (
     append_message,
     default_conversation_state,
-    is_profile_ready,
+    flatten_profile,
 )
-from core.conversation_turn import process_user_turn
 from core.input_guard import sanitize_user_input
 from core.output_safety import sanitize_itinerary_payload
-from core.guest_policy import ensure_guest_can_plan
 from core.database import async_session_maker
 from core.memory import memory_manager
-from core.metrics import incr
+from core.metrics import incr, set_active_sessions
 from core.redis_client import redis_client
 from core.settings import settings
+from graph.runner import stream_graph_events
 from repositories.planning_job import PlanningJobRepository
 
 try:
@@ -69,15 +68,20 @@ class ConnectionManager:
     def disconnect_ws(self, session_id: str) -> None:
         self._connections.pop(session_id, None)
 
+    def _total_sse_queues(self) -> int:
+        return sum(len(qs) for qs in self._sse_queues.values())
+
     async def register_sse(self, session_id: str) -> asyncio.Queue:
         queue: asyncio.Queue = asyncio.Queue(maxsize=512)
         self._sse_queues[session_id].append(queue)
+        set_active_sessions(self._total_sse_queues())
         return queue
 
     def unregister_sse(self, session_id: str, queue: asyncio.Queue) -> None:
         subs = self._sse_queues.get(session_id, [])
         if queue in subs:
             subs.remove(queue)
+        set_active_sessions(self._total_sse_queues())
 
     async def send_json(self, session_id: str, data: dict[str, Any]) -> None:
         ws = self._connections.get(session_id)
@@ -230,6 +234,26 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 
+def _apply_conversation_sync(
+    state: dict[str, Any], payload: dict[str, Any] | None
+) -> None:
+    """Merge gathering subgraph fields back into WS conversation state."""
+    if not payload:
+        return
+    sync = payload.get("conversation_sync")
+    if isinstance(sync, dict):
+        for key, value in sync.items():
+            if value is not None:
+                state[key] = value
+    if payload.get("profile"):
+        state["profile"] = payload["profile"]
+    embedded = payload.get("_conversation_state")
+    if isinstance(embedded, dict):
+        for key in ("turn", "recent_messages", "last_intent", "missing_required", "phase"):
+            if key in embedded:
+                state[key] = embedded[key]
+
+
 def format_sse_event(data: dict[str, Any]) -> str:
     """Serialize a payload as an SSE frame (event name + JSON data)."""
     event_type = data.get("type", "message")
@@ -251,15 +275,165 @@ def format_sse_event(data: dict[str, Any]) -> str:
     return f"event: {event_name}\n{id_line}data: {payload}\n\n"
 
 
-async def process_chat_message(
+async def _stream_graph_to_manager(
+    session_id: str,
+    user_id: str,
+    user_input: str,
+    state: dict[str, Any],
+) -> None:
+    """Run the LangGraph turn and forward events to the connection manager."""
+    from core.conversation_state import append_message, flatten_profile
+
+    messages: list[dict[str, Any]] = []
+    recent = state.get("recent_messages", [])
+    if isinstance(recent, list):
+        messages = [
+            {"role": m.get("role", "user"), "content": m.get("content", "")}
+            for m in recent[-10:]
+            if isinstance(m, dict)
+        ]
+
+    # Seed the graph with the profile already collected during the gathering phase.
+    profile = state.get("profile") or {}
+    slots = flatten_profile(profile)
+
+    async for event in stream_graph_events(
+        session_id=session_id,
+        user_id=user_id,
+        user_input=user_input,
+        messages=messages,
+        attachments=state.get("attachments_meta"),
+        profile=profile,
+        slots=slots,
+        conversation_state=state,
+    ):
+        event_type = event.get("type", "message")
+        payload = event.get("payload", {})
+
+        if event_type == "clarify":
+            _apply_conversation_sync(state, payload if isinstance(payload, dict) else None)
+            await manager.send_json(
+                session_id,
+                {
+                    "type": "needs_clarification",
+                    "profile": payload.get("profile", state.get("profile", {}))
+                    if isinstance(payload, dict)
+                    else state.get("profile", {}),
+                    "questions": (
+                        payload.get("clarification_questions", ["请补充更多信息"])
+                        if isinstance(payload, dict)
+                        else ["请补充更多信息"]
+                    ),
+                    "missing_required": (
+                        payload.get("missing_slots", [])
+                        if isinstance(payload, dict)
+                        else []
+                    ),
+                },
+            )
+            await manager.save_gathering_state(session_id, state)
+        elif event_type == "intent_ready":
+            content = (
+                payload.get("intent_ready_message", "")
+                if isinstance(payload, dict)
+                else ""
+            ) or "意图识别已完成，接下来将进行大致的规划。"
+            _apply_conversation_sync(state, payload if isinstance(payload, dict) else None)
+            append_message(state, "assistant", content)
+            await manager.send_json(
+                session_id,
+                {
+                    "type": "intent_ready",
+                    "content": content,
+                    "profile": payload.get("profile", state.get("profile", {}))
+                    if isinstance(payload, dict)
+                    else state.get("profile", {}),
+                },
+            )
+            await manager.send_json(
+                session_id,
+                {"type": "stage", "stage": "planning"},
+            )
+            await manager.save_gathering_state(session_id, state)
+        elif event_type == "error":
+            await manager.send_json(
+                session_id,
+                {"type": "error", "error": payload.get("error", "graph error")},
+            )
+        elif event_type == "final":
+            # Emit the assistant message with itinerary and artifact URLs first,
+            # then emit done so the frontend can render the result and close.
+            await manager.send_json(
+                session_id,
+                {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": payload.get("content", ""),
+                    "itinerary": payload.get("itinerary"),
+                    "output_pdf_url": payload.get("output_pdf_url"),
+                    "output_excel_url": payload.get("output_excel_url"),
+                    "output_map_url": payload.get("output_map_url"),
+                },
+            )
+            await manager.send_json(
+                session_id,
+                {
+                    "type": "done",
+                    "job_id": None,
+                    "output_pdf_url": payload.get("output_pdf_url"),
+                    "output_excel_url": payload.get("output_excel_url"),
+                    "output_map_url": payload.get("output_map_url"),
+                },
+            )
+            # Sync the graph result back to the legacy conversation state so the
+            # next turn can resume with the enriched profile/itinerary.
+            if payload.get("itinerary"):
+                state["itinerary"] = payload["itinerary"]
+            if payload.get("profile"):
+                state["profile"] = payload["profile"]
+            state.setdefault("recent_messages", []).append(
+                {
+                    "role": "assistant",
+                    "content": payload.get("content", ""),
+                    "itinerary": payload.get("itinerary"),
+                    "output_pdf_url": payload.get("output_pdf_url"),
+                    "output_excel_url": payload.get("output_excel_url"),
+                    "output_map_url": payload.get("output_map_url"),
+                    "ts": int(_time.time()),
+                }
+            )
+            state["recent_messages"] = state["recent_messages"][-10:]
+            state["phase"] = "completed"
+            await manager.save_gathering_state(session_id, state)
+        elif event_type in ("thinking", "tool_call"):
+            await manager.send_json(
+                session_id,
+                {
+                    "type": "stage",
+                    "stage": event.get("stage", event_type),
+                },
+            )
+        else:
+            await manager.send_json(
+                session_id,
+                {
+                    "type": event_type,
+                    "stage": event.get("stage"),
+                    "payload": payload,
+                },
+            )
+
+
+async def process_chat_message_graph(
     session_id: str,
     user_id: str,
     content: str,
     *,
     conversation_id: UUID | None = None,
     user_role: str = "guest",
+    attachments_meta: list[dict] | None = None,
 ) -> str | None:
-    """Handle one user message: intent, job creation, status push. Returns job_id if created."""
+    """Graph-based message handler. All turns enter via the gathering subgraph."""
     safe_content = sanitize_user_input(content.strip())
     if not safe_content:
         await manager.send_json(session_id, {"error": "Empty message", "type": "error"})
@@ -268,80 +442,31 @@ async def process_chat_message(
     state = await manager.load_state(session_id)
     state["user_id"] = user_id
     state["user_role"] = user_role
+    if attachments_meta:
+        state["attachments_meta"] = attachments_meta
 
-    intent_result = await process_user_turn(state, safe_content)
+    asyncio.create_task(_stream_graph_to_manager(session_id, user_id, safe_content, state))
+    return None
 
-    if not is_profile_ready(state["profile"]):
-        saved = await manager.save_gathering_state(session_id, state)
-        if not saved:
-            return None
-        await manager.send_json(
-            session_id,
-            {
-                "type": "needs_clarification",
-                "profile": state["profile"],
-                "missing_required": intent_result.missing_required,
-                "questions": intent_result.clarification_questions
-                or [
-                    "请问您想去哪个目的地？",
-                    "计划玩几天？",
-                ],
-            },
-        )
-        return None
 
-    was_completed = state.get("phase") == "completed"
-    state["phase"] = "planning"
-    if was_completed:
-        state["revision"] = state.get("revision", 1) + 1
-        await manager.send_json(
-            session_id,
-            {
-                "type": "revision_created",
-                "revision": state["revision"],
-                "profile": state["profile"],
-            },
-        )
-    else:
-        state.setdefault("revision", 1)
-
-    user_uuid: UUID | None = None
-    try:
-        user_uuid = UUID(user_id)
-    except (TypeError, ValueError):
-        user_uuid = None
-
-    async with async_session_maker() as db:
-        if user_uuid:
-            await ensure_guest_can_plan(db, user_uuid, user_role)
-        repo = PlanningJobRepository(db)
-        job = await repo.create(
-            session_id=session_id,
-            user_id=user_id,
-            user_input=safe_content,
-            user_feedback=deepcopy(state),
-            user_uuid=user_uuid,
-            conversation_id=conversation_id,
-        )
-        await db.commit()
-
-    try:
-        await redis_client.set_json(STATE_KEY.format(session_id), state, ttl=STATE_TTL)
-    except Exception as exc:
-        logger.warning("Failed to sync state to Redis for %s: %s", session_id, exc)
-
-    await manager.send_json(
+async def process_chat_message(
+    session_id: str,
+    user_id: str,
+    content: str,
+    *,
+    conversation_id: UUID | None = None,
+    user_role: str = "guest",
+    attachments_meta: list[dict] | None = None,
+) -> str | None:
+    """Handle one user message via LangGraph (gathering subgraph + planning)."""
+    return await process_chat_message_graph(
         session_id,
-        {
-            "type": "job_created",
-            "job_id": job.id,
-            "status": "pending",
-        },
+        user_id,
+        content,
+        conversation_id=conversation_id,
+        user_role=user_role,
+        attachments_meta=attachments_meta,
     )
-
-    enqueue_planning_job(job.id)
-    asyncio.create_task(push_job_status(job.id, session_id, from_event_id=0))
-    return job.id
 
 
 async def publish_token(job_id: str, chunk: str) -> None:

@@ -41,6 +41,8 @@ class TestDefaultState:
         t = _trip(default_conversation_state()["profile"])
         assert t["destination"] is None
         assert t["travel_days"] is None
+        assert t["travelers_count"] is None
+        assert t["travelers_type"] is None
         assert isinstance(t["special_requests"], list)
 
     def test_personal_fields_present(self):
@@ -182,20 +184,42 @@ class TestAppendMessage:
 
 
 class TestIsProfileReady:
+    def _complete_trip(self, **overrides):
+        base = {
+            "origin": "深圳",
+            "destination": "成都",
+            "travel_dates": "下周",
+            "travel_days": 4,
+            "travelers_count": 2,
+            "travelers_type": "couple",
+            "has_elderly": False,
+            "has_children": False,
+            "budget_range": 5000,
+        }
+        base.update(overrides)
+        return base
+
     def test_not_ready_when_empty(self):
         assert not is_profile_ready(default_conversation_state()["profile"])
 
-    def test_ready_when_destination_and_days_present(self):
+    def test_ready_when_all_required_present(self):
         profile = default_conversation_state()["profile"]
-        profile["trip"]["destination"] = "成都"
-        profile["trip"]["travel_days"] = 4
+        profile["trip"].update(self._complete_trip())
         assert is_profile_ready(profile)
 
     def test_not_ready_without_days(self):
         profile = default_conversation_state()["profile"]
-        profile["trip"]["destination"] = "成都"
+        profile["trip"].update(self._complete_trip(travel_days=None))
+        del profile["trip"]["travel_days"]
+        assert not is_profile_ready(profile)
+
+    def test_not_ready_without_has_children(self):
+        profile = default_conversation_state()["profile"]
+        patch = self._complete_trip()
+        patch.pop("has_children")
+        profile["trip"].update(patch)
         assert not is_profile_ready(profile)
 
     def test_flat_profile_still_works(self):
         """Old flat profile dict tolerated by is_profile_ready."""
-        assert is_profile_ready({"destination": "成都", "travel_days": 3})
+        assert is_profile_ready(self._complete_trip())

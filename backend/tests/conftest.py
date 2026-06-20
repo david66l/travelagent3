@@ -27,7 +27,7 @@ core.llm_client.llm = _llm_mock
 
 # Patch every module that already imported llm locally
 for _mod_name in [
-    "agents.intent_recognition",
+    "agents.demand_parser",
     "skills.poi_search",
 ]:
     try:
@@ -89,7 +89,6 @@ for _mod_name in [
     "skills.poi_search",
     "skills.weather_query",
     "tools.base",
-    "pipeline.planning_pipeline",
     "core.memory",
     "core.cost_circuit_breaker",
     "core.external_api_tracker",

@@ -2321,3 +2321,18 @@ CITY_DEFAULTS: dict[str, list[ScoredPOI]] = {
         ),
     ],
 }
+
+# Merge extended POI data. This keeps the original file readable while adding
+# enough attractions/restaurants to support 5-7 day itineraries.
+from skills.city_data_extra import CITY_EXTRA
+
+
+def _merge_city_extras() -> None:
+    for city, extras in CITY_EXTRA.items():
+        if city not in CITY_DEFAULTS:
+            CITY_DEFAULTS[city] = []
+        existing_names = {p.name for p in CITY_DEFAULTS[city]}
+        CITY_DEFAULTS[city].extend([p for p in extras if p.name not in existing_names])
+
+
+_merge_city_extras()
