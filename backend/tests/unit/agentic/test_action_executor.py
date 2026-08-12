@@ -102,6 +102,32 @@ async def test_tool_failure_is_preserved_as_retryable_outcome():
 
 
 @pytest.mark.asyncio
+async def test_weather_observation_is_persisted_for_later_policy_steps():
+    tools = AsyncMock()
+    tools.execute.return_value = [
+        {
+            "observation": {
+                "ok": True,
+                "tool": "get_weather",
+                "data": [{"date": "2026-08-12", "condition": "rain"}],
+                "source": "api",
+                "confidence": 0.9,
+            }
+        }
+    ]
+    ledger = _ledger("get_weather", "weather_snapshot")
+
+    outcome = await TravelActionExecutor(tools).execute(
+        task=ledger.task_graph.get("task"),
+        action=PolicyAction(action="get_weather", arguments={"city": "Shanghai"}),
+        ledger=ledger,
+    )
+
+    assert outcome.artifacts[0].artifact_type == "weather_snapshot"
+    assert outcome.artifacts[0].payload["days"][0]["condition"] == "rain"
+
+
+@pytest.mark.asyncio
 async def test_solver_arguments_are_hydrated_from_trusted_artifacts():
     tools = AsyncMock()
     tools.execute.return_value = [

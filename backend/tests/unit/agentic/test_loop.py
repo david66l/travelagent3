@@ -215,3 +215,23 @@ async def test_loop_automatically_records_replayable_episode():
     assert len(recorder.episode.steps) == 2
     assert recorder.episode.status == "finished"
     assert EpisodeReplayVerifier().verify(recorder.episode) == []
+
+
+def test_policy_context_contains_bounded_artifact_summaries():
+    ledger = _ledger()
+    ledger.artifacts["pois"] = ArtifactRecord(
+        artifact_id="pois",
+        artifact_type="poi_candidate_set",
+        payload={
+            "pois": [{"name": f"POI-{index}", "description": "x" * 1000} for index in range(20)]
+        },
+        goal_version=1,
+        plan_version=1,
+    )
+
+    context = BoundedAgentLoop._policy_context(ledger, ledger.task_graph.get("solve"))
+
+    assert context.relevant_artifact_refs == ["pois"]
+    assert context.relevant_artifacts[0]["poi_count"] == 20
+    assert len(context.relevant_artifacts[0]["poi_names"]) == 10
+    assert "description" not in context.relevant_artifacts[0]

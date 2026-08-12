@@ -39,6 +39,8 @@ class PolicyContext(BaseModel):
     soft_preferences: dict[str, Any]
     relevant_fact_refs: list[str]
     relevant_artifact_refs: list[str]
+    relevant_facts: list[dict[str, Any]] = Field(default_factory=list)
+    relevant_artifacts: list[dict[str, Any]] = Field(default_factory=list)
     failure_summary: list[dict[str, Any]]
     remaining_tasks: int
     remaining_steps: int
@@ -406,9 +408,19 @@ class BoundedAgentLoop:
 
     @staticmethod
     def _policy_context(ledger: AgentLedgerState, task: TaskNode) -> PolicyContext:
-        relevant_facts = [
-            fact.fact_id for fact in ledger.facts.values() if fact.key in task.required_facts
+        current_facts = [
+            fact
+            for fact in ledger.facts.values()
+            if fact.goal_version == ledger.goal.goal_version
+            and fact.plan_version == ledger.task_graph.plan_version
         ]
+        current_artifacts = [
+            artifact
+            for artifact in ledger.artifacts.values()
+            if artifact.goal_version == ledger.goal.goal_version
+            and artifact.plan_version == ledger.task_graph.plan_version
+        ]
+        relevant_facts = [fact.fact_id for fact in current_facts if fact.key in task.required_facts]
         failures = [
             failure.model_dump(mode="json")
             for failure in ledger.failures[-3:]
@@ -427,7 +439,18 @@ class BoundedAgentLoop:
             hard_constraints=ledger.goal.hard_constraints,
             soft_preferences=ledger.goal.soft_preferences,
             relevant_fact_refs=relevant_facts,
-            relevant_artifact_refs=list(task.artifact_refs),
+            relevant_artifact_refs=[artifact.artifact_id for artifact in current_artifacts],
+            relevant_facts=[
+                {
+                    "fact_id": fact.fact_id,
+                    "key": fact.key,
+                    "value": _compact_value(fact.value),
+                    "source": fact.source,
+                    "confidence": fact.confidence,
+                }
+                for fact in current_facts[-8:]
+            ],
+            relevant_artifacts=[_artifact_summary(artifact) for artifact in current_artifacts[-8:]],
             failure_summary=failures,
             remaining_tasks=remaining,
             remaining_steps=ledger.budget.remaining_episode_steps,
@@ -482,3 +505,80 @@ class BoundedAgentLoop:
         if recorder is not None:
             recorder.finalize(result)
         return result
+
+
+def _artifact_summary(artifact: ArtifactRecord) -> dict[str, Any]:
+    """Expose useful evidence to the policy without replaying large payloads."""
+    payload = artifact.payload
+    summary: dict[str, Any] = {
+        "artifact_id": artifact.artifact_id,
+        "artifact_type": artifact.artifact_type,
+    }
+    if artifact.artifact_type == "poi_candidate_set":
+        pois = payload.get("pois") or []
+        summary["poi_count"] = len(pois)
+        summary["poi_names"] = [
+            str(item.get("name"))
+            for item in pois[:10]
+            if isinstance(item, dict) and item.get("name")
+        ]
+    elif artifact.artifact_type == "poi_detail_set":
+        details = payload.get("details") or []
+        summary["detail_count"] = len(details)
+        summary["expected_count"] = payload.get("expected_count")
+    elif artifact.artifact_type == "route_matrix":
+        matrix = payload.get("time_minutes") or []
+        summary["matrix_rows"] = len(matrix)
+        summary["matrix_columns"] = len(matrix[0]) if matrix else 0
+        summary["poi_ids"] = _compact_value(payload.get("poi_ids") or [])
+    elif artifact.artifact_type == "solver_result":
+        summary.update(
+            {
+                "status": payload.get("status"),
+                "day_count": len(payload.get("days") or []),
+                "solve_time_ms": payload.get("solve_time_ms"),
+                "message": _compact_value(payload.get("message")),
+            }
+        )
+    elif artifact.artifact_type == "validation_report":
+        summary.update(
+            {
+                "hard_pass": payload.get("hard_pass"),
+                "violation_codes": [
+                    item.get("code")
+                    for item in (payload.get("hard_violations") or [])[:10]
+                    if isinstance(item, dict)
+                ],
+                "soft_scores": _compact_value(payload.get("soft_scores") or {}),
+            }
+        )
+    elif artifact.artifact_type == "weather_snapshot":
+        days = payload.get("days") or payload.get("data") or []
+        summary["day_count"] = len(days) if isinstance(days, list) else 0
+        summary["conditions"] = [
+            item.get("condition") for item in days[:7] if isinstance(item, dict)
+        ]
+    else:
+        summary["payload"] = _compact_value(payload)
+    return summary
+
+
+def _compact_value(value: Any, *, depth: int = 0) -> Any:
+    """Deterministically bound policy projections by depth, width and text size."""
+    if depth >= 3:
+        return "[TRUNCATED]"
+    if isinstance(value, str):
+        return value if len(value) <= 240 else value[:237] + "..."
+    if isinstance(value, dict):
+        items = list(value.items())[:12]
+        compact = {str(key): _compact_value(item, depth=depth + 1) for key, item in items}
+        if len(value) > len(items):
+            compact["_truncated_fields"] = len(value) - len(items)
+        return compact
+    if isinstance(value, (list, tuple)):
+        items = list(value)[:12]
+        compact_items = [_compact_value(item, depth=depth + 1) for item in items]
+        if len(value) > len(items):
+            compact_items.append({"_truncated_items": len(value) - len(items)})
+        return compact_items
+    return value

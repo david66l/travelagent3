@@ -12,6 +12,7 @@ from tools.tool_executor import ToolExecutor
 
 
 _ARTIFACT_TYPES = {
+    "get_weather": "weather_snapshot",
     "get_poi_detail": "poi_detail_set",
     "check_reservation": "poi_detail_set",
     "get_route_matrix": "route_matrix",
@@ -155,6 +156,8 @@ class TravelActionExecutor:
                 if isinstance(observation.data, dict)
                 else {"data": observation.data}
             )
+            if action.action == "get_weather" and isinstance(observation.data, list):
+                payload = {"days": observation.data}
             artifacts.append(
                 self._artifact(
                     ledger,
