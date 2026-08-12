@@ -25,3 +25,15 @@ clarification, or safe termination.
 
 Do not commit raw production candidates or generated dataset builds. Register
 the manifest and approved immutable dataset in the experiment artifact store.
+
+After the production-size data gate passes, run real QLoRA/SFT with:
+
+```powershell
+uv pip install -e ".\backend[agentic-training]"
+.\backend\.venv\Scripts\python.exe ml\agentic\training\train_sft.py `
+  --dataset-dir ml\agentic\datasets\build\sft-v1 `
+  --output-dir ml\agentic\artifacts\agent-policy-sft-v1
+```
+
+Use `--preflight-only` on a CPU development machine. `--allow-small-dataset`
+exists only for a local smoke test and must not be used for reported results.
