@@ -56,8 +56,8 @@ def route_after_confirm_gate(state: dict[str, Any]) -> str:
     if decision == "modify":
         return "apply_single_change"
     if decision is None:
-        return "plan"         # reject → re-solve a fresh draft
-    return "tool_call"        # confirm → deep enrichment
+        return "plan"  # reject → re-solve a fresh draft
+    return "tool_call"  # confirm → deep enrichment
 
 
 def route_after_apply_change(state: dict[str, Any]) -> str:
@@ -100,8 +100,8 @@ def route_after_output(state: dict[str, Any]) -> str:
     if next_action in ("clarify", "respond", "infeasible"):
         return "__end__"
     if state.get("confirm_decision") == "confirm":
-        return "booking"       # final output after enrichment
-    return "confirm_gate"      # initial / modified draft must be accepted first
+        return "booking"  # final output after enrichment
+    return "confirm_gate"  # initial / modified draft must be accepted first
 
 
 def route_after_booking(state: dict[str, Any]) -> str:

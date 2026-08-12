@@ -89,9 +89,7 @@ async def test_get_poi_detail_fallback(executor):
 
 @pytest.mark.asyncio
 async def test_update_user_profile_handler(executor):
-    result = await executor._handle_update_user_profile(
-        {"key": "budget_per_day", "value": 500}
-    )
+    result = await executor._handle_update_user_profile({"key": "budget_per_day", "value": 500})
     assert result.data["updated"]["budget_per_day"] == 500
 
 

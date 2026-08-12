@@ -96,9 +96,7 @@ def slots_to_patch(slots: TravelSlots) -> ProfilePatch:
     # must_visit 进入 special_requests（本次特殊要求）
     must_visit = data.get("must_visit")
     if must_visit:
-        add_patch.setdefault("special_requests", []).extend(
-            [f"必去：{v}" for v in must_visit]
-        )
+        add_patch.setdefault("special_requests", []).extend([f"必去：{v}" for v in must_visit])
 
     return ProfilePatch(set=set_patch, add=add_patch)
 
@@ -209,7 +207,7 @@ def user_profile_from_feedback(user_feedback: dict[str, Any] | None) -> UserProf
         pace=flat.get("pace") or "moderate",
         accommodation_preference=flat.get("accommodation_preference"),
         special_requests=flat.get("special_requests") or [],
-        **({"has_children": flat["has_children"]} if "has_children" in flat else {}),
+        **({"has_children": flat["has_children"]} if flat.get("has_children") is not None else {}),
     )
 
 
@@ -293,9 +291,7 @@ def _trace_build_intent_result(
     feasibility: dict[str, Any],
     merged_flat: dict[str, Any],
 ) -> IntentResult:
-    result = slot_parse_output_to_intent_result(
-        parsed, merged_slots, inferred_slots, feasibility
-    )
+    result = slot_parse_output_to_intent_result(parsed, merged_slots, inferred_slots, feasibility)
     missing_required = DemandParserAgent.missing_from_profile(merged_flat)
     if (
         parsed.disambiguation

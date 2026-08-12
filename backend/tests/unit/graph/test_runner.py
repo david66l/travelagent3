@@ -21,11 +21,13 @@ class _AsyncIter:
 def test_extract_result_normalizes_memory_writeback_to_completed():
     from graph.runner import _extract_result
 
-    result = _extract_result({
-        "stage": "memory_updated",
-        "messages": [{"role": "assistant", "content": "done"}],
-        "booking_results": {"source": "mock"},
-    })
+    result = _extract_result(
+        {
+            "stage": "memory_updated",
+            "messages": [{"role": "assistant", "content": "done"}],
+            "booking_results": {"source": "mock"},
+        }
+    )
     assert result["stage"] == "completed"
 
 
@@ -82,7 +84,7 @@ async def test_stream_graph_events_yields_final():
                 "stage": "awaiting_booking",
                 "messages": [{"role": "assistant", "content": "# 北京"}],
                 "output_pdf_url": "http://test/pdf",
-            }
+            },
         )
     )
 
@@ -111,19 +113,25 @@ async def test_stream_graph_events_graph_interrupt_yields_awaiting_confirm():
 
     itinerary = [{"day_number": 1, "activities": [], "total_cost": 0.0}]
     interrupt_exc = GraphInterrupt(
-        (Interrupt(value={"type": "awaiting_confirm", "itinerary": itinerary}, resumable=True, ns=["confirm_gate"]),)
+        (
+            Interrupt(
+                value={"type": "awaiting_confirm", "itinerary": itinerary},
+                resumable=True,
+                ns=["confirm_gate"],
+            ),
+        )
     )
 
     mock_graph = MagicMock()
     mock_graph.astream_events = MagicMock(side_effect=interrupt_exc)
     unpaused = MagicMock(next=[], values={})
     paused = MagicMock(
-            next=["confirm_gate"],
-            values={
-                "itinerary": itinerary,
-                "warnings": [],
-                "messages": [{"role": "assistant", "content": "# 上海"}],
-            },
+        next=["confirm_gate"],
+        values={
+            "itinerary": itinerary,
+            "warnings": [],
+            "messages": [{"role": "assistant", "content": "# 上海"}],
+        },
     )
     mock_graph.aget_state = AsyncMock(side_effect=[unpaused, paused])
 
@@ -179,6 +187,7 @@ async def test_graph_runner_stream():
     from graph.runner import GraphRunner
 
     runner = GraphRunner()
+
     async def _mock_stream(*args, **kwargs):
         yield {"type": "final", "stage": "completed", "payload": {}}
 

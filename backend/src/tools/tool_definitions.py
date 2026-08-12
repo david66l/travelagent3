@@ -184,8 +184,6 @@ TOOLS: list[dict[str, Any]] = [
 ]
 
 # Map name -> schema for quick lookup.
-TOOL_NAME_TO_SCHEMA: dict[str, dict[str, Any]] = {
-    tool["function"]["name"]: tool for tool in TOOLS
-}
+TOOL_NAME_TO_SCHEMA: dict[str, dict[str, Any]] = {tool["function"]["name"]: tool for tool in TOOLS}
 
 __all__ = ["TOOLS", "TOOL_NAME_TO_SCHEMA"]

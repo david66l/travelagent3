@@ -1,7 +1,5 @@
 """Tests for URL input parser."""
 
-from unittest.mock import AsyncMock
-
 import httpx
 import pytest
 
@@ -28,9 +26,7 @@ async def test_parse_url_extracts_text_and_title():
       </body>
     </html>
     """
-    client = httpx.AsyncClient(transport=httpx.MockTransport(
-        lambda request: _make_response(html)
-    ))
+    client = httpx.AsyncClient(transport=httpx.MockTransport(lambda request: _make_response(html)))
     parser = UrlInputParser(client=client)
     result = await parser.parse("https://example.com/page")
 
@@ -42,9 +38,9 @@ async def test_parse_url_extracts_text_and_title():
 
 @pytest.mark.asyncio
 async def test_parse_url_rejects_non_html():
-    client = httpx.AsyncClient(transport=httpx.MockTransport(
-        lambda request: _make_response("{}", "application/json")
-    ))
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: _make_response("{}", "application/json"))
+    )
     parser = UrlInputParser(client=client)
     result = await parser.parse("https://example.com/api")
 
@@ -62,9 +58,7 @@ async def test_parse_url_rejects_invalid_scheme():
 
 @pytest.mark.asyncio
 async def test_parse_url_graceful_on_http_error():
-    client = httpx.AsyncClient(transport=httpx.MockTransport(
-        lambda request: httpx.Response(500)
-    ))
+    client = httpx.AsyncClient(transport=httpx.MockTransport(lambda request: httpx.Response(500)))
     parser = UrlInputParser(client=client)
     result = await parser.parse("https://example.com/page")
 

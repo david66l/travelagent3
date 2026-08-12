@@ -20,9 +20,7 @@ from graph.models import AgentState
 
 logger = logging.getLogger(__name__)
 
-_PLANNING_INTENTS = frozenset(
-    {"generate_itinerary", "modify_itinerary", "confirm_itinerary"}
-)
+_PLANNING_INTENTS = frozenset({"generate_itinerary", "modify_itinerary", "confirm_itinerary"})
 
 INTENT_READY_MESSAGE = "意图识别已完成，接下来将进行大致的规划。"
 

@@ -29,7 +29,9 @@ async def health() -> dict[str, str]:
 @app.post("/solve", response_model=SolverResponse)
 async def solve(request: SolverRequest) -> SolverResponse:
     if not request.pois:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="pois must not be empty")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="pois must not be empty"
+        )
     logger.info(
         "Solving itinerary: pois=%d days=%d strategy=%s",
         len(request.pois),

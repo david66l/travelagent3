@@ -135,9 +135,7 @@ def schedule_delayed_archive(
 
     async def _register() -> None:
         await _ensure_redis()
-        await redis_client.zadd(
-            PENDING_ARCHIVE_ZSET, {session_id: time.time() + delay_seconds}
-        )
+        await redis_client.zadd(PENDING_ARCHIVE_ZSET, {session_id: time.time() + delay_seconds})
 
     _run_async(_register())
     return session_id
@@ -232,9 +230,7 @@ def cleanup_expired_memories(self: Any) -> dict[str, int]:
         nonlocal compressed
         cutoff = datetime.utcnow() - timedelta(days=COMPRESS_AGE_DAYS)
         async with async_session_maker() as db:
-            result = await db.execute(
-                select(Conversation).where(Conversation.updated_at < cutoff)
-            )
+            result = await db.execute(select(Conversation).where(Conversation.updated_at < cutoff))
             for conv in result.scalars():
                 snapshot = conv.state_snapshot or {}
                 if snapshot.get("_compressed"):
@@ -271,7 +267,7 @@ def compact_stale_sessions(self: Any) -> dict[str, int]:
             for key in keys:
                 if not key.endswith(f":{WARM_SUFFIX}"):
                     continue
-                body = key[:-len(f":{WARM_SUFFIX}")]
+                body = key[: -len(f":{WARM_SUFFIX}")]
                 if not body.startswith("session:"):
                     continue
                 session_id = body[len("session:") :]

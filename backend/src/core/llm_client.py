@@ -13,7 +13,6 @@ from core.metrics import (
     record_llm_duration,
     record_llm_tokens,
     set_cost_circuit_active,
-    set_daily_cost_gauges,
 )
 from core.model_router import select_model
 from core.prompt_compress import compress_message_history
@@ -28,7 +27,11 @@ logger = logging.getLogger(__name__)
 class LLMClient:
     def __init__(self):
         base_url = settings.vllm_base_url if settings.vllm_enabled else settings.openai_base_url
-        api_key = settings.vllm_api_key if settings.vllm_enabled else (settings.deepseek_api_key or settings.openai_api_key)
+        api_key = (
+            settings.vllm_api_key
+            if settings.vllm_enabled
+            else (settings.deepseek_api_key or settings.openai_api_key)
+        )
         self.client = AsyncOpenAI(
             api_key=api_key,
             base_url=base_url,
@@ -292,9 +295,7 @@ class LLMClient:
                 if user_id and total_tokens > 0:
                     try:
                         loop = asyncio.get_running_loop()
-                        loop.create_task(
-                            check_and_record_tokens(user_id, user_role, total_tokens)
-                        )
+                        loop.create_task(check_and_record_tokens(user_id, user_role, total_tokens))
                         loop.create_task(record_daily_tokens(total_tokens))
                     except RuntimeError:
                         pass
@@ -347,9 +348,7 @@ class LLMClient:
 
                     try:
                         loop = asyncio.get_running_loop()
-                        loop.create_task(
-                            check_and_record_tokens(user_id, user_role, total_tokens)
-                        )
+                        loop.create_task(check_and_record_tokens(user_id, user_role, total_tokens))
                         loop.create_task(record_daily_tokens(total_tokens))
                     except RuntimeError:
                         pass

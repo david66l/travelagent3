@@ -13,7 +13,6 @@ import random
 from datetime import datetime, timedelta
 from typing import Any, Awaitable, Callable
 
-from core.settings import settings
 from planner.transport_router import HaversineFallback, MapServiceRouter
 from schemas import ToolResult
 from tools.tool_definitions import TOOL_NAME_TO_SCHEMA
@@ -56,9 +55,7 @@ class ToolExecutor:
         """Return OpenAI-compatible function schemas."""
         return list(TOOL_NAME_TO_SCHEMA.values())
 
-    async def execute(
-        self, tool_calls: list[dict[str, Any]]
-    ) -> list[dict[str, Any]]:
+    async def execute(self, tool_calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Execute each tool call and return results keyed by tool_call_id."""
         results: list[dict[str, Any]] = []
         for call in tool_calls:
@@ -208,7 +205,9 @@ class ToolExecutor:
                 }
             )
         if not results:
-            results = [{"name": f"{city}{area}酒店", "area": area, "price_per_night": budget or 500}]
+            results = [
+                {"name": f"{city}{area}酒店", "area": area, "price_per_night": budget or 500}
+            ]
         return ToolResult(data=results, data_source="built_in", confidence=0.7)
 
     async def _handle_get_queue_time(self, args: dict[str, Any]) -> ToolResult:
@@ -299,9 +298,15 @@ class ToolExecutor:
 
             # Map recommended_hours string to a float
             hours_map = {
-                "1小时": 1.0, "1.5小时": 1.5, "1-2小时": 1.5,
-                "2小时": 2.0, "2-3小时": 2.5, "3小时": 3.0,
-                "3-4小时": 3.5, "半天": 4.0, "全天": 8.0,
+                "1小时": 1.0,
+                "1.5小时": 1.5,
+                "1-2小时": 1.5,
+                "2小时": 2.0,
+                "2-3小时": 2.5,
+                "3小时": 3.0,
+                "3-4小时": 3.5,
+                "半天": 4.0,
+                "全天": 8.0,
             }
             raw_hours = getattr(best, "recommended_hours", None)
             suggested_hours = hours_map.get(raw_hours or "", 2.0)

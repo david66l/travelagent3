@@ -23,6 +23,7 @@ try:
     from core.langsmith_local import save_local_trace_lightweight as _save_local
 except ImportError:
     _LOCAL_TRACE_ENABLED = False
+
     def _save_local(*args: Any, **kwargs: Any) -> str:
         return ""
 
@@ -271,7 +272,9 @@ async def stream_graph_events(
 
         if conversation_state:
             state["_conversation_state"] = conversation_state
-            state["profile"] = conversation_state.get("profile") or profile or state.get("profile") or {}
+            state["profile"] = (
+                conversation_state.get("profile") or profile or state.get("profile") or {}
+            )
             if not messages:
                 recent = conversation_state.get("recent_messages", [])
                 if isinstance(recent, list):
@@ -326,7 +329,11 @@ async def stream_graph_events(
             if kind == "on_chain_start":
                 # Only surface real graph nodes (skip LangGraph internals like
                 # ChannelWrite/RunnableSeq) so each progress line is meaningful.
-                if name in _PROGRESS_NODES or name == "gathering" or name.endswith("gathering_turn"):
+                if (
+                    name in _PROGRESS_NODES
+                    or name == "gathering"
+                    or name.endswith("gathering_turn")
+                ):
                     yield {
                         "type": "thinking",
                         "stage": _public_stage_for_node(name),
@@ -373,10 +380,18 @@ async def stream_graph_events(
                         "stage": stage,
                         "payload": {
                             "content": msg.get("content", "") if isinstance(msg, dict) else "",
-                            "itinerary": output.get("itinerary") if isinstance(output, dict) else None,
-                            "output_pdf_url": output.get("output_pdf_url") if isinstance(output, dict) else None,
-                            "output_excel_url": output.get("output_excel_url") if isinstance(output, dict) else None,
-                            "output_map_url": output.get("output_map_url") if isinstance(output, dict) else None,
+                            "itinerary": output.get("itinerary")
+                            if isinstance(output, dict)
+                            else None,
+                            "output_pdf_url": output.get("output_pdf_url")
+                            if isinstance(output, dict)
+                            else None,
+                            "output_excel_url": output.get("output_excel_url")
+                            if isinstance(output, dict)
+                            else None,
+                            "output_map_url": output.get("output_map_url")
+                            if isinstance(output, dict)
+                            else None,
                         },
                     }
                     continue
@@ -397,7 +412,11 @@ async def stream_graph_events(
                 # sequences; forwarding those leaked misleading stages such as
                 # ``completed`` before the confirm interrupt had actually been
                 # reached.
-                if name in _PROGRESS_NODES or name == "gathering" or name.endswith("gathering_turn"):
+                if (
+                    name in _PROGRESS_NODES
+                    or name == "gathering"
+                    or name.endswith("gathering_turn")
+                ):
                     yield {"type": "stage", "stage": stage, "payload": payload}
 
     except GraphBubbleUp as pause:
@@ -409,8 +428,13 @@ async def stream_graph_events(
         logger.exception("Graph streaming failed for session %s: %s", session_id, exc)
         if _LOCAL_TRACE_ENABLED:
             try:
-                _save_local(session_id=session_id, user_input=user_input,
-                    duration_ms=elapsed_ms, status="error", error=str(exc))
+                _save_local(
+                    session_id=session_id,
+                    user_input=user_input,
+                    duration_ms=elapsed_ms,
+                    status="error",
+                    error=str(exc),
+                )
             except Exception:
                 pass
         yield {
@@ -468,9 +492,11 @@ async def stream_graph_events(
             if _LOCAL_TRACE_ENABLED:
                 try:
                     _save_local(
-                        session_id=session_id, user_input=user_input,
+                        session_id=session_id,
+                        user_input=user_input,
                         itinerary=result.get("itinerary"),
-                        duration_ms=elapsed_ms, status="success",
+                        duration_ms=elapsed_ms,
+                        status="success",
                         warnings=final_state.get("warnings"),
                     )
                 except Exception:

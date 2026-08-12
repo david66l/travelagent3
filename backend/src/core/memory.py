@@ -11,10 +11,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import uuid
 from contextlib import asynccontextmanager
 from copy import deepcopy
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any, AsyncIterator, Optional, cast
 from uuid import UUID
 
@@ -131,9 +130,7 @@ class MemoryManager:
         # conversation_id the first one wrote back.
         lock = None
         try:
-            lock = redis_client.lock(
-                f"memory:archive:{session_id}", ttl=30, blocking_timeout=5
-            )
+            lock = redis_client.lock(f"memory:archive:{session_id}", ttl=30, blocking_timeout=5)
             if not await lock.acquire():
                 logger.debug("Archive already running for %s; skipping duplicate", session_id)
                 return False

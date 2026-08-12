@@ -8,10 +8,10 @@ LLM 通过 Function Calling 调用，标注 source=mock。
 from __future__ import annotations
 
 import random
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from api.deps import get_current_user
@@ -104,10 +104,38 @@ MOCK_FLIGHTS: dict[str, list[dict]] = {
 
 MOCK_HOTELS: dict[str, list[dict]] = {
     "成都": [
-        {"name": "春熙路亚朵酒店", "district": "锦江区", "price": 350, "rating": 4.7, "breakfast": True, "parking": True},
-        {"name": "宽窄巷子全季酒店", "district": "青羊区", "price": 280, "rating": 4.5, "breakfast": True, "parking": False},
-        {"name": "天府广场汉庭酒店", "district": "锦江区", "price": 180, "rating": 4.2, "breakfast": False, "parking": False},
-        {"name": "成都希尔顿酒店", "district": "高新区", "price": 680, "rating": 4.9, "breakfast": True, "parking": True},
+        {
+            "name": "春熙路亚朵酒店",
+            "district": "锦江区",
+            "price": 350,
+            "rating": 4.7,
+            "breakfast": True,
+            "parking": True,
+        },
+        {
+            "name": "宽窄巷子全季酒店",
+            "district": "青羊区",
+            "price": 280,
+            "rating": 4.5,
+            "breakfast": True,
+            "parking": False,
+        },
+        {
+            "name": "天府广场汉庭酒店",
+            "district": "锦江区",
+            "price": 180,
+            "rating": 4.2,
+            "breakfast": False,
+            "parking": False,
+        },
+        {
+            "name": "成都希尔顿酒店",
+            "district": "高新区",
+            "price": 680,
+            "rating": 4.9,
+            "breakfast": True,
+            "parking": True,
+        },
     ],
 }
 
@@ -124,10 +152,25 @@ async def search_flights(
 ):
     """搜索机票 — 模拟数据。"""
     key = f"{body.origin}-{body.dest}"
-    flights = MOCK_FLIGHTS.get(key, [
-        {"no": f"CA{random.randint(1000,9999)}", "dep": "08:00", "arr": "11:00", "dur": "3h", "price": round(random.uniform(300, 900), 0)},
-        {"no": f"MU{random.randint(1000,9999)}", "dep": "14:00", "arr": "17:00", "dur": "3h", "price": round(random.uniform(250, 700), 0)},
-    ])
+    flights = MOCK_FLIGHTS.get(
+        key,
+        [
+            {
+                "no": f"CA{random.randint(1000, 9999)}",
+                "dep": "08:00",
+                "arr": "11:00",
+                "dur": "3h",
+                "price": round(random.uniform(300, 900), 0),
+            },
+            {
+                "no": f"MU{random.randint(1000, 9999)}",
+                "dep": "14:00",
+                "arr": "17:00",
+                "dur": "3h",
+                "price": round(random.uniform(250, 700), 0),
+            },
+        ],
+    )
 
     results = [
         FlightResult(
@@ -142,8 +185,7 @@ async def search_flights(
     ]
 
     return success_response(
-        data={"flights": [r.model_dump() for r in results]},
-        message=f"找到 {len(results)} 个航班"
+        data={"flights": [r.model_dump() for r in results]}, message=f"找到 {len(results)} 个航班"
     )
 
 
@@ -153,10 +195,20 @@ async def search_hotels(
     user: User = Depends(get_current_user),
 ):
     """搜索酒店 — 模拟数据。"""
-    hotels = MOCK_HOTELS.get(body.city, [
-        {"name": f"{body.city}{random.choice(HOTEL_CHAINS)}", "district": "市中心", "price": round(random.uniform(150, 600), 0), "rating": round(random.uniform(4.0, 4.8), 1), "breakfast": random.choice([True, False]), "parking": random.choice([True, False])}
-        for _ in range(3)
-    ])
+    hotels = MOCK_HOTELS.get(
+        body.city,
+        [
+            {
+                "name": f"{body.city}{random.choice(HOTEL_CHAINS)}",
+                "district": "市中心",
+                "price": round(random.uniform(150, 600), 0),
+                "rating": round(random.uniform(4.0, 4.8), 1),
+                "breakfast": random.choice([True, False]),
+                "parking": random.choice([True, False]),
+            }
+            for _ in range(3)
+        ],
+    )
 
     if body.budget_per_night:
         hotels = [h for h in hotels if h["price"] <= body.budget_per_night]
@@ -174,7 +226,13 @@ async def search_hotels(
         for h in hotels
     ]
 
-    nights = max(1, (datetime.strptime(body.checkout, "%Y-%m-%d") - datetime.strptime(body.checkin, "%Y-%m-%d")).days)
+    nights = max(
+        1,
+        (
+            datetime.strptime(body.checkout, "%Y-%m-%d")
+            - datetime.strptime(body.checkin, "%Y-%m-%d")
+        ).days,
+    )
     total = sum(r.price_per_night for r in results[:1]) * nights
 
     return success_response(
@@ -183,7 +241,7 @@ async def search_hotels(
             "nights": nights,
             "estimated_total": total,
         },
-        message=f"找到 {len(results)} 家酒店"
+        message=f"找到 {len(results)} 家酒店",
     )
 
 
@@ -200,7 +258,7 @@ async def check_tickets(
             available=random.random() > 0.1,
             need_reservation=random.random() > 0.5,
         ).model_dump(),
-        message="门票信息"
+        message="门票信息",
     )
 
 
@@ -216,5 +274,5 @@ async def reserve_restaurant(
             restaurant=body.restaurant,
             reservation_id=reservation_id,
         ).model_dump(),
-        message=f"已预订 {body.restaurant}，编号 {reservation_id}"
+        message=f"已预订 {body.restaurant}，编号 {reservation_id}",
     )

@@ -46,7 +46,9 @@ async def test_parse_audio_transcribe_failure_returns_error(parser):
     source = f"data:audio/mp3;base64,{audio_b64}"
 
     with patch("perception.audio_input.settings.openai_api_key", "sk-test"):
-        with patch.object(parser, "_transcribe", new=AsyncMock(side_effect=RuntimeError("api error"))):
+        with patch.object(
+            parser, "_transcribe", new=AsyncMock(side_effect=RuntimeError("api error"))
+        ):
             result = await parser.parse(source, filename="test.mp3")
 
     assert result["extracted_text"] is None
@@ -63,7 +65,9 @@ async def test_parse_audio_url_downloads_and_transcribes(parser):
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     parser_with_client = AudioInputParser(client=client)
 
-    with patch.object(parser_with_client, "_transcribe", new=AsyncMock(return_value="transcribed from url")):
+    with patch.object(
+        parser_with_client, "_transcribe", new=AsyncMock(return_value="transcribed from url")
+    ):
         result = await parser_with_client.parse("https://example.com/audio.mp3")
 
     assert result["extracted_text"] == "transcribed from url"

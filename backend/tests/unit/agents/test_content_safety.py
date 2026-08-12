@@ -1,7 +1,5 @@
 """Unit tests for ContentSafetyEngine."""
 
-import pytest
-
 from agents.content_safety import ContentSafetyEngine
 from schemas import Activity, DayPlan
 

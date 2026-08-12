@@ -21,8 +21,22 @@ def test_health_endpoint(client):
 def test_solve_endpoint_returns_itinerary(client):
     request = SolverRequest(
         pois=[
-            POIInput(id="p1", name="故宫", lat=39.9163, lng=116.3972, duration_minutes=180, ticket_price=60.0),
-            POIInput(id="p2", name="天坛", lat=39.8830, lng=116.4120, duration_minutes=120, ticket_price=34.0),
+            POIInput(
+                id="p1",
+                name="故宫",
+                lat=39.9163,
+                lng=116.3972,
+                duration_minutes=180,
+                ticket_price=60.0,
+            ),
+            POIInput(
+                id="p2",
+                name="天坛",
+                lat=39.8830,
+                lng=116.4120,
+                duration_minutes=120,
+                ticket_price=34.0,
+            ),
         ],
         constraints=ConstraintsInput(travel_days=1, total_budget=5000),
     )

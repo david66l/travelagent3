@@ -14,7 +14,6 @@ from graph.routers import (
     route_after_hallucination,
     route_after_output,
     route_after_profile,
-    route_after_retrieve,
     route_after_tool_call,
 )
 from graph.session_manager import SessionManager
@@ -59,7 +58,9 @@ async def test_plan_node_with_error_handling():
     from graph.nodes import plan_node
 
     state = {"slots": {}, "profile": {}, "knowledge_results": []}
-    with patch("graph.node_impl._planner_async", new=AsyncMock(side_effect=RuntimeError("vrp down"))):
+    with patch(
+        "graph.node_impl._planner_async", new=AsyncMock(side_effect=RuntimeError("vrp down"))
+    ):
         result = await plan_node(state)
 
     assert result["error_node"] == "plan"
@@ -187,14 +188,21 @@ async def test_constraint_change_updates_profile_and_requires_fresh_plan():
 def test_replan_closure_replaces_the_closed_poi_in_same_slot():
     from graph.nodes import _trace_replan_local
 
-    itinerary = [{
-        "day_number": 1,
-        "activities": [{"poi_name": "宽窄巷子", "start_time": "09:00", "end_time": "11:00"}],
-    }]
-    candidates = [{
-        "spot_name": "杜甫草堂", "category": "attraction", "ticket_price": 50,
-        "lat": 30.66, "lng": 104.03,
-    }]
+    itinerary = [
+        {
+            "day_number": 1,
+            "activities": [{"poi_name": "宽窄巷子", "start_time": "09:00", "end_time": "11:00"}],
+        }
+    ]
+    candidates = [
+        {
+            "spot_name": "杜甫草堂",
+            "category": "attraction",
+            "ticket_price": 50,
+            "lat": 30.66,
+            "lng": 104.03,
+        }
+    ]
 
     changed, note = _trace_replan_local(
         {"type": "closure", "poi": "宽窄巷子"}, itinerary, candidates
@@ -210,16 +218,16 @@ def test_replan_closure_replaces_the_closed_poi_in_same_slot():
 def test_replan_weather_reorders_and_delay_shifts_real_times():
     from graph.nodes import _trace_replan_local
 
-    itinerary = [{
-        "day_number": 1,
-        "activities": [
-            {"poi_name": "成都博物馆", "start_time": "09:00", "end_time": "11:00"},
-            {"poi_name": "人民公园", "start_time": "11:30", "end_time": "13:00"},
-        ],
-    }]
-    weather, _ = _trace_replan_local(
-        {"type": "weather", "detail": "下午有雨"}, itinerary
-    )
+    itinerary = [
+        {
+            "day_number": 1,
+            "activities": [
+                {"poi_name": "成都博物馆", "start_time": "09:00", "end_time": "11:00"},
+                {"poi_name": "人民公园", "start_time": "11:30", "end_time": "13:00"},
+            ],
+        }
+    ]
+    weather, _ = _trace_replan_local({"type": "weather", "detail": "下午有雨"}, itinerary)
     assert [a["poi_name"] for a in weather[0]["activities"]] == ["人民公园", "成都博物馆"]
     assert weather[0]["activities"][0]["start_time"] == "09:00"
 
@@ -240,7 +248,12 @@ def test_error_classification():
 
 
 def test_node_exception_carries_state_patch():
-    exc = NodeException("retrieve", "db down", level=DegradationLevel.FALLBACK, state_patch={"retrieval_empty": True})
+    exc = NodeException(
+        "retrieve",
+        "db down",
+        level=DegradationLevel.FALLBACK,
+        state_patch={"retrieval_empty": True},
+    )
     assert exc.state_patch["retrieval_empty"] is True
 
 
@@ -252,6 +265,9 @@ async def test_session_manager_create_and_load():
         assert state["user_id"] == "u1"
         mock_set.assert_awaited_once()
 
-    with patch("graph.session_manager.memory_manager.hot_get", new=AsyncMock(return_value={"stage": "planned"})):
+    with patch(
+        "graph.session_manager.memory_manager.hot_get",
+        new=AsyncMock(return_value={"stage": "planned"}),
+    ):
         loaded = await sm.load("s1")
         assert loaded["stage"] == "planned"

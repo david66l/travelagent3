@@ -136,9 +136,11 @@ class ConnectionManager:
         ws = self._connections.get(session_id)
         if ws:
             try:
-                # send_text with default=str so non-serializable values (e.g. a
-                # LangGraph Interrupt) degrade instead of crashing the socket.
-                await ws.send_text(json.dumps(data, ensure_ascii=False, default=str))
+                # Normalize with default=str so non-serializable values (e.g. a
+                # LangGraph Interrupt) degrade without changing the send_json
+                # contract used by callers and tests.
+                normalized = json.loads(json.dumps(data, ensure_ascii=False, default=str))
+                await ws.send_json(normalized)
             except Exception as exc:
                 logger.warning("Failed to send WebSocket message to %s: %s", session_id, exc)
 
@@ -173,9 +175,7 @@ class ConnectionManager:
                     if jobs and jobs[0].user_feedback:
                         state = self._ensure_schema(deepcopy(jobs[0].user_feedback))
             except Exception as exc:
-                logger.warning(
-                    "Failed to load planning job fallback for %s: %s", session_id, exc
-                )
+                logger.warning("Failed to load planning job fallback for %s: %s", session_id, exc)
 
         try:
             await memory_manager.hot_set(session_id, state)
@@ -214,9 +214,7 @@ class ConnectionManager:
         """Persist planning/completed state. Returns False if another client holds the lock."""
         user_id: str | None = None
         try:
-            async with memory_manager.acquire_lock(
-                session_id, blocking_timeout=0.5
-            ):
+            async with memory_manager.acquire_lock(session_id, blocking_timeout=0.5):
                 state["updated_at"] = int(_time.time())
                 user_id = state.get("user_id")
                 await memory_manager.hot_set(session_id, state)
@@ -247,21 +245,15 @@ class ConnectionManager:
     async def save_gathering_state(self, session_id: str, state: dict[str, Any]) -> bool:
         """Persist gathering-phase state. Returns False if another client holds the lock."""
         try:
-            async with memory_manager.acquire_lock(
-                session_id, blocking_timeout=0.1
-            ):
+            async with memory_manager.acquire_lock(session_id, blocking_timeout=0.1):
                 state["updated_at"] = int(_time.time())
                 try:
                     await memory_manager.hot_set(session_id, state)
                     await memory_manager.warm_set(session_id, state)
                 except Exception as exc:
-                    logger.warning(
-                        "Failed to persist gathering state for %s: %s", session_id, exc
-                    )
+                    logger.warning("Failed to persist gathering state for %s: %s", session_id, exc)
                 try:
-                    await redis_client.set_json(
-                        STATE_KEY.format(session_id), state, ttl=STATE_TTL
-                    )
+                    await redis_client.set_json(STATE_KEY.format(session_id), state, ttl=STATE_TTL)
                 except Exception as exc:
                     logger.warning(
                         "Failed to sync gathering state to Redis for %s: %s",
@@ -292,9 +284,7 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 
-def _apply_conversation_sync(
-    state: dict[str, Any], payload: dict[str, Any] | None
-) -> None:
+def _apply_conversation_sync(state: dict[str, Any], payload: dict[str, Any] | None) -> None:
     """Merge gathering subgraph fields back into WS conversation state."""
     if not payload:
         return
@@ -346,7 +336,7 @@ async def _stream_graph_to_manager(
     conversation_id: UUID | None = None,
 ) -> None:
     """Run the LangGraph turn and forward events to the connection manager."""
-    from core.conversation_state import append_message, flatten_profile
+    from core.conversation_state import append_message
 
     messages: list[dict[str, Any]] = []
     recent = state.get("recent_messages", [])
@@ -398,9 +388,7 @@ async def _stream_graph_to_manager(
                         else ["请补充更多信息"]
                     ),
                     "missing_required": (
-                        payload.get("missing_slots", [])
-                        if isinstance(payload, dict)
-                        else []
+                        payload.get("missing_slots", []) if isinstance(payload, dict) else []
                     ),
                 },
             )
@@ -410,9 +398,7 @@ async def _stream_graph_to_manager(
             )
         elif event_type == "intent_ready":
             content = (
-                payload.get("intent_ready_message", "")
-                if isinstance(payload, dict)
-                else ""
+                payload.get("intent_ready_message", "") if isinstance(payload, dict) else ""
             ) or "意图识别已完成，接下来将进行大致的规划。"
             _apply_conversation_sync(state, payload if isinstance(payload, dict) else None)
             append_message(state, "assistant", content)

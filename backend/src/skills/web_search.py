@@ -11,9 +11,8 @@ DDG Instant Answer docs: https://duckduckgo.com/api
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
-from urllib.parse import quote_plus
 
 import httpx
 
@@ -102,21 +101,26 @@ class WebSearchSkill:
         abstract = data.get("AbstractText", "").strip()
         abstract_url = data.get("AbstractURL", "")
         if abstract:
-            results.append(SearchResult(
-                title=data.get("Heading", query),
-                url=abstract_url,
-                snippet=abstract[:500],
-                score=0.9,
-            ))
+            results.append(
+                SearchResult(
+                    title=data.get("Heading", query),
+                    url=abstract_url,
+                    snippet=abstract[:500],
+                    score=0.9,
+                )
+            )
 
         # Direct answer (calculator, facts, etc.)
         answer = data.get("Answer", "").strip()
         if answer and not abstract:
-            results.append(SearchResult(
-                title="即时回答", url="",
-                snippet=answer[:500],
-                score=0.85,
-            ))
+            results.append(
+                SearchResult(
+                    title="即时回答",
+                    url="",
+                    snippet=answer[:500],
+                    score=0.85,
+                )
+            )
 
         # Related topics
         for topic in data.get("RelatedTopics", []):
@@ -124,10 +128,14 @@ class WebSearchSkill:
                 url = topic.get("FirstURL", "")
                 snippet = topic.get("Text", "")
                 if snippet:
-                    results.append(SearchResult(
-                        title=snippet[:80], url=url, snippet=snippet[:500],
-                        score=0.7,
-                    ))
+                    results.append(
+                        SearchResult(
+                            title=snippet[:80],
+                            url=url,
+                            snippet=snippet[:500],
+                            score=0.7,
+                        )
+                    )
 
         return results[:top_n]
 
@@ -160,9 +168,11 @@ class WebSearchSkill:
             title_tag = item.select_one(".result__title a")
             snippet_tag = item.select_one(".result__snippet")
             if title_tag:
-                results.append(SearchResult(
-                    title=title_tag.get_text(strip=True),
-                    url=title_tag.get("href", ""),
-                    snippet=snippet_tag.get_text(strip=True) if snippet_tag else "",
-                ))
+                results.append(
+                    SearchResult(
+                        title=title_tag.get_text(strip=True),
+                        url=title_tag.get("href", ""),
+                        snippet=snippet_tag.get_text(strip=True) if snippet_tag else "",
+                    )
+                )
         return results

@@ -30,16 +30,26 @@ logger = logging.getLogger(__name__)
 # City → (lat, lng) lookup. Avoids extra geocoding HTTP round-trip.
 # --------------------------------------------------------------------------- #
 CITY_COORDS: dict[str, tuple[float, float]] = {
-    "北京": (39.9042, 116.4074),  "上海": (31.2304, 121.4737),
-    "广州": (23.1291, 113.2644),  "深圳": (22.5431, 114.0579),
-    "成都": (30.5728, 104.0668),  "杭州": (30.2741, 120.1551),
-    "西安": (34.3416, 108.9398),  "重庆": (29.4316, 106.9123),
-    "苏州": (31.2990, 120.5853),  "南京": (32.0603, 118.7969),
-    "厦门": (24.4798, 118.0894),  "青岛": (36.0671, 120.3826),
-    "大理": (25.5916, 100.2299),  "丽江": (26.8721, 100.2299),
-    "三亚": (18.2528, 109.5120),  "长沙": (28.2282, 112.9388),
-    "武汉": (30.5928, 114.3055),  "昆明": (25.0389, 102.7183),
-    "桂林": (25.2736, 110.2900),  "拉萨": (29.6500, 91.1000),
+    "北京": (39.9042, 116.4074),
+    "上海": (31.2304, 121.4737),
+    "广州": (23.1291, 113.2644),
+    "深圳": (22.5431, 114.0579),
+    "成都": (30.5728, 104.0668),
+    "杭州": (30.2741, 120.1551),
+    "西安": (34.3416, 108.9398),
+    "重庆": (29.4316, 106.9123),
+    "苏州": (31.2990, 120.5853),
+    "南京": (32.0603, 118.7969),
+    "厦门": (24.4798, 118.0894),
+    "青岛": (36.0671, 120.3826),
+    "大理": (25.5916, 100.2299),
+    "丽江": (26.8721, 100.2299),
+    "三亚": (18.2528, 109.5120),
+    "长沙": (28.2282, 112.9388),
+    "武汉": (30.5928, 114.3055),
+    "昆明": (25.0389, 102.7183),
+    "桂林": (25.2736, 110.2900),
+    "拉萨": (29.6500, 91.1000),
     "济南": (36.6509, 117.0116),
 }
 
@@ -48,27 +58,65 @@ AMAP_WEATHER_URL = "https://restapi.amap.com/v3/weather/weatherInfo"
 
 # 高德城市名称 → adcode (行政区划代码)
 _CITY_ADCODE: dict[str, str] = {
-    "北京": "110000", "上海": "310000", "广州": "440100", "深圳": "440300",
-    "成都": "510100", "杭州": "330100", "西安": "610100", "重庆": "500000",
-    "苏州": "320500", "南京": "320100", "厦门": "350200", "青岛": "370200",
-    "大理": "532901", "丽江": "530700", "三亚": "460200", "长沙": "430100",
-    "武汉": "420100", "昆明": "530100", "桂林": "450300", "拉萨": "540100",
-    "济南": "370100", "郑州": "410100", "天津": "120000", "合肥": "340100",
-    "福州": "350100", "南昌": "360100", "贵阳": "520100", "兰州": "620100",
-    "哈尔滨": "230100", "长春": "220100", "沈阳": "210100",
+    "北京": "110000",
+    "上海": "310000",
+    "广州": "440100",
+    "深圳": "440300",
+    "成都": "510100",
+    "杭州": "330100",
+    "西安": "610100",
+    "重庆": "500000",
+    "苏州": "320500",
+    "南京": "320100",
+    "厦门": "350200",
+    "青岛": "370200",
+    "大理": "532901",
+    "丽江": "530700",
+    "三亚": "460200",
+    "长沙": "430100",
+    "武汉": "420100",
+    "昆明": "530100",
+    "桂林": "450300",
+    "拉萨": "540100",
+    "济南": "370100",
+    "郑州": "410100",
+    "天津": "120000",
+    "合肥": "340100",
+    "福州": "350100",
+    "南昌": "360100",
+    "贵阳": "520100",
+    "兰州": "620100",
+    "哈尔滨": "230100",
+    "长春": "220100",
+    "沈阳": "210100",
 }
 
 # WMO Weather interpretation codes → Chinese description
 # https://open-meteo.com/en/docs
 _WMO_CODE_MAP: dict[int, str] = {
-    0: "晴", 1: "晴", 2: "晴间多云", 3: "多云",
-    45: "雾", 48: "雾凇",
-    51: "小雨", 53: "中雨", 55: "大雨",
-    61: "小雨", 63: "中雨", 65: "大雨",
-    71: "小雪", 73: "中雪", 75: "大雪",
-    80: "阵雨", 81: "中阵雨", 82: "大阵雨",
-    85: "阵雪", 86: "大阵雪",
-    95: "雷阵雨", 96: "冰雹雷暴", 99: "强冰雹雷暴",
+    0: "晴",
+    1: "晴",
+    2: "晴间多云",
+    3: "多云",
+    45: "雾",
+    48: "雾凇",
+    51: "小雨",
+    53: "中雨",
+    55: "大雨",
+    61: "小雨",
+    63: "中雨",
+    65: "大雨",
+    71: "小雪",
+    73: "中雪",
+    75: "大雪",
+    80: "阵雨",
+    81: "中阵雨",
+    82: "大阵雨",
+    85: "阵雪",
+    86: "大阵雪",
+    95: "雷阵雨",
+    96: "冰雹雷暴",
+    99: "强冰雹雷暴",
 }
 
 
@@ -132,7 +180,10 @@ class WeatherQuerySkill(Tool):
                 days = await self._fetch_amap(city, start_date, end_date)
                 if days:
                     return ToolResult(
-                        data=days, data_source="api", confidence=0.90, latency_ms=0,
+                        data=days,
+                        data_source="api",
+                        confidence=0.90,
+                        latency_ms=0,
                     )
             except asyncio.TimeoutError:
                 logger.warning("AMap weather timeout for %s", city)
@@ -146,7 +197,10 @@ class WeatherQuerySkill(Tool):
                 days = await self._fetch_open_meteo(city, *coords, start_date, end_date)
                 if days:
                     return ToolResult(
-                        data=days, data_source="api", confidence=0.85, latency_ms=0,
+                        data=days,
+                        data_source="api",
+                        confidence=0.85,
+                        latency_ms=0,
                     )
             except asyncio.TimeoutError:
                 logger.warning("Open-Meteo timeout for %s", city)
@@ -159,7 +213,10 @@ class WeatherQuerySkill(Tool):
                 days = await self._fetch_qweather(city, start_date, end_date)
                 if days:
                     return ToolResult(
-                        data=days, data_source="api", confidence=0.9, latency_ms=0,
+                        data=days,
+                        data_source="api",
+                        confidence=0.9,
+                        latency_ms=0,
                     )
             except Exception as exc:
                 logger.warning("QWeather failed for %s: %s", city, exc)
@@ -178,19 +235,25 @@ class WeatherQuerySkill(Tool):
     # ------------------------------------------------------------------ #
 
     async def _fetch_open_meteo(
-        self, city: str, lat: float, lng: float,
-        start_date: str, end_date: str,
+        self,
+        city: str,
+        lat: float,
+        lng: float,
+        start_date: str,
+        end_date: str,
     ) -> list[WeatherDay]:
         """Fetch daily forecast from Open-Meteo and map to WeatherDay."""
         client = await self._get_http()
         params = {
-            "latitude": lat, "longitude": lng,
+            "latitude": lat,
+            "longitude": lng,
             "daily": (
                 "weather_code,temperature_2m_max,temperature_2m_min,"
                 "precipitation_probability_max,wind_speed_10m_max"
             ),
             "timezone": "Asia/Shanghai",
-            "start_date": start_date, "end_date": end_date,
+            "start_date": start_date,
+            "end_date": end_date,
             "forecast_days": 16,
         }
         resp = await client.get(OPEN_METEO_URL, params=params)
@@ -214,13 +277,20 @@ class WeatherQuerySkill(Tool):
             precip = int(precips[i]) if i < len(precips) else 0
             wind = round(winds[i], 1) if i < len(winds) else None
 
-            results.append(WeatherDay(
-                date=date_str, condition=condition,
-                temp_high=high, temp_low=low,
-                precipitation_chance=precip, wind_speed=wind,
-                recommendation=self._recommend(condition, high, low, precip),
-                data_source="api", confidence=0.85, is_fallback=False,
-            ))
+            results.append(
+                WeatherDay(
+                    date=date_str,
+                    condition=condition,
+                    temp_high=high,
+                    temp_low=low,
+                    precipitation_chance=precip,
+                    wind_speed=wind,
+                    recommendation=self._recommend(condition, high, low, precip),
+                    data_source="api",
+                    confidence=0.85,
+                    is_fallback=False,
+                )
+            )
 
         logger.info("Open-Meteo: %d days for %s (%s–%s)", len(results), city, start_date, end_date)
         return results
@@ -230,7 +300,10 @@ class WeatherQuerySkill(Tool):
     # ------------------------------------------------------------------ #
 
     async def _fetch_amap(
-        self, city: str, start_date: str, end_date: str,
+        self,
+        city: str,
+        start_date: str,
+        end_date: str,
     ) -> list[WeatherDay]:
         """Fetch weather from 高德地图 API (4-day forecast, free 5000 calls/day).
 
@@ -280,23 +353,30 @@ class WeatherQuerySkill(Tool):
                 day_temp = int(float(cast.get("daytemp_float", cast.get("daytemp", 25))))
                 night_temp = int(float(cast.get("nighttemp_float", cast.get("nighttemp", 15))))
 
-                results.append(WeatherDay(
-                    date=date_str,
-                    condition=day_weather,
-                    temp_high=day_temp,
-                    temp_low=night_temp,
-                    precipitation_chance=_rain_from_weather(day_weather),
-                    wind_speed=_parse_wind_level(cast.get("daypower", "")),
-                    recommendation=self._recommend(
-                        day_weather, day_temp, night_temp,
-                        _rain_from_weather(day_weather),
-                    ),
-                    data_source="api", confidence=0.90, is_fallback=False,
-                ))
+                results.append(
+                    WeatherDay(
+                        date=date_str,
+                        condition=day_weather,
+                        temp_high=day_temp,
+                        temp_low=night_temp,
+                        precipitation_chance=_rain_from_weather(day_weather),
+                        wind_speed=_parse_wind_level(cast.get("daypower", "")),
+                        recommendation=self._recommend(
+                            day_weather,
+                            day_temp,
+                            night_temp,
+                            _rain_from_weather(day_weather),
+                        ),
+                        data_source="api",
+                        confidence=0.90,
+                        is_fallback=False,
+                    )
+                )
 
         if results:
-            logger.info("AMap weather: %d days for %s (%s–%s)",
-                        len(results), city, start_date, end_date)
+            logger.info(
+                "AMap weather: %d days for %s (%s–%s)", len(results), city, start_date, end_date
+            )
         return results
 
     @staticmethod
@@ -316,9 +396,7 @@ class WeatherQuerySkill(Tool):
     # QWeather (keyed, higher confidence)
     # ------------------------------------------------------------------ #
 
-    async def _fetch_qweather(
-        self, city: str, start_date: str, end_date: str
-    ) -> list[WeatherDay]:
+    async def _fetch_qweather(self, city: str, start_date: str, end_date: str) -> list[WeatherDay]:
         """QWeather API — requires ``settings.weather_key``."""
         # QWeather 7-day forecast endpoint
         # Docs: https://dev.qweather.com/docs/api/weather/weather-daily-forecast/
@@ -358,21 +436,25 @@ class WeatherQuerySkill(Tool):
             if not (s <= d <= e):
                 continue
 
-            results.append(WeatherDay(
-                date=date_str,
-                condition=day_data.get("textDay", "多云"),
-                temp_high=int(day_data.get("tempMax", 25)),
-                temp_low=int(day_data.get("tempMin", 15)),
-                precipitation_chance=int(day_data.get("pop", 0)),
-                wind_speed=self._parse_wind_speed(day_data.get("windSpeedDay", "")),
-                recommendation=self._recommend(
-                    day_data.get("textDay", ""),
-                    int(day_data.get("tempMax", 25)),
-                    int(day_data.get("tempMin", 15)),
-                    int(day_data.get("pop", 0)),
-                ),
-                data_source="api", confidence=0.9, is_fallback=False,
-            ))
+            results.append(
+                WeatherDay(
+                    date=date_str,
+                    condition=day_data.get("textDay", "多云"),
+                    temp_high=int(day_data.get("tempMax", 25)),
+                    temp_low=int(day_data.get("tempMin", 15)),
+                    precipitation_chance=int(day_data.get("pop", 0)),
+                    wind_speed=self._parse_wind_speed(day_data.get("windSpeedDay", "")),
+                    recommendation=self._recommend(
+                        day_data.get("textDay", ""),
+                        int(day_data.get("tempMax", 25)),
+                        int(day_data.get("tempMin", 15)),
+                        int(day_data.get("pop", 0)),
+                    ),
+                    data_source="api",
+                    confidence=0.9,
+                    is_fallback=False,
+                )
+            )
 
         if results:
             logger.info("QWeather: %d days for %s", len(results), city)
@@ -399,6 +481,7 @@ class WeatherQuerySkill(Tool):
     def _parse_wind_speed(raw: str) -> Optional[int]:
         """Parse QWeather wind speed like '3-4级' → average km/h."""
         import re
+
         m = re.findall(r"(\d+)", raw)
         if m:
             vals = [int(x) for x in m]
@@ -410,8 +493,11 @@ class WeatherQuerySkill(Tool):
     # ------------------------------------------------------------------ #
 
     def _geography_fallback(
-        self, city: str, coords: Optional[tuple[float, float]],
-        start_date: str, end_date: str,
+        self,
+        city: str,
+        coords: Optional[tuple[float, float]],
+        start_date: str,
+        end_date: str,
     ) -> list[WeatherDay]:
         """Latitude + month-driven estimation. Marked '（估算数据）'."""
         lat = coords[0] if coords else 30.0
@@ -430,15 +516,20 @@ class WeatherQuerySkill(Tool):
             condition = _estimate_condition(lat, current.month)
             precip = _estimate_precip(lat, current.month)
 
-            results.append(WeatherDay(
-                date=current.strftime("%Y-%m-%d"),
-                condition=condition,
-                temp_high=high, temp_low=low,
-                precipitation_chance=precip,
-                recommendation=self._recommend(condition, high, low, precip) + "（估算数据）",
-                data_source="fallback", confidence=0.6, is_fallback=True,
-                fallback_reason="geography-based estimation",
-            ))
+            results.append(
+                WeatherDay(
+                    date=current.strftime("%Y-%m-%d"),
+                    condition=condition,
+                    temp_high=high,
+                    temp_low=low,
+                    precipitation_chance=precip,
+                    recommendation=self._recommend(condition, high, low, precip) + "（估算数据）",
+                    data_source="fallback",
+                    confidence=0.6,
+                    is_fallback=True,
+                    fallback_reason="geography-based estimation",
+                )
+            )
             current += timedelta(days=1)
 
         logger.info("Geography fallback: %d days for %s (lat=%.1f)", len(results), city, lat)
@@ -461,7 +552,7 @@ class WeatherQuerySkill(Tool):
         return None
 
     @staticmethod
-    def _recommend(condition: str, high: int, low: int, precip: int) -> str:
+    def _recommend(condition: str, high: int, low: int, precip: int = 0) -> str:
         parts: list[str] = []
         if "雨" in condition or "雪" in condition:
             parts.append("有降水，建议携带雨具")
@@ -486,6 +577,7 @@ class WeatherQuerySkill(Tool):
 # Helpers
 # --------------------------------------------------------------------------- #
 
+
 def _rain_from_weather(condition: str) -> int:
     """Estimate precipitation probability from Chinese weather description."""
     if any(kw in condition for kw in ("雨", "雷")):
@@ -502,6 +594,7 @@ def _rain_from_weather(condition: str) -> int:
 def _parse_wind_level(power: str) -> Optional[int]:
     """Parse AMap wind power like '1-3' → average level."""
     import re
+
     m = re.findall(r"(\d+)", power)
     if m:
         vals = [int(x) for x in m]
@@ -512,6 +605,7 @@ def _parse_wind_level(power: str) -> Optional[int]:
 # --------------------------------------------------------------------------- #
 # Climate estimation — latitude × month, calibrated against China climate data
 # --------------------------------------------------------------------------- #
+
 
 def _estimate_temp(lat: float, month: int) -> tuple[int, int]:
     """Return (high, low) based on latitude and month.
@@ -537,18 +631,22 @@ def _estimate_condition(lat: float, month: int) -> str:
     is_summer = 5 <= month <= 9
     r = random.random() * 100
 
-    if lat < 25:       # tropical / south
+    if lat < 25:  # tropical / south
         t = (15, 40, 70, 90) if is_summer else (25, 60, 85, 95)
-    elif lat < 32:     # central
+    elif lat < 32:  # central
         t = (20, 50, 75, 90) if is_summer else (30, 65, 80, 95)
-    else:              # north
+    else:  # north
         t = (30, 65, 85, 95) if is_summer else (40, 75, 90, 97)
 
-    if r < t[0]:       return "晴"
-    elif r < t[1]:     return "多云"
-    elif r < t[2]:     return "小雨" if is_summer or lat < 32 else "阴"
-    elif r < t[3]:     return "中雨" if is_summer else "小雪"
-    else:              return "雷阵雨" if is_summer else "中雨"
+    if r < t[0]:
+        return "晴"
+    if r < t[1]:
+        return "多云"
+    if r < t[2]:
+        return "小雨" if is_summer or lat < 32 else "阴"
+    if r < t[3]:
+        return "中雨" if is_summer else "小雪"
+    return "雷阵雨" if is_summer else "中雨"
 
 
 def _estimate_precip(lat: float, month: int) -> int:

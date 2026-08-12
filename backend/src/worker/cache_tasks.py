@@ -18,7 +18,7 @@ async def _warm_poi_cities() -> dict[str, int]:
 
     skill = POISearchSkill()
     warmed = 0
-    for city in settings.seed_cities_list[:settings.cache_warm_top_n_cities]:
+    for city in settings.seed_cities_list[: settings.cache_warm_top_n_cities]:
         try:
             await skill.search_pois(city, [])
             warmed += 1
@@ -33,7 +33,7 @@ async def _warm_weather_cities() -> dict[str, int]:
     skill = WeatherQuerySkill()
     tomorrow = (date.today() + timedelta(days=1)).isoformat()
     warmed = 0
-    for city in settings.seed_cities_list[:settings.cache_warm_top_n_cities]:
+    for city in settings.seed_cities_list[: settings.cache_warm_top_n_cities]:
         try:
             await skill.query(city, tomorrow, tomorrow)
             warmed += 1

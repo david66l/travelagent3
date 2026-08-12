@@ -122,8 +122,7 @@ class FeasibilityChecker:
         elif ratio < 0.85:
             report["budget_fit"] = "tight"
             report["warnings"].append(
-                f"预算较紧：{slots.destination} {slots.travel_days}天预计"
-                f" {estimated_total:.0f} 元"
+                f"预算较紧：{slots.destination} {slots.travel_days}天预计 {estimated_total:.0f} 元"
             )
 
     @classmethod
@@ -155,15 +154,17 @@ class FeasibilityChecker:
         reservation_spots: list[str] = []
         for spot in must_visit_spots:
             name = spot.get("name") or spot.get("title") or "未知景点"
-            need = spot.get("need_reservation") or spot.get("reservation_required") or spot.get("reservation_advance_days")
+            need = (
+                spot.get("need_reservation")
+                or spot.get("reservation_required")
+                or spot.get("reservation_advance_days")
+            )
             if need:
                 advance = spot.get("reservation_advance_days") or 1
                 reservation_spots.append(f"{name}（需提前{advance}天预约）")
 
         if reservation_spots:
-            report["warnings"].append(
-                "必去景点中以下需要预约：" + "、".join(reservation_spots)
-            )
+            report["warnings"].append("必去景点中以下需要预约：" + "、".join(reservation_spots))
 
     @classmethod
     def _check_seasonal_closures(

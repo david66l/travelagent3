@@ -38,9 +38,7 @@ class BGEEmbedder:
             # disabling vector search and wasting minutes on every plan.
             self._model = SentenceTransformer(self.MODEL_NAME, local_files_only=True)
         except Exception:
-            logger.warning(
-                "BGE model not found in local cache; downloading once from HuggingFace"
-            )
+            logger.warning("BGE model not found in local cache; downloading once from HuggingFace")
             self._model = SentenceTransformer(self.MODEL_NAME)
         self._dim = 1024
 

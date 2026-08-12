@@ -1,7 +1,5 @@
 """Tests for Step 8 Prometheus metric helpers."""
 
-from prometheus_client import CollectorRegistry
-
 from core.metrics import (
     ACTIVE_SESSIONS,
     FALLBACK_TOTAL,

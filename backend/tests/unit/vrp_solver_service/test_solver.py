@@ -1,22 +1,46 @@
 """Tests for standalone VRP solver."""
 
-import pytest
-
 from vrp_solver_service.models import ConstraintsInput, POIInput, SolverRequest
 from vrp_solver_service.solver import TravelVRPSolver
 
 
 def _beijing_pois() -> list[POIInput]:
     return [
-        POIInput(id="p1", name="故宫", lat=39.9163, lng=116.3972, duration_minutes=180, ticket_price=60.0, score=0.9),
-        POIInput(id="p2", name="天坛", lat=39.8830, lng=116.4120, duration_minutes=120, ticket_price=34.0, score=0.8),
-        POIInput(id="p3", name="颐和园", lat=39.9990, lng=116.2750, duration_minutes=180, ticket_price=30.0, score=0.85),
+        POIInput(
+            id="p1",
+            name="故宫",
+            lat=39.9163,
+            lng=116.3972,
+            duration_minutes=180,
+            ticket_price=60.0,
+            score=0.9,
+        ),
+        POIInput(
+            id="p2",
+            name="天坛",
+            lat=39.8830,
+            lng=116.4120,
+            duration_minutes=120,
+            ticket_price=34.0,
+            score=0.8,
+        ),
+        POIInput(
+            id="p3",
+            name="颐和园",
+            lat=39.9990,
+            lng=116.2750,
+            duration_minutes=180,
+            ticket_price=30.0,
+            score=0.85,
+        ),
     ]
 
 
 def test_solver_returns_valid_itinerary_for_three_pois():
     pois = _beijing_pois()
-    constraints = ConstraintsInput(travel_days=2, total_budget=5000, max_walk_minutes=300, must_visit=["故宫"])
+    constraints = ConstraintsInput(
+        travel_days=2, total_budget=5000, max_walk_minutes=300, must_visit=["故宫"]
+    )
     request = SolverRequest(pois=pois, constraints=constraints)
 
     solver = TravelVRPSolver()
@@ -34,7 +58,9 @@ def test_solver_returns_valid_itinerary_for_three_pois():
 
 def test_solver_respects_must_visit():
     pois = _beijing_pois()
-    constraints = ConstraintsInput(travel_days=1, max_walk_minutes=600, must_visit=["天坛", "颐和园"])
+    constraints = ConstraintsInput(
+        travel_days=1, max_walk_minutes=600, must_visit=["天坛", "颐和园"]
+    )
     request = SolverRequest(pois=pois, constraints=constraints)
 
     solver = TravelVRPSolver()
@@ -60,7 +86,11 @@ def test_solver_greedy_strategy_for_small_instance():
 
 
 def test_solver_handles_single_poi():
-    pois = [POIInput(id="p1", name="故宫", lat=39.9163, lng=116.3972, duration_minutes=180, ticket_price=60.0)]
+    pois = [
+        POIInput(
+            id="p1", name="故宫", lat=39.9163, lng=116.3972, duration_minutes=180, ticket_price=60.0
+        )
+    ]
     constraints = ConstraintsInput(travel_days=1)
     request = SolverRequest(pois=pois, constraints=constraints)
 

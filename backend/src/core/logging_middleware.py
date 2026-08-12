@@ -63,13 +63,18 @@ class LoggingMiddleware(BaseHTTPMiddleware):
             raise
         finally:
             latency_ms = int((time.monotonic() - start) * 1000)
-            level = logging.WARNING if status_code >= 500 else (
-                logging.INFO if status_code >= 400 else logging.DEBUG
+            level = (
+                logging.WARNING
+                if status_code >= 500
+                else (logging.INFO if status_code >= 400 else logging.DEBUG)
             )
             logger.log(
                 level,
                 "%s %s → %d (%dms)",
-                request.method, request.url.path, status_code, latency_ms,
+                request.method,
+                request.url.path,
+                status_code,
+                latency_ms,
                 extra={
                     "request_id": cid,
                     "method": request.method,

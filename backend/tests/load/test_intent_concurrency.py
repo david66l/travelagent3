@@ -67,9 +67,10 @@ async def test_intent_high_concurrency_routes_to_flash(cloud_ready):
     seen_models: list[str] = []
     messages = [{"role": "user", "content": "我想去成都玩三天"}]
 
-    with patch.object(
-        llm_client, "is_cost_circuit_active", new=AsyncMock(return_value=False)
-    ), patch.object(client, "_create_completion", new=_fake_completion(seen_models)):
+    with (
+        patch.object(llm_client, "is_cost_circuit_active", new=AsyncMock(return_value=False)),
+        patch.object(client, "_create_completion", new=_fake_completion(seen_models)),
+    ):
         start = time.monotonic()
         results = await asyncio.gather(
             *(
@@ -106,10 +107,10 @@ async def test_intent_fallback_holds_under_concurrency(cloud_ready):
         await asyncio.sleep(NET_LATENCY_S)
         raise RuntimeError("simulated DeepSeek 5xx")
 
-    with patch.object(
-        llm_client, "is_cost_circuit_active", new=AsyncMock(return_value=False)
-    ), patch.object(client, "_create_completion", new=_boom), patch.object(
-        demand_parser, "llm", client
+    with (
+        patch.object(llm_client, "is_cost_circuit_active", new=AsyncMock(return_value=False)),
+        patch.object(client, "_create_completion", new=_boom),
+        patch.object(demand_parser, "llm", client),
     ):
         results = await asyncio.gather(
             *(parser.parse("北京三日游", [], None) for _ in range(CONCURRENCY)),

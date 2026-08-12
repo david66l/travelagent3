@@ -37,6 +37,7 @@ AMAP_TYPE_CATEGORY = {
 @dataclass
 class RawPOI:
     """标准化 POI 数据结构。"""
+
     name: str
     city: str
     category: str
@@ -60,17 +61,19 @@ class AmapCollector:
         self._key = api_key
         self._client = httpx.AsyncClient(timeout=10.0)
 
-    async def search_pois(
-        self, city: str, keywords: str = "", types: str = ""
-    ) -> list[RawPOI]:
+    async def search_pois(self, city: str, keywords: str = "", types: str = "") -> list[RawPOI]:
         """搜索城市 POI。"""
         all_pois: list[RawPOI] = []
 
         # 分类型搜索（高德一次最多返回 1000 条，分类型可获取更多）
-        search_types = types.split("|") if types else [
-            "风景名胜|公园广场|寺庙道观|纪念馆",
-            "中餐厅|外国餐厅|小吃快餐店",
-        ]
+        search_types = (
+            types.split("|")
+            if types
+            else [
+                "风景名胜|公园广场|寺庙道观|纪念馆",
+                "中餐厅|外国餐厅|小吃快餐店",
+            ]
+        )
 
         for stype in search_types:
             pois = await self._search_page(city, keywords, stype)
@@ -78,9 +81,7 @@ class AmapCollector:
 
         return all_pois
 
-    async def _search_page(
-        self, city: str, keywords: str, types: str
-    ) -> list[RawPOI]:
+    async def _search_page(self, city: str, keywords: str, types: str) -> list[RawPOI]:
         """分页搜索 POI。"""
         pois: list[RawPOI] = []
         page = 1
@@ -100,9 +101,7 @@ class AmapCollector:
 
             try:
                 await amap_rate_gate()
-                resp = await self._client.get(
-                    f"{self.BASE_URL}/place/text", params=params
-                )
+                resp = await self._client.get(f"{self.BASE_URL}/place/text", params=params)
                 data = resp.json()
 
                 if data.get("status") != "1":
@@ -167,11 +166,8 @@ class AmapCollector:
         # 营业时间
         open_time = None
         close_time = None
-        biz_info = raw.get("biz_ext", {})
-        if isinstance(biz_info, dict):
-            rating = biz_info.get("rating")
-            # 高德没有直接返回 open/close time，需要通过详情接口获取
-            # 这里先留空，后续通过详情接口补全
+        # 高德没有直接返回 open/close time，需要通过详情接口获取；
+        # 这里先留空，后续通过详情接口补全。
 
         return RawPOI(
             name=name,

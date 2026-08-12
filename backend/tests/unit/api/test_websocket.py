@@ -61,9 +61,7 @@ class TestConnectionManagerState:
     async def test_load_state_prefers_hot_layer(self):
         manager = ConnectionManager()
         hot = {"phase": "gathering", "turn": 2}
-        with patch.object(
-            memory_manager, "load_state", new=AsyncMock(return_value=hot)
-        ):
+        with patch.object(memory_manager, "load_state", new=AsyncMock(return_value=hot)):
             with patch.object(memory_manager, "hot_set", new=AsyncMock()):
                 state = await manager.load_state("s1")
         assert state["turn"] == 2
@@ -72,9 +70,7 @@ class TestConnectionManagerState:
     async def test_load_state_falls_back_to_warm_and_writes_hot(self):
         manager = ConnectionManager()
         warm = {"phase": "gathering", "turn": 1}
-        with patch.object(
-            memory_manager, "load_state", new=AsyncMock(return_value=warm)
-        ):
+        with patch.object(memory_manager, "load_state", new=AsyncMock(return_value=warm)):
             with patch.object(memory_manager, "hot_set", new=AsyncMock()) as mock_hot_set:
                 state = await manager.load_state("s1")
         assert state["turn"] == 1
@@ -84,9 +80,7 @@ class TestConnectionManagerState:
     async def test_load_state_falls_back_to_cold_archive(self):
         manager = ConnectionManager()
         cold = {"phase": "completed", "turn": 4, "destination": "上海"}
-        with patch.object(
-            memory_manager, "load_state", new=AsyncMock(return_value=cold)
-        ):
+        with patch.object(memory_manager, "load_state", new=AsyncMock(return_value=cold)):
             with patch.object(memory_manager, "hot_set", new=AsyncMock()) as mock_hot_set:
                 state = await manager.load_state("s1")
         assert state["destination"] == "上海"
@@ -109,9 +103,7 @@ class TestConnectionManagerState:
                     "load_state",
                     new=AsyncMock(return_value=default_conversation_state()),
                 ):
-                    with patch.object(
-                        memory_manager, "hot_set", new=AsyncMock()
-                    ) as mock_hot_set:
+                    with patch.object(memory_manager, "hot_set", new=AsyncMock()) as mock_hot_set:
                         state = await manager.load_state("s1")
 
         assert state["turn"] == 5
@@ -130,9 +122,7 @@ class TestConnectionManagerState:
                     "load_state",
                     new=AsyncMock(return_value=default_conversation_state()),
                 ):
-                    with patch.object(
-                        memory_manager, "hot_set", new=AsyncMock()
-                    ) as mock_hot_set:
+                    with patch.object(memory_manager, "hot_set", new=AsyncMock()) as mock_hot_set:
                         state = await manager.load_state("s1")
 
         assert state["phase"] == "gathering"
@@ -286,9 +276,7 @@ async def test_load_state_ignores_hot_set_exception_on_write_back():
     """Write-back hot_set failure must not crash load_state."""
     manager = ConnectionManager()
     warm = {"phase": "gathering", "turn": 1}
-    with patch.object(
-        memory_manager, "load_state", new=AsyncMock(return_value=warm)
-    ):
+    with patch.object(memory_manager, "load_state", new=AsyncMock(return_value=warm)):
         with patch.object(
             memory_manager, "hot_set", new=AsyncMock(side_effect=RuntimeError("boom"))
         ):
@@ -309,7 +297,9 @@ async def test_save_gathering_state_reports_session_conflict():
 
     sent: list[dict[str, Any]] = []
     with patch.object(memory_manager, "acquire_lock", _failing_lock):
-        with patch.object(manager, "send_json", new=AsyncMock(side_effect=lambda _s, d: sent.append(d))):
+        with patch.object(
+            manager, "send_json", new=AsyncMock(side_effect=lambda _s, d: sent.append(d))
+        ):
             ok = await manager.save_gathering_state("s1", state)
 
     assert ok is False

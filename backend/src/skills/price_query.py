@@ -10,6 +10,7 @@ When Tavily/Amap is configured, the estimate is enriched with web search.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from typing import Optional
@@ -25,15 +26,46 @@ logger = logging.getLogger(__name__)
 # Based on 2025 China city consumption level data.
 # --------------------------------------------------------------------------- #
 CITY_TIER: dict[str, int] = {
-    "北京": 1, "上海": 1, "广州": 1, "深圳": 1,
-    "杭州": 1, "成都": 2, "重庆": 2, "武汉": 2, "南京": 2,
-    "苏州": 2, "西安": 2, "长沙": 2, "天津": 2, "郑州": 2,
-    "东莞": 2, "青岛": 2, "宁波": 2, "厦门": 2, "昆明": 2,
-    "大连": 2, "福州": 2, "合肥": 2, "无锡": 2, "沈阳": 2,
-    "济南": 2, "哈尔滨": 3, "长春": 3, "石家庄": 3,
-    "南宁": 3, "贵阳": 3, "南昌": 3, "太原": 3, "兰州": 3,
-    "海口": 3, "三亚": 2, "大理": 3, "丽江": 3, "桂林": 3,
-    "拉萨": 3, "乌鲁木齐": 3,
+    "北京": 1,
+    "上海": 1,
+    "广州": 1,
+    "深圳": 1,
+    "杭州": 1,
+    "成都": 2,
+    "重庆": 2,
+    "武汉": 2,
+    "南京": 2,
+    "苏州": 2,
+    "西安": 2,
+    "长沙": 2,
+    "天津": 2,
+    "郑州": 2,
+    "东莞": 2,
+    "青岛": 2,
+    "宁波": 2,
+    "厦门": 2,
+    "昆明": 2,
+    "大连": 2,
+    "福州": 2,
+    "合肥": 2,
+    "无锡": 2,
+    "沈阳": 2,
+    "济南": 2,
+    "哈尔滨": 3,
+    "长春": 3,
+    "石家庄": 3,
+    "南宁": 3,
+    "贵阳": 3,
+    "南昌": 3,
+    "太原": 3,
+    "兰州": 3,
+    "海口": 3,
+    "三亚": 2,
+    "大理": 3,
+    "丽江": 3,
+    "桂林": 3,
+    "拉萨": 3,
+    "乌鲁木齐": 3,
 }
 
 _TIER_MULTIPLIER = {1: 1.5, 2: 1.0, 3: 0.7, None: 1.0}
@@ -44,31 +76,31 @@ _TIER_MULTIPLIER = {1: 1.5, 2: 1.0, 3: 0.7, None: 1.0}
 _BASE_PRICES: dict[str, dict] = {
     "ticket": {
         # 5A / landmark attractions
-        "5A级景区":  (80, 200),
-        "主题公园":  (150, 500),
-        "博物馆":    (0, 60),
-        "自然风光":  (30, 120),
-        "历史古迹":  (30, 100),
-        "寺庙":      (0, 50),
-        "default":   (30, 150),
+        "5A级景区": (80, 200),
+        "主题公园": (150, 500),
+        "博物馆": (0, 60),
+        "自然风光": (30, 120),
+        "历史古迹": (30, 100),
+        "寺庙": (0, 50),
+        "default": (30, 150),
     },
     "meal": {
-        "高端餐厅":  (200, 600),
-        "特色餐厅":  (80, 200),
-        "小吃":      (10, 40),
-        "夜市":      (20, 60),
-        "早茶":      (30, 80),
-        "火锅":      (80, 150),
-        "快餐":      (20, 40),
-        "default":   (40, 120),
+        "高端餐厅": (200, 600),
+        "特色餐厅": (80, 200),
+        "小吃": (10, 40),
+        "夜市": (20, 60),
+        "早茶": (30, 80),
+        "火锅": (80, 150),
+        "快餐": (20, 40),
+        "default": (40, 120),
     },
     "hotel": {
-        "经济型":    (100, 250),
-        "舒适型":    (250, 500),
-        "高档型":    (500, 1000),
-        "豪华型":    (1000, 3000),
-        "民宿":      (150, 400),
-        "default":   (200, 600),
+        "经济型": (100, 250),
+        "舒适型": (250, 500),
+        "高档型": (500, 1000),
+        "豪华型": (1000, 3000),
+        "民宿": (150, 400),
+        "default": (200, 600),
     },
 }
 
@@ -76,20 +108,34 @@ _BASE_PRICES: dict[str, dict] = {
 # Known price anchors for major attractions (authoritative, from official sites)
 # --------------------------------------------------------------------------- #
 _KNOWN_TICKETS: dict[str, tuple[int, int]] = {
-    "故宫": (40, 60),          "天坛": (15, 34),
-    "颐和园": (20, 30),        "长城": (35, 45),
-    "兵马俑": (120, 120),      "大雁塔": (40, 50),
-    "外滩": (0, 0),            "东方明珠": (199, 299),
-    "豫园": (30, 40),           "上海迪士尼": (475, 799),
-    "灵隐寺": (30, 45),        "西湖": (0, 0),
-    "武侯祠": (50, 60),        "杜甫草堂": (50, 60),
-    "大熊猫繁育基地": (55, 55), "青城山": (80, 90),
-    "都江堰": (80, 90),        "趵突泉": (40, 45),
-    "千佛山": (28, 30),        "大明湖": (0, 0),
-    "中山陵": (0, 0),           "夫子庙": (0, 0),
-    "鼓浪屿": (30, 50),        "张家界": (225, 248),
-    "九寨沟": (169, 220),      "黄山": (190, 230),
-    "桂林漓江": (100, 215),    "布达拉宫": (100, 200),
+    "故宫": (40, 60),
+    "天坛": (15, 34),
+    "颐和园": (20, 30),
+    "长城": (35, 45),
+    "兵马俑": (120, 120),
+    "大雁塔": (40, 50),
+    "外滩": (0, 0),
+    "东方明珠": (199, 299),
+    "豫园": (30, 40),
+    "上海迪士尼": (475, 799),
+    "灵隐寺": (30, 45),
+    "西湖": (0, 0),
+    "武侯祠": (50, 60),
+    "杜甫草堂": (50, 60),
+    "大熊猫繁育基地": (55, 55),
+    "青城山": (80, 90),
+    "都江堰": (80, 90),
+    "趵突泉": (40, 45),
+    "千佛山": (28, 30),
+    "大明湖": (0, 0),
+    "中山陵": (0, 0),
+    "夫子庙": (0, 0),
+    "鼓浪屿": (30, 50),
+    "张家界": (225, 248),
+    "九寨沟": (169, 220),
+    "黄山": (190, 230),
+    "桂林漓江": (100, 215),
+    "布达拉宫": (100, 200),
 }
 
 
@@ -106,19 +152,28 @@ class PriceQuerySkill(Tool):
     # ------------------------------------------------------------------ #
 
     async def query_price(
-        self, poi_name: str, city: str, price_type: str,
+        self,
+        poi_name: str,
+        city: str,
+        price_type: str,
     ) -> PriceInfo:
-        result = await self.run({
-            "poi_name": poi_name, "city": city, "price_type": price_type,
-        })
+        result = await self.run(
+            {
+                "poi_name": poi_name,
+                "city": city,
+                "price_type": price_type,
+            }
+        )
         data = result.data
         if isinstance(data, PriceInfo):
             return data
         if isinstance(data, dict):
             return PriceInfo(**data)
         return PriceInfo(
-            poi_name=poi_name, price_type=price_type,
-            data_source="unavailable", is_fallback=True,
+            poi_name=poi_name,
+            price_type=price_type,
+            data_source="unavailable",
+            is_fallback=True,
             fallback_reason="price lookup returned no data",
         )
 
@@ -130,7 +185,10 @@ class PriceQuerySkill(Tool):
         # 1. Web search enrichment (optional, non-blocking)
         if settings.tavily_api_key:
             try:
-                info = await self._fetch_price_api(poi_name, city, price_type)
+                info = await asyncio.wait_for(
+                    self._fetch_price_api(poi_name, city, price_type),
+                    timeout=min(1.0, self.timeout / 2),
+                )
                 if info and not info.is_fallback:
                     return ToolResult(data=info, data_source="api", confidence=0.85)
             except Exception:
@@ -146,16 +204,39 @@ class PriceQuerySkill(Tool):
             fallback_reason="structured price model (city tier + category)",
         )
 
+    async def _fallback(self, params: dict, last_error: Optional[Exception]) -> ToolResult:
+        """Price lookup must degrade to the deterministic model, never empty."""
+        info = self._structured_estimate(
+            params.get("poi_name", ""),
+            params.get("city", ""),
+            params.get("price_type", "unknown"),
+        )
+        return ToolResult(
+            data=info,
+            data_source=info.data_source,
+            confidence=info.confidence,
+            is_fallback=True,
+            fallback_reason=(
+                f"structured estimate after {type(last_error).__name__}"
+                if last_error
+                else "structured price estimate"
+            ),
+        )
+
     # ------------------------------------------------------------------ #
     # Web search enhancement
     # ------------------------------------------------------------------ #
 
     async def _fetch_price_api(
-        self, poi_name: str, city: str, price_type: str,
+        self,
+        poi_name: str,
+        city: str,
+        price_type: str,
     ) -> Optional[PriceInfo]:
         """Try Tavily search for real price information."""
         try:
             from skills.tavily_search import TavilySearchSkill
+
             tavily = TavilySearchSkill()
             query = f"{city} {poi_name} "
             if price_type == "ticket":
@@ -170,10 +251,14 @@ class PriceQuerySkill(Tool):
                 range_ = _extract_price_range(answer)
                 if range_:
                     return PriceInfo(
-                        poi_name=poi_name, price_type=price_type,
-                        price_range=range_, currency="CNY",
-                        source="tavily", data_source="api",
-                        confidence=0.85, is_fallback=False,
+                        poi_name=poi_name,
+                        price_type=price_type,
+                        price_range=range_,
+                        currency="CNY",
+                        source="tavily",
+                        data_source="api",
+                        confidence=0.85,
+                        is_fallback=False,
                     )
         except Exception:
             pass
@@ -184,9 +269,25 @@ class PriceQuerySkill(Tool):
     # ------------------------------------------------------------------ #
 
     def _structured_estimate(
-        self, poi_name: str, city: str, price_type: str,
+        self,
+        poi_name: str,
+        city: str,
+        price_type: str,
     ) -> PriceInfo:
         """Estimate price using city tier + POI category + known anchors."""
+        if price_type not in _BASE_PRICES:
+            return PriceInfo(
+                poi_name=poi_name,
+                price_type=price_type,
+                price_range=None,
+                currency="CNY",
+                source="",
+                data_source="fallback",
+                confidence=0.0,
+                is_fallback=True,
+                fallback_reason="unsupported price type",
+            )
+
         tier = CITY_TIER.get(city)
         multiplier = _TIER_MULTIPLIER[tier] if tier else _TIER_MULTIPLIER[None]
 
@@ -194,10 +295,13 @@ class PriceQuerySkill(Tool):
         if price_type == "ticket" and poi_name in _KNOWN_TICKETS:
             lo, hi = _KNOWN_TICKETS[poi_name]
             return PriceInfo(
-                poi_name=poi_name, price_type=price_type,
+                poi_name=poi_name,
+                price_type=price_type,
                 price_range=f"¥{lo}-{hi}",
-                currency="CNY", source="official",
-                data_source="built_in", confidence=0.9,
+                currency="CNY",
+                source="official",
+                data_source="built_in",
+                confidence=0.9,
                 is_fallback=True,
                 fallback_reason="known ticket price anchor",
             )
@@ -211,10 +315,13 @@ class PriceQuerySkill(Tool):
         hi = max(lo + 10, int(base_hi * multiplier))
 
         return PriceInfo(
-            poi_name=poi_name, price_type=price_type,
+            poi_name=poi_name,
+            price_type=price_type,
             price_range=f"¥{lo}-{hi}",
-            currency="CNY", source="",
-            data_source="built_in", confidence=0.7,
+            currency="CNY",
+            source="",
+            data_source="built_in",
+            confidence=0.7,
             is_fallback=True,
             fallback_reason=f"structured estimate ({_tier_label(tier)} · {sub})",
         )
@@ -223,6 +330,7 @@ class PriceQuerySkill(Tool):
 # --------------------------------------------------------------------------- #
 # Helpers
 # --------------------------------------------------------------------------- #
+
 
 def _classify_poi(name: str, price_type: str) -> str:
     """Classify a POI into a sub-category for pricing."""

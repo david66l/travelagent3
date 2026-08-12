@@ -89,9 +89,7 @@ def test_sweep_due_archives_archives_due_sessions():
 
 
 def test_sweep_due_archives_noop_when_nothing_due():
-    with patch.object(
-        memory_tasks.redis_client, "zrangebyscore", new=AsyncMock(return_value=[])
-    ):
+    with patch.object(memory_tasks.redis_client, "zrangebyscore", new=AsyncMock(return_value=[])):
         with patch.object(
             memory_tasks.redis_client, "zremrangebyscore", new=AsyncMock()
         ) as mock_zrem:

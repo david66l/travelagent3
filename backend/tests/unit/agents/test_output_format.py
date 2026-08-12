@@ -23,8 +23,9 @@ async def test_format_returns_markdown(agent):
 
 @pytest.mark.asyncio
 async def test_format_with_llm_polish(agent):
-    with patch("agents.output_format.settings.output_polish_enabled", True), patch(
-        "core.llm_client.llm.chat", new=AsyncMock(return_value="polished markdown")
+    with (
+        patch("agents.output_format.settings.output_polish_enabled", True),
+        patch("core.llm_client.llm.chat", new=AsyncMock(return_value="polished markdown")),
     ):
         result = await agent.format("original", [], "北京", "sess1")
     assert result["markdown"] == "polished markdown"
@@ -33,11 +34,11 @@ async def test_format_with_llm_polish(agent):
 @pytest.mark.asyncio
 async def test_format_skips_polish_when_disabled(agent):
     """With polish disabled, the writer's prose is returned unchanged (no LLM)."""
-    with patch("agents.output_format.settings.output_polish_enabled", False), patch(
-        "core.llm_client.llm.chat", new=AsyncMock()
-    ) as mock_chat, patch(
-        "core.llm_client.llm.stream_chat", new=AsyncMock()
-    ) as mock_stream:
+    with (
+        patch("agents.output_format.settings.output_polish_enabled", False),
+        patch("core.llm_client.llm.chat", new=AsyncMock()) as mock_chat,
+        patch("core.llm_client.llm.stream_chat", new=AsyncMock()) as mock_stream,
+    ):
         result = await agent.format("# 北京3天\n\n第一天：故宫", [], "北京", "sess1")
     assert result["markdown"] == "# 北京3天\n\n第一天：故宫"
     mock_chat.assert_not_called()
@@ -53,9 +54,10 @@ async def test_polish_disabled_streams_existing_prose(agent):
         chunks.append(chunk)
 
     text = "# 标题\n第一行\n第二行\n"
-    with patch("agents.output_format.settings.output_polish_enabled", False), patch(
-        "core.llm_client.llm.stream_chat", new=AsyncMock()
-    ) as mock_stream:
+    with (
+        patch("agents.output_format.settings.output_polish_enabled", False),
+        patch("core.llm_client.llm.stream_chat", new=AsyncMock()) as mock_stream,
+    ):
         returned = await agent.polish_markdown(text, on_token=collect)
     assert returned == text
     assert "".join(chunks) == text
@@ -75,8 +77,9 @@ async def test_polish_enabled_streams_real_llm_tokens(agent):
     async def collect(chunk: str) -> None:
         chunks.append(chunk)
 
-    with patch("agents.output_format.settings.output_polish_enabled", True), patch(
-        "core.llm_client.llm.stream_chat", new=fake_stream
+    with (
+        patch("agents.output_format.settings.output_polish_enabled", True),
+        patch("core.llm_client.llm.stream_chat", new=fake_stream),
     ):
         returned = await agent.polish_markdown("原始行程", on_token=collect)
 
@@ -115,9 +118,7 @@ async def test_generate_map_url_without_amap_key(agent):
 @pytest.mark.asyncio
 async def test_generate_map_url_with_amap_key(agent):
     with patch("agents.output_format.settings.amap_key", "test-key"):
-        url = agent.generate_map_url(
-            [{"activities": [{"name": "故宫"}, {"name": "长城"}]}], "北京"
-        )
+        url = agent.generate_map_url([{"activities": [{"name": "故宫"}, {"name": "长城"}]}], "北京")
     assert url is None
 
 

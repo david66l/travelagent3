@@ -1,7 +1,7 @@
 """Chaos / degradation tests (M6 §13.4)."""
 
 import pytest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 from core.cost_circuit_breaker import is_cost_circuit_active, record_daily_tokens
 from core.model_router import select_model

@@ -40,8 +40,6 @@ class DeadLetterArchiveRepository:
 
     async def list_recent(self, limit: int = 50) -> list[DeadLetterArchive]:
         result = await self.db.execute(
-            select(DeadLetterArchive)
-            .order_by(DeadLetterArchive.archived_at.desc())
-            .limit(limit)
+            select(DeadLetterArchive).order_by(DeadLetterArchive.archived_at.desc()).limit(limit)
         )
         return list(result.scalars().all())

@@ -8,7 +8,6 @@ graph in backend/src/graph continues to use them.
 from __future__ import annotations
 
 import logging
-import random
 import re
 from typing import Any
 
@@ -20,8 +19,20 @@ logger = logging.getLogger(__name__)
 # Used to keep them out of the meal-naming pool so a lunch is never labelled with
 # a "码头" or "车站".
 _NON_DINING_KW = (
-    "码头", "游船", "游轮", "邮轮", "轮渡", "渡口", "客运",
-    "车站", "地铁站", "机场", "停车", "口岸", "缆车", "索道",
+    "码头",
+    "游船",
+    "游轮",
+    "邮轮",
+    "轮渡",
+    "渡口",
+    "客运",
+    "车站",
+    "地铁站",
+    "机场",
+    "停车",
+    "口岸",
+    "缆车",
+    "索道",
 )
 
 
@@ -56,6 +67,7 @@ async def _weather_check_async(state: dict) -> dict:
     today = datetime.now().strftime("%Y-%m-%d")
     try:
         from datetime import timedelta
+
         end_date = (datetime.now() + timedelta(days=travel_days + 1)).strftime("%Y-%m-%d")
     except Exception:
         end_date = today
@@ -71,7 +83,6 @@ async def _weather_check_async(state: dict) -> dict:
 
     # Try AMap weather first (free, already have the key)
     from core.settings import settings as _s
-    import httpx
 
     weather: list[dict] = []
 
@@ -86,8 +97,14 @@ async def _weather_check_async(state: dict) -> dict:
 
     if not weather:
         # Fallback: geography estimation
-        from skills.weather_query import CITY_COORDS, _estimate_temp, _estimate_condition, _estimate_precip
+        from skills.weather_query import (
+            CITY_COORDS,
+            _estimate_temp,
+            _estimate_condition,
+            _estimate_precip,
+        )
         import random
+
         coords = CITY_COORDS.get(destination, CITY_COORDS.get(destination.rstrip("市省")))
         lat = coords[0] if coords else 30.0
         try:
@@ -95,18 +112,21 @@ async def _weather_check_async(state: dict) -> dict:
             e = datetime.strptime(end_date, "%Y-%m-%d")
             cur = s
             while cur <= e:
-                h, l = _estimate_temp(lat, cur.month)
-                h += random.randint(-3, 3)
-                l += random.randint(-2, 2)
-                weather.append({
-                    "date": cur.strftime("%Y-%m-%d"),
-                    "condition": _estimate_condition(lat, cur.month),
-                    "temp_high": h, "temp_low": l,
-                    "precipitation_chance": _estimate_precip(lat, cur.month),
-                    "recommendation": "（估算数据）",
-                    "data_source": "fallback",
-                    "is_fallback": True,
-                })
+                high, low = _estimate_temp(lat, cur.month)
+                high += random.randint(-3, 3)
+                low += random.randint(-2, 2)
+                weather.append(
+                    {
+                        "date": cur.strftime("%Y-%m-%d"),
+                        "condition": _estimate_condition(lat, cur.month),
+                        "temp_high": high,
+                        "temp_low": low,
+                        "precipitation_chance": _estimate_precip(lat, cur.month),
+                        "recommendation": "（估算数据）",
+                        "data_source": "fallback",
+                        "is_fallback": True,
+                    }
+                )
                 cur += timedelta(days=1)
         except ValueError:
             pass
@@ -119,20 +139,42 @@ async def _weather_check_async(state: dict) -> dict:
     }
 
 
-async def _fetch_amap_weather(destination: str, start_date: str, end_date: str, key: str) -> list[dict]:
+async def _fetch_amap_weather(
+    destination: str, start_date: str, end_date: str, key: str
+) -> list[dict]:
     """Fetch weather from AMap API for weather_check_node."""
     from datetime import datetime
     import httpx
 
     # City → adcode mapping (subset of weather_query's _CITY_ADCODE)
     ADCODE: dict[str, str] = {
-        "北京": "110000", "上海": "310000", "广州": "440100", "深圳": "440300",
-        "成都": "510100", "杭州": "330100", "西安": "610100", "重庆": "500000",
-        "苏州": "320500", "南京": "320100", "厦门": "350200", "青岛": "370200",
-        "大理": "532901", "丽江": "530700", "三亚": "460200", "长沙": "430100",
-        "武汉": "420100", "昆明": "530100", "桂林": "450300", "拉萨": "540100",
-        "济南": "370100", "郑州": "410100", "天津": "120000", "合肥": "340100",
-        "哈尔滨": "230100", "长春": "220100", "沈阳": "210100",
+        "北京": "110000",
+        "上海": "310000",
+        "广州": "440100",
+        "深圳": "440300",
+        "成都": "510100",
+        "杭州": "330100",
+        "西安": "610100",
+        "重庆": "500000",
+        "苏州": "320500",
+        "南京": "320100",
+        "厦门": "350200",
+        "青岛": "370200",
+        "大理": "532901",
+        "丽江": "530700",
+        "三亚": "460200",
+        "长沙": "430100",
+        "武汉": "420100",
+        "昆明": "530100",
+        "桂林": "450300",
+        "拉萨": "540100",
+        "济南": "370100",
+        "郑州": "410100",
+        "天津": "120000",
+        "合肥": "340100",
+        "哈尔滨": "230100",
+        "长春": "220100",
+        "沈阳": "210100",
     }
     adcode = ADCODE.get(destination, ADCODE.get(destination.rstrip("市省"), ""))
     if not adcode:
@@ -161,15 +203,19 @@ async def _fetch_amap_weather(destination: str, start_date: str, end_date: str, 
             except (ValueError, KeyError):
                 continue
             if s <= d <= e:
-                results.append({
-                    "date": cast["date"],
-                    "condition": cast.get("dayweather", "多云"),
-                    "temp_high": int(float(cast.get("daytemp_float", cast.get("daytemp", 25)))),
-                    "temp_low": int(float(cast.get("nighttemp_float", cast.get("nighttemp", 15)))),
-                    "precipitation_chance": 70 if "雨" in cast.get("dayweather", "") else 10,
-                    "data_source": "api",
-                    "is_fallback": False,
-                })
+                results.append(
+                    {
+                        "date": cast["date"],
+                        "condition": cast.get("dayweather", "多云"),
+                        "temp_high": int(float(cast.get("daytemp_float", cast.get("daytemp", 25)))),
+                        "temp_low": int(
+                            float(cast.get("nighttemp_float", cast.get("nighttemp", 15)))
+                        ),
+                        "precipitation_chance": 70 if "雨" in cast.get("dayweather", "") else 10,
+                        "data_source": "api",
+                        "is_fallback": False,
+                    }
+                )
     return results
 
 
@@ -188,15 +234,14 @@ async def _user_memory_async(state: dict) -> dict:
     if stage == "completed" and user_id and user_id != "anonymous":
         try:
             from data.profile_service import profile_service
+
             itinerary = state.get("itinerary", [])
             destination = profile.get("destination", "")
             visited = [destination] if destination else []
             await profile_service.update_profile(
                 user_id,
                 visited_cities=visited,
-                trip_budget=sum(
-                    d.get("total_cost", 0) for d in itinerary
-                ) / max(len(itinerary), 1),
+                trip_budget=sum(d.get("total_cost", 0) for d in itinerary) / max(len(itinerary), 1),
             )
             logger.info("Trip end: updated profile for user %s", user_id)
         except Exception as exc:
@@ -207,10 +252,16 @@ async def _user_memory_async(state: dict) -> dict:
     if user_id and user_id != "anonymous":
         try:
             from data.profile_service import profile_service
+
             stored = await profile_service.get_profile(user_id)
             if stored:
-                for key in ("visited_cities", "favorite_spots", "liked_foods",
-                            "avoided_foods", "avg_daily_budget"):
+                for key in (
+                    "visited_cities",
+                    "favorite_spots",
+                    "liked_foods",
+                    "avoided_foods",
+                    "avg_daily_budget",
+                ):
                     if stored.get(key) and not profile.get(key):
                         profile[key] = stored[key]
         except Exception as exc:
@@ -290,6 +341,7 @@ async def _rag_async(state: dict) -> dict:
     if destination:
         try:
             from data.repository import repo
+
             query = f"{destination} {' '.join(profile.get('interests') or [])} 旅游攻略"
             tips = await repo.search_knowledge(query, city=destination, top_k=3)
             knowledge.extend(tips)
@@ -397,9 +449,11 @@ async def _planner_async(state: dict) -> dict:
         # fallback: use existing POI query
         from agents.realtime_query import RealtimeQueryAgent
         from skills.city_data import CITY_DEFAULTS
+
         qa = RealtimeQueryAgent()
         try:
             import asyncio as aio
+
             pois = await aio.wait_for(
                 qa.query_pois(destination, profile_obj.interests + profile_obj.food_preferences),
                 timeout=3.0,
@@ -428,9 +482,7 @@ async def _planner_async(state: dict) -> dict:
             min_attr = max(6, profile_obj.travel_days * 2)
             include_restaurant = slots.get("include_restaurant", False)
             min_total = max(8, profile_obj.travel_days * 3) if include_restaurant else min_attr
-            amap_pois = await _amap_supplement(
-                destination, min_attr, min_total, include_restaurant
-            )
+            amap_pois = await _amap_supplement(destination, min_attr, min_total, include_restaurant)
             if amap_pois:
                 poi_inputs = amap_pois
             else:
@@ -479,7 +531,9 @@ async def _planner_async(state: dict) -> dict:
                 _kept.append(p)
         logger.info(
             "Capped candidate POIs %d → %d for %d-day trip",
-            len(poi_inputs), len(_kept), profile_obj.travel_days,
+            len(poi_inputs),
+            len(_kept),
+            profile_obj.travel_days,
         )
         poi_inputs = _kept
 
@@ -497,6 +551,7 @@ async def _planner_async(state: dict) -> dict:
     # geographic cluster instead of zig-zagging across the city.
     amap_minutes = None
     from core.settings import settings as _settings
+
     if _settings.amap_key:
         try:
             amap_minutes = await _trace_build_amap_matrix(poi_inputs, _settings.amap_key)
@@ -516,14 +571,21 @@ async def _planner_async(state: dict) -> dict:
     _dates_raw = merged.get("travel_dates") or slots.get("travel_dates") or ""
     if _dates_raw:
         from datetime import datetime as _dt, timedelta as _td
+
         _start_str = (
             str(_dates_raw)
-            .replace(" to ", "|").replace("~", "|").replace("至", "|").replace("—", "|")
-            .split("|")[0].strip()[:10]
+            .replace(" to ", "|")
+            .replace("~", "|")
+            .replace("至", "|")
+            .replace("—", "|")
+            .split("|")[0]
+            .strip()[:10]
         )
         try:
             _start = _dt.strptime(_start_str, "%Y-%m-%d")
-            day_weekdays = [(_start + _td(days=k)).weekday() for k in range(profile_obj.travel_days)]
+            day_weekdays = [
+                (_start + _td(days=k)).weekday() for k in range(profile_obj.travel_days)
+            ]
         except ValueError:
             day_weekdays = []
 
@@ -699,9 +761,16 @@ async def _ensure_sufficient_pois(
             existing_names.add(poi.name)
 
     # Layer 2: AMap API if still insufficient and key configured
-    needed_attr = max(0, min_attractions - len(attractions) - len([a for a in added if a.category == "attraction"]))
+    needed_attr = max(
+        0,
+        min_attractions - len(attractions) - len([a for a in added if a.category == "attraction"]),
+    )
     needed_total = max(0, min_total - total - len(added))
-    if (needed_attr > 0 or needed_total > 0) and (amap_pois := await _amap_supplement(destination, needed_attr, needed_total, include_restaurant)):
+    if (needed_attr > 0 or needed_total > 0) and (
+        amap_pois := await _amap_supplement(
+            destination, needed_attr, needed_total, include_restaurant
+        )
+    ):
         for i, poi in enumerate(amap_pois):
             if poi.name in existing_names:
                 continue
@@ -755,7 +824,9 @@ async def _amap_supplement(
     results: list[Any] = []
     try:
         if needed_attr > 0:
-            raw = await collector.search_pois(destination, types="风景名胜|公园广场|寺庙道观|纪念馆")
+            raw = await collector.search_pois(
+                destination, types="风景名胜|公园广场|寺庙道观|纪念馆"
+            )
             for i, r in enumerate(raw):
                 results.append(_raw_poi_to_poi_input(r, f"amap-attr-{i}"))
         if include_restaurant and needed_total > 0:
@@ -852,17 +923,39 @@ def _vrp_response_to_itinerary(
     exceeds it are skipped while a cheaper option exists, so a high-end 西餐/酒吧
     cannot blow the daily food budget. 0 disables the gate.
     """
-    import math
     import re as _re
 
     restaurant_pois = list(restaurant_pois or [])
 
     # Local Shanghai-style cuisine tags get a bias so the trip has a 本帮 main
     # line instead of drifting into repeated chain 寿喜烧/日料.
-    _LOCAL_TAGS = {"本帮", "本帮菜", "上海菜", "沪菜", "小笼", "小笼包", "生煎", "面馆", "小吃", "弄堂", "面馆"}
+    _LOCAL_TAGS = {
+        "本帮",
+        "本帮菜",
+        "上海菜",
+        "沪菜",
+        "小笼",
+        "小笼包",
+        "生煎",
+        "面馆",
+        "小吃",
+        "弄堂",
+        "面馆",
+    }
     # Pricey/non-local venue types that repeatedly broke the budget (FLAIR 高空
     # 酒吧, 夏朵花园 西餐). Downranked when a per-meal budget is set.
-    _PRICEY_TAGS = {"酒吧", "bar", "西餐", "西餐厅", "法餐", "日本料理", "自助餐", "buffet", "高档", "星级"}
+    _PRICEY_TAGS = {
+        "酒吧",
+        "bar",
+        "西餐",
+        "西餐厅",
+        "法餐",
+        "日本料理",
+        "自助餐",
+        "buffet",
+        "高档",
+        "星级",
+    }
 
     def _brand(name: str) -> str:
         """Strip a trailing branch suffix so chain outlets dedup as one brand.
@@ -873,7 +966,7 @@ def _vrp_response_to_itinerary(
 
     def _cuisine_key(r) -> str:
         """A coarse cuisine signature for diversity (first meaningful tag)."""
-        for t in (r.tags or []):
+        for t in r.tags or []:
             return t
         return _brand(r.name)
 
@@ -931,8 +1024,12 @@ def _vrp_response_to_itinerary(
 
         raw_start = (
             str(travel_dates)
-            .replace(" to ", "|").replace("~", "|").replace("至", "|").replace("—", "|")
-            .split("|")[0].strip()[:10]
+            .replace(" to ", "|")
+            .replace("~", "|")
+            .replace("至", "|")
+            .replace("—", "|")
+            .split("|")[0]
+            .strip()[:10]
         )
         try:
             start_date = _dt.strptime(raw_start, "%Y-%m-%d")
@@ -966,36 +1063,41 @@ def _vrp_response_to_itinerary(
             end_min = int(end_parts[0]) * 60 + int(end_parts[1])
             transit_min = max(0, start_min - previous_end) if previous_end is not None else 0
             total_transit += transit_min
-            activities.append({
-                "poi_name": poi_name,
-                "category": a.category,
-                "start_time": a.start_time,
-                "end_time": a.end_time,
-                "duration_min": a.duration_min,
-                "ticket_price": a.ticket_price,
-                "transport_cost": a.transport_cost,
-                "transit_from_prev": (
-                    {"mode": "transit", "duration_min": transit_min}
-                    if previous_end is not None else None
-                ),
-                "location": {"lat": a.lat, "lng": a.lng},
-                "tags": tags,
-            })
+            activities.append(
+                {
+                    "poi_name": poi_name,
+                    "category": a.category,
+                    "start_time": a.start_time,
+                    "end_time": a.end_time,
+                    "duration_min": a.duration_min,
+                    "ticket_price": a.ticket_price,
+                    "transport_cost": a.transport_cost,
+                    "transit_from_prev": (
+                        {"mode": "transit", "duration_min": transit_min}
+                        if previous_end is not None
+                        else None
+                    ),
+                    "location": {"lat": a.lat, "lng": a.lng},
+                    "tags": tags,
+                }
+            )
             previous_end = end_min
         day_date = None
         if start_date is not None:
             from datetime import timedelta as _td
 
             day_date = (start_date + _td(days=day.day_number - 1)).strftime("%Y-%m-%d")
-        itinerary.append({
-            "day_number": day.day_number,
-            "date": day_date,
-            "activities": activities,
-            "total_cost": day.total_cost,
-            "transport_cost": day.transport_cost,
-            "total_transit_time_min": total_transit,
-            "total_walking_steps": 0,
-        })
+        itinerary.append(
+            {
+                "day_number": day.day_number,
+                "date": day_date,
+                "activities": activities,
+                "total_cost": day.total_cost,
+                "transport_cost": day.transport_cost,
+                "total_transit_time_min": total_transit,
+                "total_walking_steps": 0,
+            }
+        )
     return itinerary
 
 
@@ -1114,7 +1216,10 @@ async def _respond_async(state: dict) -> str:
             [{"role": "system", "content": system}, {"role": "user", "content": user_msg}],
             task_type="chat",
         )
-        return answer.strip() or "我可以帮你规划行程、推荐景点和美食。告诉我你想去哪、玩几天，我来帮你安排。"
+        return (
+            answer.strip()
+            or "我可以帮你规划行程、推荐景点和美食。告诉我你想去哪、玩几天，我来帮你安排。"
+        )
     except Exception as exc:
         logger.warning("Respond generation failed: %s", exc)
         return "我可以帮你规划行程、推荐景点和美食。告诉我你想去哪、玩几天，我来帮你安排。"
@@ -1135,10 +1240,16 @@ async def _output_async(state: dict) -> dict:
         # Join all questions into a single natural message
         content = "\n".join(questions) if questions else "请问还有什么需要补充的吗？"
         return {
-            "messages": state.get("messages", []) + [{
-                "role": "assistant", "content": content, "type": "clarification",
-                "questions": questions, "missing_slots": state.get("missing_slots", []),
-            }],
+            "messages": state.get("messages", [])
+            + [
+                {
+                    "role": "assistant",
+                    "content": content,
+                    "type": "clarification",
+                    "questions": questions,
+                    "missing_slots": state.get("missing_slots", []),
+                }
+            ],
             "stage": "gathering",
             "next_action": "clarify",
             "profile": state.get("profile"),
@@ -1153,9 +1264,14 @@ async def _output_async(state: dict) -> dict:
         body = "\n".join(f"• {i}" for i in issues) or "当前需求存在可行性冲突。"
         content = f"你的需求暂时不太可行，主要问题：\n{body}\n\n方便的话调整一下（比如放宽预算、减少天数或放缓节奏），我再帮你规划。"
         return {
-            "messages": state.get("messages", []) + [{
-                "role": "assistant", "content": content, "type": "infeasible",
-            }],
+            "messages": state.get("messages", [])
+            + [
+                {
+                    "role": "assistant",
+                    "content": content,
+                    "type": "infeasible",
+                }
+            ],
             "stage": "infeasible",
             "next_action": "infeasible",
         }
@@ -1164,9 +1280,14 @@ async def _output_async(state: dict) -> dict:
     if next_action == "respond":
         answer = await _respond_async(state)
         return {
-            "messages": state.get("messages", []) + [{
-                "role": "assistant", "content": answer, "type": "text",
-            }],
+            "messages": state.get("messages", [])
+            + [
+                {
+                    "role": "assistant",
+                    "content": answer,
+                    "type": "text",
+                }
+            ],
             "stage": "responded",
             "next_action": "respond",
         }
@@ -1174,13 +1295,18 @@ async def _output_async(state: dict) -> dict:
     itinerary = state.get("itinerary", [])
     if not itinerary:
         return {
-            "messages": state.get("messages", []) + [{
-                "role": "assistant", "content": "抱歉，暂时无法生成行程。",
-            }],
+            "messages": state.get("messages", [])
+            + [
+                {
+                    "role": "assistant",
+                    "content": "抱歉，暂时无法生成行程。",
+                }
+            ],
             "stage": "completed",
         }
 
     from core.conversation_state import flatten_profile
+
     profile_raw = flatten_profile(state.get("profile") or {})
     from schemas import DayPlan, UserProfile
     from planner.core.writer import enrich as enrich_writer
@@ -1203,10 +1329,16 @@ async def _output_async(state: dict) -> dict:
         itinerary_enriched = itinerary
 
     return {
-        "messages": state.get("messages", []) + [{
-            "role": "assistant", "content": proposal_text, "type": "itinerary",
-            "itinerary": itinerary_enriched, "warnings": state.get("warnings", []),
-        }],
+        "messages": state.get("messages", [])
+        + [
+            {
+                "role": "assistant",
+                "content": proposal_text,
+                "type": "itinerary",
+                "itinerary": itinerary_enriched,
+                "warnings": state.get("warnings", []),
+            }
+        ],
         "itinerary": itinerary_enriched,
         "stage": "awaiting_booking",
     }
@@ -1219,13 +1351,17 @@ def _format_simple(itinerary: list[dict], profile: dict) -> str:
     ticket_food_total = 0.0
     day_total = 0.0
     for day in itinerary:
-        lines.append(f"## 第{day.get('day_number','?')}天")
+        lines.append(f"## 第{day.get('day_number', '?')}天")
         for act in day.get("activities", []):
             cost = act.get("ticket_price", 0) or act.get("meal_cost", 0) or 0
             ticket_food_total += cost
-            time_str = f"{act.get('start_time','')}-{act.get('end_time','')}" if act.get("start_time") else ""
+            time_str = (
+                f"{act.get('start_time', '')}-{act.get('end_time', '')}"
+                if act.get("start_time")
+                else ""
+            )
             cost_str = f" — ¥{cost:.0f}" if cost else ""
-            lines.append(f"  {time_str} {act.get('poi_name','?')}{cost_str}")
+            lines.append(f"  {time_str} {act.get('poi_name', '?')}{cost_str}")
         # day total_cost (from solver) already includes tickets + food + city transit
         day_total += day.get("total_cost", 0) or 0
 
@@ -1298,9 +1434,24 @@ async def _booking_tool_async(state: dict) -> dict:
     hotels = _MOCK_HOTELS.get(
         destination,
         [
-            {"name": f"{destination}经济酒店（示例）", "district": "市中心", "price": 220, "rating": 4.2},
-            {"name": f"{destination}舒适酒店（示例）", "district": "市中心", "price": 360, "rating": 4.5},
-            {"name": f"{destination}品质酒店（示例）", "district": "市中心", "price": 520, "rating": 4.7},
+            {
+                "name": f"{destination}经济酒店（示例）",
+                "district": "市中心",
+                "price": 220,
+                "rating": 4.2,
+            },
+            {
+                "name": f"{destination}舒适酒店（示例）",
+                "district": "市中心",
+                "price": 360,
+                "rating": 4.5,
+            },
+            {
+                "name": f"{destination}品质酒店（示例）",
+                "district": "市中心",
+                "price": 520,
+                "rating": 4.7,
+            },
         ],
     )
     if budget_range:
@@ -1315,14 +1466,15 @@ async def _booking_tool_async(state: dict) -> dict:
                 continue
             poi_name = act.get("poi_name", "")
             if poi_name and poi_name not in {t.get("poi_name") for t in booking["tickets"]}:
-                booking["tickets"].append({
-                    "poi_name": poi_name,
-                    "price": act.get("ticket_price") or 0,
-                    "need_reserve": bool(act.get("need_reservation")),
-                })
+                booking["tickets"].append(
+                    {
+                        "poi_name": poi_name,
+                        "price": act.get("ticket_price") or 0,
+                        "need_reserve": bool(act.get("need_reservation")),
+                    }
+                )
 
     # ── 餐厅 ──
-    food_prefs = profile.get("food_preferences") or profile.get("interests") or []
     restaurant_pool = {
         "成都": [
             {"name": "蜀大侠火锅", "cuisine": "川菜", "per_person": 80, "tags": ["辣", "火锅"]},
@@ -1331,28 +1483,35 @@ async def _booking_tool_async(state: dict) -> dict:
             {"name": "大蓉和", "cuisine": "川菜", "per_person": 120, "tags": ["高端", "宴请"]},
         ],
     }
-    restaurants = restaurant_pool.get(destination, [
-        {"name": f"{destination}本地菜馆", "cuisine": "本地菜", "per_person": 60, "tags": []}
-    ])
+    restaurants = restaurant_pool.get(
+        destination,
+        [{"name": f"{destination}本地菜馆", "cuisine": "本地菜", "per_person": 60, "tags": []}],
+    )
     booking["restaurants"] = restaurants[:3]
 
     # ── 格式化 ──
-    city_transport = sum(
-        float(day.get("transport_cost") or 0)
-        or sum(float(act.get("transport_cost") or 0) for act in day.get("activities", []))
-        for day in itinerary
-    ) * travelers_count
+    city_transport = (
+        sum(
+            float(day.get("transport_cost") or 0)
+            or sum(float(act.get("transport_cost") or 0) for act in day.get("activities", []))
+            for day in itinerary
+        )
+        * travelers_count
+    )
     msg, budget_breakdown = _format_booking_summary(
         booking, destination, origin, travel_days, travelers_count, city_transport
     )
 
     return {
-        "messages": state.get("messages", []) + [{
-            "role": "assistant",
-            "content": msg,
-            "type": "booking",
-            "booking_results": booking,
-        }],
+        "messages": state.get("messages", [])
+        + [
+            {
+                "role": "assistant",
+                "content": msg,
+                "type": "booking",
+                "booking_results": booking,
+            }
+        ],
         "booking_results": booking,
         "budget_breakdown": budget_breakdown,
         "stage": "completed",
@@ -1436,7 +1595,7 @@ def _format_booking_summary(
         total_est += food_est
         lines.append(f"---\n💰 **预估总费用：约 ¥{total_est:,}**（机票+酒店+门票+餐饮）")
         if origin:
-            lines.append(f"\n> ⚠️ 以上为模拟参考价，来源标注 mock，实际请以官方渠道为准")
+            lines.append("\n> ⚠️ 以上为模拟参考价，来源标注 mock，实际请以官方渠道为准")
 
     breakdown = {
         "source": "mock_estimate",

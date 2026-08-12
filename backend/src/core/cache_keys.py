@@ -35,7 +35,9 @@ def price_key(poi_id: str, date: str, price_type: str = "default") -> str:
 
 
 def route_key(origin: dict[str, Any], destination: dict[str, Any], mode: str) -> str:
-    payload = json.dumps({"origin": origin, "destination": destination, "mode": mode}, sort_keys=True)
+    payload = json.dumps(
+        {"origin": origin, "destination": destination, "mode": mode}, sort_keys=True
+    )
     h = hashlib.md5(payload.encode()).hexdigest()[:16]
     return f"route:{h}:{CACHE_VERSION}"
 

@@ -7,7 +7,8 @@ Originally extracted from ``agents/itinerary_planner.py`` to decouple data from
 the old LangGraph planning agent.
 """
 
-from schemas import ScoredPOI, Location
+from schemas import Location, ScoredPOI
+from skills.city_data_extra import CITY_EXTRA
 
 CITY_DEFAULTS: dict[str, list[ScoredPOI]] = {
     "上海": [
@@ -2322,11 +2323,9 @@ CITY_DEFAULTS: dict[str, list[ScoredPOI]] = {
     ],
 }
 
+
 # Merge extended POI data. This keeps the original file readable while adding
 # enough attractions/restaurants to support 5-7 day itineraries.
-from skills.city_data_extra import CITY_EXTRA
-
-
 def _merge_city_extras() -> None:
     for city, extras in CITY_EXTRA.items():
         if city not in CITY_DEFAULTS:

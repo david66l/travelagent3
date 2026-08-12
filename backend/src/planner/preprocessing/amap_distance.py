@@ -210,9 +210,7 @@ async def build_amap_minutes_map(
         for j, d in enumerate(pois)
         if _has_coord(d)
         and any(
-            _has_coord(o)
-            and edge_key(o.lat, o.lng, d.lat, d.lng) not in edge_map
-            for o in pois
+            _has_coord(o) and edge_key(o.lat, o.lng, d.lat, d.lng) not in edge_map for o in pois
         )
     ]
 

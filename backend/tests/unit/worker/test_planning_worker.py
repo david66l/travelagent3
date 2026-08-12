@@ -34,7 +34,9 @@ async def test_run_graph_for_job_maps_events_to_stages():
     """Worker should map graph streaming events to PlanningJobEvent rows."""
     worker = PlanningWorker("worker-test")
 
-    async def _fake_stream(*, session_id, user_id, user_input, messages, attachments=None, **kwargs):
+    async def _fake_stream(
+        *, session_id, user_id, user_input, messages, attachments=None, **kwargs
+    ):
         yield {"type": "thinking", "stage": "understand", "payload": {}}
         yield {
             "type": "tool_call",
@@ -83,7 +85,9 @@ async def test_run_graph_for_job_handles_cancellation():
     """Worker should release job as cancelled when cancel_event is set."""
     worker = PlanningWorker("worker-test")
 
-    async def _fake_stream(*, session_id, user_id, user_input, messages, attachments=None, **kwargs):
+    async def _fake_stream(
+        *, session_id, user_id, user_input, messages, attachments=None, **kwargs
+    ):
         yield {"type": "thinking", "stage": "understand", "payload": {}}
 
     job = _make_job()
@@ -110,7 +114,9 @@ async def test_run_graph_for_job_raises_on_error_event():
     """Worker should propagate error graph events as exceptions."""
     worker = PlanningWorker("worker-test")
 
-    async def _fake_stream(*, session_id, user_id, user_input, messages, attachments=None, **kwargs):
+    async def _fake_stream(
+        *, session_id, user_id, user_input, messages, attachments=None, **kwargs
+    ):
         yield {"type": "error", "stage": "error", "payload": {"error": "graph exploded"}}
 
     job = _make_job()
@@ -128,7 +134,9 @@ async def test_run_graph_for_job_uses_feedback_messages():
     worker = PlanningWorker("worker-test")
     captured: dict = {}
 
-    async def _fake_stream(*, session_id, user_id, user_input, messages, attachments=None, **kwargs):
+    async def _fake_stream(
+        *, session_id, user_id, user_input, messages, attachments=None, **kwargs
+    ):
         captured["messages"] = messages
         captured["conversation_state"] = kwargs.get("conversation_state")
         yield {"type": "final", "stage": "completed", "payload": {}}

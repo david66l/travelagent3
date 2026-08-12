@@ -21,1314 +21,570 @@ CORE_POI_CATEGORIES = frozenset({"attraction"})
 # Minimal fallback POIs per city (name + category only)
 CITY_FALLBACK_POIS: dict[str, list[dict]] = {
     "北京": [
-        {
-            "name": "故宫",
-            "category": "attraction"
-        },
-        {
-            "name": "长城",
-            "category": "attraction"
-        },
-        {
-            "name": "天坛",
-            "category": "attraction"
-        },
-        {
-            "name": "颐和园",
-            "category": "attraction"
-        },
-        {
-            "name": "王府井",
-            "category": "attraction"
-        },
-        {
-            "name": "798艺术区",
-            "category": "attraction"
-        },
-        {
-            "name": "南锣鼓巷",
-            "category": "attraction"
-        },
-        {
-            "name": "鸟巢/水立方",
-            "category": "attraction"
-        },
-        {
-            "name": "什刹海",
-            "category": "attraction"
-        },
-        {
-            "name": "国家博物馆",
-            "category": "attraction"
-        },
-        {
-            "name": "景山公园",
-            "category": "attraction"
-        },
-        {
-            "name": "北海公园",
-            "category": "attraction"
-        },
-        {
-            "name": "前门大街",
-            "category": "attraction"
-        },
-        {
-            "name": "雍和宫",
-            "category": "attraction"
-        },
-        {
-            "name": "恭王府",
-            "category": "attraction"
-        },
-        {
-            "name": "全聚德",
-            "category": "restaurant"
-        },
-        {
-            "name": "四季民福",
-            "category": "restaurant"
-        },
-        {
-            "name": "护国寺小吃",
-            "category": "restaurant"
-        },
-        {
-            "name": "方砖厂炸酱面",
-            "category": "restaurant"
-        },
-        {
-            "name": "姚记炒肝",
-            "category": "restaurant"
-        }
+        {"name": "故宫", "category": "attraction"},
+        {"name": "长城", "category": "attraction"},
+        {"name": "天坛", "category": "attraction"},
+        {"name": "颐和园", "category": "attraction"},
+        {"name": "王府井", "category": "attraction"},
+        {"name": "798艺术区", "category": "attraction"},
+        {"name": "南锣鼓巷", "category": "attraction"},
+        {"name": "鸟巢/水立方", "category": "attraction"},
+        {"name": "什刹海", "category": "attraction"},
+        {"name": "国家博物馆", "category": "attraction"},
+        {"name": "景山公园", "category": "attraction"},
+        {"name": "北海公园", "category": "attraction"},
+        {"name": "前门大街", "category": "attraction"},
+        {"name": "雍和宫", "category": "attraction"},
+        {"name": "恭王府", "category": "attraction"},
+        {"name": "全聚德", "category": "restaurant"},
+        {"name": "四季民福", "category": "restaurant"},
+        {"name": "护国寺小吃", "category": "restaurant"},
+        {"name": "方砖厂炸酱面", "category": "restaurant"},
+        {"name": "姚记炒肝", "category": "restaurant"},
     ],
     "上海": [
-        {
-            "name": "外滩",
-            "category": "attraction"
-        },
-        {
-            "name": "东方明珠",
-            "category": "attraction"
-        },
-        {
-            "name": "豫园",
-            "category": "attraction"
-        },
-        {
-            "name": "南京路步行街",
-            "category": "attraction"
-        },
-        {
-            "name": "田子坊",
-            "category": "attraction"
-        },
-        {
-            "name": "新天地",
-            "category": "attraction"
-        },
-        {
-            "name": "陆家嘴",
-            "category": "attraction"
-        },
-        {
-            "name": "上海博物馆",
-            "category": "attraction"
-        },
-        {
-            "name": "城隍庙",
-            "category": "attraction"
-        },
-        {
-            "name": "武康路",
-            "category": "attraction"
-        },
-        {
-            "name": "1933老场坊",
-            "category": "attraction"
-        },
-        {
-            "name": "上海迪士尼",
-            "category": "attraction"
-        },
-        {
-            "name": "思南公馆",
-            "category": "attraction"
-        },
-        {
-            "name": "M50创意园",
-            "category": "attraction"
-        },
-        {
-            "name": "七宝老街",
-            "category": "attraction"
-        },
-        {
-            "name": "南翔馒头店",
-            "category": "restaurant"
-        },
-        {
-            "name": "小杨生煎",
-            "category": "restaurant"
-        },
-        {
-            "name": "老正兴菜馆",
-            "category": "restaurant"
-        },
-        {
-            "name": "新天地美食",
-            "category": "restaurant"
-        },
-        {
-            "name": "云南路美食街",
-            "category": "restaurant"
-        }
+        {"name": "外滩", "category": "attraction"},
+        {"name": "东方明珠", "category": "attraction"},
+        {"name": "豫园", "category": "attraction"},
+        {"name": "南京路步行街", "category": "attraction"},
+        {"name": "田子坊", "category": "attraction"},
+        {"name": "新天地", "category": "attraction"},
+        {"name": "陆家嘴", "category": "attraction"},
+        {"name": "上海博物馆", "category": "attraction"},
+        {"name": "城隍庙", "category": "attraction"},
+        {"name": "武康路", "category": "attraction"},
+        {"name": "1933老场坊", "category": "attraction"},
+        {"name": "上海迪士尼", "category": "attraction"},
+        {"name": "思南公馆", "category": "attraction"},
+        {"name": "M50创意园", "category": "attraction"},
+        {"name": "七宝老街", "category": "attraction"},
+        {"name": "南翔馒头店", "category": "restaurant"},
+        {"name": "小杨生煎", "category": "restaurant"},
+        {"name": "老正兴菜馆", "category": "restaurant"},
+        {"name": "新天地美食", "category": "restaurant"},
+        {"name": "云南路美食街", "category": "restaurant"},
     ],
     "广州": [
-        {
-            "name": "广州塔",
-            "category": "attraction"
-        },
-        {
-            "name": "陈家祠",
-            "category": "attraction"
-        },
-        {
-            "name": "沙面",
-            "category": "attraction"
-        },
-        {
-            "name": "北京路步行街",
-            "category": "attraction"
-        },
-        {
-            "name": "上下九步行街",
-            "category": "attraction"
-        },
-        {
-            "name": "越秀公园",
-            "category": "attraction"
-        },
-        {
-            "name": "珠江夜游",
-            "category": "attraction"
-        },
-        {
-            "name": "广东省博物馆",
-            "category": "attraction"
-        },
-        {
-            "name": "白云山",
-            "category": "attraction"
-        },
-        {
-            "name": "长隆欢乐世界",
-            "category": "attraction"
-        },
-        {
-            "name": "石室圣心大教堂",
-            "category": "attraction"
-        },
-        {
-            "name": "红砖厂",
-            "category": "attraction"
-        },
-        {
-            "name": "永庆坊",
-            "category": "attraction"
-        },
-        {
-            "name": "花城广场",
-            "category": "attraction"
-        },
-        {
-            "name": "华南植物园",
-            "category": "attraction"
-        },
-        {
-            "name": "点都德",
-            "category": "restaurant"
-        },
-        {
-            "name": "陶陶居",
-            "category": "restaurant"
-        },
-        {
-            "name": "广州酒家",
-            "category": "restaurant"
-        },
-        {
-            "name": "银记肠粉",
-            "category": "restaurant"
-        },
-        {
-            "name": "陈添记",
-            "category": "restaurant"
-        }
+        {"name": "广州塔", "category": "attraction"},
+        {"name": "陈家祠", "category": "attraction"},
+        {"name": "沙面", "category": "attraction"},
+        {"name": "北京路步行街", "category": "attraction"},
+        {"name": "上下九步行街", "category": "attraction"},
+        {"name": "越秀公园", "category": "attraction"},
+        {"name": "珠江夜游", "category": "attraction"},
+        {"name": "广东省博物馆", "category": "attraction"},
+        {"name": "白云山", "category": "attraction"},
+        {"name": "长隆欢乐世界", "category": "attraction"},
+        {"name": "石室圣心大教堂", "category": "attraction"},
+        {"name": "红砖厂", "category": "attraction"},
+        {"name": "永庆坊", "category": "attraction"},
+        {"name": "花城广场", "category": "attraction"},
+        {"name": "华南植物园", "category": "attraction"},
+        {"name": "点都德", "category": "restaurant"},
+        {"name": "陶陶居", "category": "restaurant"},
+        {"name": "广州酒家", "category": "restaurant"},
+        {"name": "银记肠粉", "category": "restaurant"},
+        {"name": "陈添记", "category": "restaurant"},
     ],
     "成都": [
-        {
-            "name": "宽窄巷子",
-            "category": "attraction"
-        },
-        {
-            "name": "锦里",
-            "category": "attraction"
-        },
-        {
-            "name": "大熊猫繁育基地",
-            "category": "attraction"
-        },
-        {
-            "name": "武侯祠",
-            "category": "attraction"
-        },
-        {
-            "name": "杜甫草堂",
-            "category": "attraction"
-        },
-        {
-            "name": "春熙路",
-            "category": "attraction"
-        },
-        {
-            "name": "青城山",
-            "category": "attraction"
-        },
-        {
-            "name": "都江堰",
-            "category": "attraction"
-        },
-        {
-            "name": "文殊院",
-            "category": "attraction"
-        },
-        {
-            "name": "人民公园",
-            "category": "attraction"
-        },
-        {
-            "name": "九眼桥",
-            "category": "attraction"
-        },
-        {
-            "name": "金沙遗址",
-            "category": "attraction"
-        },
-        {
-            "name": "太古里",
-            "category": "attraction"
-        },
-        {
-            "name": "黄龙溪古镇",
-            "category": "attraction"
-        },
-        {
-            "name": "东郊记忆",
-            "category": "attraction"
-        },
-        {
-            "name": "蜀大侠火锅",
-            "category": "restaurant"
-        },
-        {
-            "name": "小龙坎",
-            "category": "restaurant"
-        },
-        {
-            "name": "陈麻婆豆腐",
-            "category": "restaurant"
-        },
-        {
-            "name": "钟水饺",
-            "category": "restaurant"
-        },
-        {
-            "name": "龙抄手",
-            "category": "restaurant"
-        }
+        {"name": "宽窄巷子", "category": "attraction"},
+        {"name": "锦里", "category": "attraction"},
+        {"name": "大熊猫繁育基地", "category": "attraction"},
+        {"name": "武侯祠", "category": "attraction"},
+        {"name": "杜甫草堂", "category": "attraction"},
+        {"name": "春熙路", "category": "attraction"},
+        {"name": "青城山", "category": "attraction"},
+        {"name": "都江堰", "category": "attraction"},
+        {"name": "文殊院", "category": "attraction"},
+        {"name": "人民公园", "category": "attraction"},
+        {"name": "九眼桥", "category": "attraction"},
+        {"name": "金沙遗址", "category": "attraction"},
+        {"name": "太古里", "category": "attraction"},
+        {"name": "黄龙溪古镇", "category": "attraction"},
+        {"name": "东郊记忆", "category": "attraction"},
+        {"name": "蜀大侠火锅", "category": "restaurant"},
+        {"name": "小龙坎", "category": "restaurant"},
+        {"name": "陈麻婆豆腐", "category": "restaurant"},
+        {"name": "钟水饺", "category": "restaurant"},
+        {"name": "龙抄手", "category": "restaurant"},
     ],
     "杭州": [
-        {
-            "name": "西湖",
-            "category": "attraction"
-        },
-        {
-            "name": "灵隐寺",
-            "category": "attraction"
-        },
-        {
-            "name": "宋城",
-            "category": "attraction"
-        },
-        {
-            "name": "西溪湿地",
-            "category": "attraction"
-        },
-        {
-            "name": "河坊街",
-            "category": "attraction"
-        },
-        {
-            "name": "千岛湖",
-            "category": "attraction"
-        },
-        {
-            "name": "龙井村",
-            "category": "attraction"
-        },
-        {
-            "name": "断桥残雪",
-            "category": "attraction"
-        },
-        {
-            "name": "雷峰塔",
-            "category": "attraction"
-        },
-        {
-            "name": "楼外楼",
-            "category": "restaurant"
-        },
-        {
-            "name": "知味小笼",
-            "category": "restaurant"
-        },
-        {
-            "name": "外婆家",
-            "category": "restaurant"
-        }
+        {"name": "西湖", "category": "attraction"},
+        {"name": "灵隐寺", "category": "attraction"},
+        {"name": "宋城", "category": "attraction"},
+        {"name": "西溪湿地", "category": "attraction"},
+        {"name": "河坊街", "category": "attraction"},
+        {"name": "千岛湖", "category": "attraction"},
+        {"name": "龙井村", "category": "attraction"},
+        {"name": "断桥残雪", "category": "attraction"},
+        {"name": "雷峰塔", "category": "attraction"},
+        {"name": "楼外楼", "category": "restaurant"},
+        {"name": "知味小笼", "category": "restaurant"},
+        {"name": "外婆家", "category": "restaurant"},
     ],
     "西安": [
-        {
-            "name": "兵马俑",
-            "category": "attraction"
-        },
-        {
-            "name": "大雁塔",
-            "category": "attraction"
-        },
-        {
-            "name": "古城墙",
-            "category": "attraction"
-        },
-        {
-            "name": "回民街",
-            "category": "attraction"
-        },
-        {
-            "name": "华清宫",
-            "category": "attraction"
-        },
-        {
-            "name": "大唐芙蓉园",
-            "category": "attraction"
-        },
-        {
-            "name": "陕西历史博物馆",
-            "category": "attraction"
-        },
-        {
-            "name": "钟楼",
-            "category": "attraction"
-        },
-        {
-            "name": "鼓楼",
-            "category": "attraction"
-        },
-        {
-            "name": "肉夹馍",
-            "category": "restaurant"
-        },
-        {
-            "name": "羊肉泡馍",
-            "category": "restaurant"
-        },
-        {
-            "name": "凉皮",
-            "category": "restaurant"
-        }
+        {"name": "兵马俑", "category": "attraction"},
+        {"name": "大雁塔", "category": "attraction"},
+        {"name": "古城墙", "category": "attraction"},
+        {"name": "回民街", "category": "attraction"},
+        {"name": "华清宫", "category": "attraction"},
+        {"name": "大唐芙蓉园", "category": "attraction"},
+        {"name": "陕西历史博物馆", "category": "attraction"},
+        {"name": "钟楼", "category": "attraction"},
+        {"name": "鼓楼", "category": "attraction"},
+        {"name": "肉夹馍", "category": "restaurant"},
+        {"name": "羊肉泡馍", "category": "restaurant"},
+        {"name": "凉皮", "category": "restaurant"},
     ],
     "重庆": [
-        {
-            "name": "洪崖洞",
-            "category": "attraction"
-        },
-        {
-            "name": "解放碑",
-            "category": "attraction"
-        },
-        {
-            "name": "磁器口",
-            "category": "attraction"
-        },
-        {
-            "name": "长江索道",
-            "category": "attraction"
-        },
-        {
-            "name": "武隆天坑",
-            "category": "attraction"
-        },
-        {
-            "name": "朝天门",
-            "category": "attraction"
-        },
-        {
-            "name": "鹅岭二厂",
-            "category": "attraction"
-        },
-        {
-            "name": "南山一棵树",
-            "category": "attraction"
-        },
-        {
-            "name": "四川美术学院",
-            "category": "attraction"
-        },
-        {
-            "name": "重庆火锅",
-            "category": "restaurant"
-        },
-        {
-            "name": "小面",
-            "category": "restaurant"
-        },
-        {
-            "name": "酸辣粉",
-            "category": "restaurant"
-        }
+        {"name": "洪崖洞", "category": "attraction"},
+        {"name": "解放碑", "category": "attraction"},
+        {"name": "磁器口", "category": "attraction"},
+        {"name": "长江索道", "category": "attraction"},
+        {"name": "武隆天坑", "category": "attraction"},
+        {"name": "朝天门", "category": "attraction"},
+        {"name": "鹅岭二厂", "category": "attraction"},
+        {"name": "南山一棵树", "category": "attraction"},
+        {"name": "四川美术学院", "category": "attraction"},
+        {"name": "重庆火锅", "category": "restaurant"},
+        {"name": "小面", "category": "restaurant"},
+        {"name": "酸辣粉", "category": "restaurant"},
     ],
     "深圳": [
-        {
-            "name": "世界之窗",
-            "category": "attraction"
-        },
-        {
-            "name": "欢乐谷",
-            "category": "attraction"
-        },
-        {
-            "name": "大梅沙",
-            "category": "attraction"
-        },
-        {
-            "name": "华侨城",
-            "category": "attraction"
-        },
-        {
-            "name": "深圳湾公园",
-            "category": "attraction"
-        },
-        {
-            "name": "莲花山公园",
-            "category": "attraction"
-        },
-        {
-            "name": "东门老街",
-            "category": "attraction"
-        },
-        {
-            "name": "海上世界",
-            "category": "attraction"
-        },
-        {
-            "name": "大鹏所城",
-            "category": "attraction"
-        },
-        {
-            "name": "潮汕牛肉火锅",
-            "category": "restaurant"
-        },
-        {
-            "name": "椰子鸡",
-            "category": "restaurant"
-        },
-        {
-            "name": "肠粉",
-            "category": "restaurant"
-        }
+        {"name": "世界之窗", "category": "attraction"},
+        {"name": "欢乐谷", "category": "attraction"},
+        {"name": "大梅沙", "category": "attraction"},
+        {"name": "华侨城", "category": "attraction"},
+        {"name": "深圳湾公园", "category": "attraction"},
+        {"name": "莲花山公园", "category": "attraction"},
+        {"name": "东门老街", "category": "attraction"},
+        {"name": "海上世界", "category": "attraction"},
+        {"name": "大鹏所城", "category": "attraction"},
+        {"name": "潮汕牛肉火锅", "category": "restaurant"},
+        {"name": "椰子鸡", "category": "restaurant"},
+        {"name": "肠粉", "category": "restaurant"},
     ],
     "南京": [
-        {
-            "name": "中山陵",
-            "category": "attraction"
-        },
-        {
-            "name": "夫子庙",
-            "category": "attraction"
-        },
-        {
-            "name": "秦淮河",
-            "category": "attraction"
-        },
-        {
-            "name": "明孝陵",
-            "category": "attraction"
-        },
-        {
-            "name": "总统府",
-            "category": "attraction"
-        },
-        {
-            "name": "鸡鸣寺",
-            "category": "attraction"
-        },
-        {
-            "name": "玄武湖",
-            "category": "attraction"
-        },
-        {
-            "name": "南京博物院",
-            "category": "attraction"
-        },
-        {
-            "name": "老门东",
-            "category": "attraction"
-        },
-        {
-            "name": "鸭血粉丝汤",
-            "category": "restaurant"
-        },
-        {
-            "name": "盐水鸭",
-            "category": "restaurant"
-        },
-        {
-            "name": "小笼包",
-            "category": "restaurant"
-        }
+        {"name": "中山陵", "category": "attraction"},
+        {"name": "夫子庙", "category": "attraction"},
+        {"name": "秦淮河", "category": "attraction"},
+        {"name": "明孝陵", "category": "attraction"},
+        {"name": "总统府", "category": "attraction"},
+        {"name": "鸡鸣寺", "category": "attraction"},
+        {"name": "玄武湖", "category": "attraction"},
+        {"name": "南京博物院", "category": "attraction"},
+        {"name": "老门东", "category": "attraction"},
+        {"name": "鸭血粉丝汤", "category": "restaurant"},
+        {"name": "盐水鸭", "category": "restaurant"},
+        {"name": "小笼包", "category": "restaurant"},
     ],
     "厦门": [
-        {
-            "name": "鼓浪屿",
-            "category": "attraction"
-        },
-        {
-            "name": "南普陀寺",
-            "category": "attraction"
-        },
-        {
-            "name": "厦门大学",
-            "category": "attraction"
-        },
-        {
-            "name": "环岛路",
-            "category": "attraction"
-        },
-        {
-            "name": "曾厝垵",
-            "category": "attraction"
-        },
-        {
-            "name": "中山路步行街",
-            "category": "attraction"
-        },
-        {
-            "name": "胡里山炮台",
-            "category": "attraction"
-        },
-        {
-            "name": "园林植物园",
-            "category": "attraction"
-        },
-        {
-            "name": "沙坡尾",
-            "category": "attraction"
-        },
-        {
-            "name": "沙茶面",
-            "category": "restaurant"
-        },
-        {
-            "name": "海蛎煎",
-            "category": "restaurant"
-        },
-        {
-            "name": "花生汤",
-            "category": "restaurant"
-        }
+        {"name": "鼓浪屿", "category": "attraction"},
+        {"name": "南普陀寺", "category": "attraction"},
+        {"name": "厦门大学", "category": "attraction"},
+        {"name": "环岛路", "category": "attraction"},
+        {"name": "曾厝垵", "category": "attraction"},
+        {"name": "中山路步行街", "category": "attraction"},
+        {"name": "胡里山炮台", "category": "attraction"},
+        {"name": "园林植物园", "category": "attraction"},
+        {"name": "沙坡尾", "category": "attraction"},
+        {"name": "沙茶面", "category": "restaurant"},
+        {"name": "海蛎煎", "category": "restaurant"},
+        {"name": "花生汤", "category": "restaurant"},
     ],
     "青岛": [
-        {
-            "name": "栈桥",
-            "category": "attraction"
-        },
-        {
-            "name": "八大关",
-            "category": "attraction"
-        },
-        {
-            "name": "崂山",
-            "category": "attraction"
-        },
-        {
-            "name": "五四广场",
-            "category": "attraction"
-        },
-        {
-            "name": "青岛啤酒博物馆",
-            "category": "attraction"
-        },
-        {
-            "name": "小鱼山",
-            "category": "attraction"
-        },
-        {
-            "name": "信号山公园",
-            "category": "attraction"
-        },
-        {
-            "name": "金沙滩",
-            "category": "attraction"
-        },
-        {
-            "name": "劈柴院",
-            "category": "attraction"
-        },
-        {
-            "name": "青岛啤酒",
-            "category": "restaurant"
-        },
-        {
-            "name": "海鲜大咖",
-            "category": "restaurant"
-        },
-        {
-            "name": "鲅鱼饺子",
-            "category": "restaurant"
-        }
+        {"name": "栈桥", "category": "attraction"},
+        {"name": "八大关", "category": "attraction"},
+        {"name": "崂山", "category": "attraction"},
+        {"name": "五四广场", "category": "attraction"},
+        {"name": "青岛啤酒博物馆", "category": "attraction"},
+        {"name": "小鱼山", "category": "attraction"},
+        {"name": "信号山公园", "category": "attraction"},
+        {"name": "金沙滩", "category": "attraction"},
+        {"name": "劈柴院", "category": "attraction"},
+        {"name": "青岛啤酒", "category": "restaurant"},
+        {"name": "海鲜大咖", "category": "restaurant"},
+        {"name": "鲅鱼饺子", "category": "restaurant"},
     ],
     "济南": [
         {
             "name": "趵突泉",
             "category": "attraction",
-            "tags": [
-                "泉水",
-                "园林"
-            ],
+            "tags": ["泉水", "园林"],
             "ticket_price": 40,
             "area": "历下区",
             "recommended_hours": "2-3小时",
             "best_time": "上午",
-            "indoor_outdoor": "outdoor"
+            "indoor_outdoor": "outdoor",
         },
         {
             "name": "大明湖",
             "category": "attraction",
-            "tags": [
-                "湖泊",
-                "园林"
-            ],
+            "tags": ["湖泊", "园林"],
             "ticket_price": 0,
             "area": "历下区",
             "recommended_hours": "2-3小时",
             "best_time": "傍晚",
-            "indoor_outdoor": "outdoor"
+            "indoor_outdoor": "outdoor",
         },
         {
             "name": "千佛山",
             "category": "attraction",
-            "tags": [
-                "登山",
-                "佛教"
-            ],
+            "tags": ["登山", "佛教"],
             "ticket_price": 30,
             "area": "历下区",
             "recommended_hours": "2-3小时",
             "best_time": "上午",
-            "indoor_outdoor": "outdoor"
+            "indoor_outdoor": "outdoor",
         },
         {
             "name": "芙蓉街",
             "category": "attraction",
-            "tags": [
-                "美食街",
-                "老街"
-            ],
+            "tags": ["美食街", "老街"],
             "ticket_price": 0,
             "area": "历下区",
             "recommended_hours": "1-2小时",
             "best_time": "晚上",
-            "indoor_outdoor": "outdoor"
+            "indoor_outdoor": "outdoor",
         },
         {
             "name": "山东省博物馆",
             "category": "attraction",
-            "tags": [
-                "历史",
-                "文化"
-            ],
+            "tags": ["历史", "文化"],
             "ticket_price": 0,
             "area": "历城区",
             "recommended_hours": "2-3小时",
             "best_time": "上午",
-            "indoor_outdoor": "indoor"
+            "indoor_outdoor": "indoor",
         },
         {
             "name": "五龙潭",
             "category": "attraction",
-            "tags": [
-                "泉水",
-                "园林"
-            ],
+            "tags": ["泉水", "园林"],
             "ticket_price": 5,
             "area": "天桥区",
             "recommended_hours": "1-2小时",
             "best_time": "上午",
-            "indoor_outdoor": "outdoor"
+            "indoor_outdoor": "outdoor",
         },
         {
             "name": "黑虎泉",
             "category": "attraction",
-            "tags": [
-                "泉水",
-                "免费"
-            ],
+            "tags": ["泉水", "免费"],
             "ticket_price": 0,
             "area": "历下区",
             "recommended_hours": "1小时",
             "best_time": "上午",
-            "indoor_outdoor": "outdoor"
+            "indoor_outdoor": "outdoor",
         },
         {
             "name": "曲水亭街",
             "category": "attraction",
-            "tags": [
-                "老街",
-                "泉水"
-            ],
+            "tags": ["老街", "泉水"],
             "ticket_price": 0,
             "area": "历下区",
             "recommended_hours": "1-2小时",
             "best_time": "下午",
-            "indoor_outdoor": "outdoor"
+            "indoor_outdoor": "outdoor",
         },
         {
             "name": "宽厚里",
             "category": "attraction",
-            "tags": [
-                "美食",
-                "商业"
-            ],
+            "tags": ["美食", "商业"],
             "ticket_price": 0,
             "area": "历下区",
             "recommended_hours": "1-2小时",
             "best_time": "晚上",
-            "indoor_outdoor": "outdoor"
+            "indoor_outdoor": "outdoor",
         },
         {
             "name": "泉城广场",
             "category": "attraction",
-            "tags": [
-                "地标",
-                "夜景"
-            ],
+            "tags": ["地标", "夜景"],
             "ticket_price": 0,
             "area": "历下区",
             "recommended_hours": "1小时",
             "best_time": "晚上",
-            "indoor_outdoor": "outdoor"
+            "indoor_outdoor": "outdoor",
         },
-        {
-            "name": "把子肉",
-            "category": "restaurant",
-            "tags": [
-                "鲁菜",
-                "特色"
-            ]
-        },
-        {
-            "name": "油旋",
-            "category": "restaurant",
-            "tags": [
-                "小吃",
-                "传统"
-            ]
-        },
-        {
-            "name": "甜沫",
-            "category": "restaurant",
-            "tags": [
-                "早餐",
-                "传统"
-            ]
-        },
-        {
-            "name": "草包包子",
-            "category": "restaurant",
-            "tags": [
-                "包子",
-                "老字号"
-            ]
-        },
-        {
-            "name": "孟家扒蹄",
-            "category": "restaurant",
-            "tags": [
-                "卤味",
-                "特色"
-            ]
-        }
+        {"name": "把子肉", "category": "restaurant", "tags": ["鲁菜", "特色"]},
+        {"name": "油旋", "category": "restaurant", "tags": ["小吃", "传统"]},
+        {"name": "甜沫", "category": "restaurant", "tags": ["早餐", "传统"]},
+        {"name": "草包包子", "category": "restaurant", "tags": ["包子", "老字号"]},
+        {"name": "孟家扒蹄", "category": "restaurant", "tags": ["卤味", "特色"]},
     ],
     "三亚": [
         {
             "name": "亚龙湾",
             "category": "attraction",
-            "tags": [
-                "海滩",
-                "自然",
-                "游泳"
-            ],
+            "tags": ["海滩", "自然", "游泳"],
             "ticket_price": 0,
             "area": "亚龙湾",
             "recommended_hours": "半天",
             "best_time": "上午",
             "indoor_outdoor": "outdoor",
-            "location": {
-                "lat": 18.228,
-                "lng": 109.6386
-            }
+            "location": {"lat": 18.228, "lng": 109.6386},
         },
         {
             "name": "天涯海角",
             "category": "attraction",
-            "tags": [
-                "地标",
-                "拍照",
-                "自然"
-            ],
+            "tags": ["地标", "拍照", "自然"],
             "ticket_price": 81,
             "area": "天涯区",
             "recommended_hours": "2-3小时",
             "best_time": "下午",
             "indoor_outdoor": "outdoor",
-            "location": {
-                "lat": 18.2923,
-                "lng": 109.3483
-            }
+            "location": {"lat": 18.2923, "lng": 109.3483},
         },
         {
             "name": "蜈支洲岛",
             "category": "attraction",
-            "tags": [
-                "海岛",
-                "潜水",
-                "自然"
-            ],
+            "tags": ["海岛", "潜水", "自然"],
             "ticket_price": 144,
             "area": "海棠湾",
             "recommended_hours": "全天",
             "best_time": "上午",
             "indoor_outdoor": "outdoor",
-            "location": {
-                "lat": 18.3106,
-                "lng": 109.76
-            }
+            "location": {"lat": 18.3106, "lng": 109.76},
         },
         {
             "name": "南山文化旅游区",
             "category": "attraction",
-            "tags": [
-                "佛教",
-                "文化",
-                "自然"
-            ],
+            "tags": ["佛教", "文化", "自然"],
             "ticket_price": 129,
             "area": "崖州区",
             "recommended_hours": "半天",
             "best_time": "上午",
             "indoor_outdoor": "mixed",
-            "location": {
-                "lat": 18.3056,
-                "lng": 109.2044
-            }
+            "location": {"lat": 18.3056, "lng": 109.2044},
         },
         {
             "name": "三亚湾",
             "category": "attraction",
-            "tags": [
-                "海滩",
-                "日落",
-                "拍照"
-            ],
+            "tags": ["海滩", "日落", "拍照"],
             "ticket_price": 0,
             "area": "三亚湾",
             "recommended_hours": "1-2小时",
             "best_time": "傍晚",
             "indoor_outdoor": "outdoor",
-            "location": {
-                "lat": 18.25,
-                "lng": 109.48
-            }
+            "location": {"lat": 18.25, "lng": 109.48},
         },
         {
             "name": "大东海",
             "category": "attraction",
-            "tags": [
-                "海滩",
-                "游泳",
-                "亲子"
-            ],
+            "tags": ["海滩", "游泳", "亲子"],
             "ticket_price": 0,
             "area": "大东海",
             "recommended_hours": "半天",
             "best_time": "上午",
             "indoor_outdoor": "outdoor",
-            "location": {
-                "lat": 18.225,
-                "lng": 109.518
-            }
+            "location": {"lat": 18.225, "lng": 109.518},
         },
         {
             "name": "鹿回头公园",
             "category": "attraction",
-            "tags": [
-                "观景",
-                "拍照",
-                "夜景"
-            ],
+            "tags": ["观景", "拍照", "夜景"],
             "ticket_price": 45,
             "area": "吉阳区",
             "recommended_hours": "1-2小时",
             "best_time": "傍晚",
             "indoor_outdoor": "outdoor",
-            "location": {
-                "lat": 18.2289,
-                "lng": 109.5286
-            }
+            "location": {"lat": 18.2289, "lng": 109.5286},
         },
         {
             "name": "呀诺达雨林",
             "category": "attraction",
-            "tags": [
-                "雨林",
-                "自然",
-                "亲子"
-            ],
+            "tags": ["雨林", "自然", "亲子"],
             "ticket_price": 168,
             "area": "保亭",
             "recommended_hours": "全天",
             "best_time": "上午",
             "indoor_outdoor": "outdoor",
-            "location": {
-                "lat": 18.4408,
-                "lng": 109.6797
-            }
+            "location": {"lat": 18.4408, "lng": 109.6797},
         },
         {
             "name": "海棠湾免税店",
             "category": "attraction",
-            "tags": [
-                "购物",
-                "免税"
-            ],
+            "tags": ["购物", "免税"],
             "ticket_price": 0,
             "area": "海棠湾",
             "recommended_hours": "2-3小时",
             "best_time": "下午",
             "indoor_outdoor": "indoor",
-            "location": {
-                "lat": 18.3088,
-                "lng": 109.7339
-            }
+            "location": {"lat": 18.3088, "lng": 109.7339},
         },
         {
             "name": "海鲜市场",
             "category": "restaurant",
-            "tags": [
-                "海鲜",
-                "本地"
-            ],
+            "tags": ["海鲜", "本地"],
             "area": "天涯区",
-            "location": {
-                "lat": 18.2525,
-                "lng": 109.5062
-            }
+            "location": {"lat": 18.2525, "lng": 109.5062},
         },
         {
             "name": "椰子鸡",
             "category": "restaurant",
-            "tags": [
-                "海南菜",
-                "清淡"
-            ],
+            "tags": ["海南菜", "清淡"],
             "area": "吉阳区",
-            "location": {
-                "lat": 18.2535,
-                "lng": 109.5162
-            }
+            "location": {"lat": 18.2535, "lng": 109.5162},
         },
         {
             "name": "清补凉",
             "category": "restaurant",
-            "tags": [
-                "甜品",
-                "小吃"
-            ],
+            "tags": ["甜品", "小吃"],
             "area": "市区",
-            "location": {
-                "lat": 18.252,
-                "lng": 109.486
-            }
+            "location": {"lat": 18.252, "lng": 109.486},
         },
         {
             "name": "文昌鸡",
             "category": "restaurant",
-            "tags": [
-                "海南菜",
-                "特色"
-            ],
+            "tags": ["海南菜", "特色"],
             "area": "市区",
-            "location": {
-                "lat": 18.2909,
-                "lng": 109.4988
-            }
+            "location": {"lat": 18.2909, "lng": 109.4988},
         },
         {
             "name": "抱罗粉",
             "category": "restaurant",
-            "tags": [
-                "小吃",
-                "早餐"
-            ],
+            "tags": ["小吃", "早餐"],
             "area": "市区",
-            "location": {
-                "lat": 18.2535,
-                "lng": 109.5162
-            }
-        }
+            "location": {"lat": 18.2535, "lng": 109.5162},
+        },
     ],
     "拉萨": [
         {
             "name": "布达拉宫",
             "category": "attraction",
-            "tags": [
-                "地标",
-                "历史",
-                "文化",
-                "宗教"
-            ],
+            "tags": ["地标", "历史", "文化", "宗教"],
             "ticket_price": 200,
             "area": "城关区",
             "recommended_hours": "2-3小时",
             "best_time": "上午",
             "indoor_outdoor": "mixed",
-            "location": {
-                "lat": 29.6576,
-                "lng": 91.1169
-            }
+            "location": {"lat": 29.6576, "lng": 91.1169},
         },
         {
             "name": "大昭寺",
             "category": "attraction",
-            "tags": [
-                "宗教",
-                "历史",
-                "文化"
-            ],
+            "tags": ["宗教", "历史", "文化"],
             "ticket_price": 85,
             "area": "城关区",
             "recommended_hours": "1-2小时",
             "best_time": "上午",
             "indoor_outdoor": "indoor",
-            "location": {
-                "lat": 29.6537,
-                "lng": 91.1314
-            }
+            "location": {"lat": 29.6537, "lng": 91.1314},
         },
         {
             "name": "八廓街",
             "category": "attraction",
-            "tags": [
-                "老街",
-                "购物",
-                "拍照",
-                "文化"
-            ],
+            "tags": ["老街", "购物", "拍照", "文化"],
             "ticket_price": 0,
             "area": "城关区",
             "recommended_hours": "1-2小时",
             "best_time": "下午",
             "indoor_outdoor": "outdoor",
-            "location": {
-                "lat": 29.6532,
-                "lng": 91.1329
-            }
+            "location": {"lat": 29.6532, "lng": 91.1329},
         },
         {
             "name": "纳木错",
             "category": "attraction",
-            "tags": [
-                "湖泊",
-                "自然",
-                "拍照"
-            ],
+            "tags": ["湖泊", "自然", "拍照"],
             "ticket_price": 120,
             "area": "当雄县",
             "recommended_hours": "全天",
             "best_time": "上午",
             "indoor_outdoor": "outdoor",
-            "location": {
-                "lat": 30.72,
-                "lng": 90.92
-            }
+            "location": {"lat": 30.72, "lng": 90.92},
         },
         {
             "name": "色拉寺",
             "category": "attraction",
-            "tags": [
-                "宗教",
-                "文化",
-                "辩经"
-            ],
+            "tags": ["宗教", "文化", "辩经"],
             "ticket_price": 50,
             "area": "城关区",
             "recommended_hours": "1-2小时",
             "best_time": "下午",
             "indoor_outdoor": "mixed",
-            "location": {
-                "lat": 29.695,
-                "lng": 91.138
-            }
+            "location": {"lat": 29.695, "lng": 91.138},
         },
         {
             "name": "罗布林卡",
             "category": "attraction",
-            "tags": [
-                "园林",
-                "历史",
-                "文化"
-            ],
+            "tags": ["园林", "历史", "文化"],
             "ticket_price": 60,
             "area": "城关区",
             "recommended_hours": "2-3小时",
             "best_time": "上午",
             "indoor_outdoor": "outdoor",
-            "location": {
-                "lat": 29.6554,
-                "lng": 91.0979
-            }
+            "location": {"lat": 29.6554, "lng": 91.0979},
         },
         {
             "name": "哲蚌寺",
             "category": "attraction",
-            "tags": [
-                "宗教",
-                "建筑",
-                "文化"
-            ],
+            "tags": ["宗教", "建筑", "文化"],
             "ticket_price": 60,
             "area": "城关区",
             "recommended_hours": "2-3小时",
             "best_time": "上午",
             "indoor_outdoor": "mixed",
-            "location": {
-                "lat": 29.67,
-                "lng": 91.05
-            }
+            "location": {"lat": 29.67, "lng": 91.05},
         },
         {
             "name": "羊卓雍措",
             "category": "attraction",
-            "tags": [
-                "湖泊",
-                "自然",
-                "拍照"
-            ],
+            "tags": ["湖泊", "自然", "拍照"],
             "ticket_price": 60,
             "area": "浪卡子县",
             "recommended_hours": "半天",
             "best_time": "上午",
             "indoor_outdoor": "outdoor",
-            "location": {
-                "lat": 28.95,
-                "lng": 90.68
-            }
+            "location": {"lat": 28.95, "lng": 90.68},
         },
         {
             "name": "西藏博物馆",
             "category": "attraction",
-            "tags": [
-                "博物馆",
-                "历史",
-                "文化"
-            ],
+            "tags": ["博物馆", "历史", "文化"],
             "ticket_price": 0,
             "area": "城关区",
             "recommended_hours": "2-3小时",
             "best_time": "上午",
             "indoor_outdoor": "indoor",
-            "location": {
-                "lat": 29.653,
-                "lng": 91.105
-            }
+            "location": {"lat": 29.653, "lng": 91.105},
         },
         {
             "name": "藏餐馆",
             "category": "restaurant",
-            "tags": [
-                "藏餐",
-                "特色"
-            ],
+            "tags": ["藏餐", "特色"],
             "area": "城关区",
-            "location": {
-                "lat": 29.654,
-                "lng": 91.131
-            }
+            "location": {"lat": 29.654, "lng": 91.131},
         },
         {
             "name": "酥油茶",
             "category": "restaurant",
-            "tags": [
-                "饮品",
-                "传统"
-            ],
+            "tags": ["饮品", "传统"],
             "area": "城关区",
-            "location": {
-                "lat": 29.654,
-                "lng": 91.131
-            }
+            "location": {"lat": 29.654, "lng": 91.131},
         },
         {
             "name": "甜茶馆",
             "category": "restaurant",
-            "tags": [
-                "饮品",
-                "小吃"
-            ],
+            "tags": ["饮品", "小吃"],
             "area": "城关区",
-            "location": {
-                "lat": 29.654,
-                "lng": 91.131
-            }
+            "location": {"lat": 29.654, "lng": 91.131},
         },
         {
             "name": "牦牛肉火锅",
             "category": "restaurant",
-            "tags": [
-                "火锅",
-                "特色"
-            ],
+            "tags": ["火锅", "特色"],
             "area": "城关区",
-            "location": {
-                "lat": 29.654,
-                "lng": 91.131
-            }
+            "location": {"lat": 29.654, "lng": 91.131},
         },
         {
             "name": "糌粑",
             "category": "restaurant",
-            "tags": [
-                "主食",
-                "传统"
-            ],
+            "tags": ["主食", "传统"],
             "area": "城关区",
-            "location": {
-                "lat": 29.654,
-                "lng": 91.131
-            }
-        }
-    ]
+            "location": {"lat": 29.654, "lng": 91.131},
+        },
+    ],
 }
 
 
@@ -1387,9 +643,7 @@ class POISearchSkill(Tool):
         city = params["city"]
         keywords = params.get("keywords", [])
         tasks = [
-            self._run_for_category(
-                {"city": city, "keywords": keywords, "category": cat}
-            )
+            self._run_for_category({"city": city, "keywords": keywords, "category": cat})
             for cat in POI_CATEGORIES
         ]
         results = await asyncio.gather(*tasks)
@@ -1538,11 +792,8 @@ class POISearchSkill(Tool):
         """Infer P0–P3 priority for repair/budget logic."""
         if poi.priority and poi.priority != "P2":
             return poi
-        name = poi.name
         tags = poi.tags or []
-        if poi.category == "attraction" and (
-            "5A" in tags or "地标" in tags or poi.score >= 0.9
-        ):
+        if poi.category == "attraction" and ("5A" in tags or "地标" in tags or poi.score >= 0.9):
             priority = "P0"
         elif poi.category == "attraction":
             priority = "P1"

@@ -45,7 +45,16 @@ class FallbackSearcher:
         local = await repo.search_attractions(city, limit=20)
         if local:
             logger.debug("Local hit: %d attractions for %s", len(local), city)
-            return [{"name": a.name, "category": a.category, "price": a.ticket_price, "tags": a.tags, "source": "local"} for a in local]
+            return [
+                {
+                    "name": a.name,
+                    "category": a.category,
+                    "price": a.ticket_price,
+                    "tags": a.tags,
+                    "source": "local",
+                }
+                for a in local
+            ]
 
         # 2. 本地缺失 → 高德 API
         logger.info("Local miss for %s, falling back to Amap API", city)
@@ -76,7 +85,13 @@ class FallbackSearcher:
         logger.info("Amap returned %d POIs for %s, upserted %d", len(raw_pois), city, upserted)
 
         return [
-            {"name": r.name, "category": r.category, "price": r.ticket_price, "tags": r.tags, "source": "amap"}
+            {
+                "name": r.name,
+                "category": r.category,
+                "price": r.ticket_price,
+                "tags": r.tags,
+                "source": "amap",
+            }
             for r in raw_pois
         ]
 
@@ -105,7 +120,13 @@ class FallbackSearcher:
                 pass
 
         return [
-            {"name": r.name, "category": r.category, "price": r.ticket_price, "tags": r.tags, "source": "amap"}
+            {
+                "name": r.name,
+                "category": r.category,
+                "price": r.ticket_price,
+                "tags": r.tags,
+                "source": "amap",
+            }
             for r in raw_pois
         ]
 

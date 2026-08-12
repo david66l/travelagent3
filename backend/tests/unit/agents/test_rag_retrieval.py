@@ -84,12 +84,14 @@ async def test_retrieve_triggers_fallback_when_empty(agent):
     repo.search_bm25 = AsyncMock(return_value=[])
 
     fallback = MagicMock()
-    fallback.fallback = AsyncMock(return_value={
-        "poi_candidates": [_make_poi("fb-1", "Fallback", "structured")],
-        "retrieval_empty": False,
-        "fallback_used": True,
-        "fallback_reason": "hardcoded_safety_set",
-    })
+    fallback.fallback = AsyncMock(
+        return_value={
+            "poi_candidates": [_make_poi("fb-1", "Fallback", "structured")],
+            "retrieval_empty": False,
+            "fallback_used": True,
+            "fallback_reason": "hardcoded_safety_set",
+        }
+    )
 
     agent_with_fallback = TravelRetrievalRAGAgent(repo=repo, fallback=fallback)
     slots = TravelSlots(destination="北京", travel_days=3)

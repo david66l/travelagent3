@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID, uuid4
 
@@ -203,9 +202,7 @@ class DataRepository:
             await db.commit()
             return new_id
 
-    async def upsert_knowledge_tip(
-        self, city: str, content: str, content_type: str
-    ) -> None:
+    async def upsert_knowledge_tip(self, city: str, content: str, content_type: str) -> None:
         """入库攻略贴士并生成向量（pgvector）。"""
         from data.embedding import get_embedder
 

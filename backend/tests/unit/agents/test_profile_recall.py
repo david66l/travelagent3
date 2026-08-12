@@ -109,9 +109,7 @@ async def test_service_failure_is_graceful(agent):
 async def test_redis_short_term_memory_read(agent):
     slots = TravelSlots(destination="成都")
     redis_mock = MagicMock()
-    redis_mock.get_json = AsyncMock(
-        return_value={"profile": {"personal": {"pace": "relaxed"}}}
-    )
+    redis_mock.get_json = AsyncMock(return_value={"profile": {"personal": {"pace": "relaxed"}}})
     service = ProfileService()
     service.get_profile = AsyncMock(return_value={})
     ctx, _ = _fake_async_session()
@@ -120,9 +118,7 @@ async def test_redis_short_term_memory_read(agent):
     )
 
     with patch("agents.profile_recall.async_session_maker", ctx):
-        result = await agent_with_mock.recall(
-            "user-1", slots, session_id="session-1"
-        )
+        result = await agent_with_mock.recall("user-1", slots, session_id="session-1")
 
     redis_mock.get_json.assert_awaited_once_with("session:session-1:state")
     assert result["source"] == "short_term"

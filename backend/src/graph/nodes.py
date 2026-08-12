@@ -73,10 +73,12 @@ async def confirm_gate_node(state: dict[str, Any]) -> dict[str, Any]:
     """
     from langgraph.types import interrupt
 
-    decision = interrupt({
-        "type": "awaiting_confirm",
-        "itinerary": state.get("itinerary"),
-    })
+    decision = interrupt(
+        {
+            "type": "awaiting_confirm",
+            "itinerary": state.get("itinerary"),
+        }
+    )
     if isinstance(decision, str):
         decision = {"action": decision}
     decision = decision or {}
@@ -121,9 +123,7 @@ async def hallucination_check_node(state: dict[str, Any]) -> dict[str, Any]:
 
     # warnings is a reducer field → return only this node's new suggestions.
     new_warnings = (
-        list(result.improvement_suggestions)
-        if result and result.improvement_suggestions
-        else []
+        list(result.improvement_suggestions) if result and result.improvement_suggestions else []
     )
 
     return {
@@ -356,14 +356,10 @@ async def output_node(state: dict[str, Any]) -> dict[str, Any]:
         base["safety_result"] = safety_dict
 
     enriched_itin = base.get("itinerary") or itinerary
-    final_md = polished or (
-        base["messages"][-1].get("content", "") if base.get("messages") else ""
-    )
+    final_md = polished or (base["messages"][-1].get("content", "") if base.get("messages") else "")
 
     try:
-        artifacts = await output_format_agent.build_artifacts(
-            final_md, enriched_itin, city, sid
-        )
+        artifacts = await output_format_agent.build_artifacts(final_md, enriched_itin, city, sid)
     except Exception as exc:
         logger.warning("Artifact build failed: %s", exc)
         artifacts = {"pdf": None, "excel": None, "map": None}
@@ -407,16 +403,13 @@ def _trace_apply_single_change(
             day["activities"] = [a for a in acts if a.get("poi_name") != poi_id]
         elif action == "replace" and poi_id and change.get("new_poi"):
             day["activities"] = [
-                {**a, **change["new_poi"]} if a.get("poi_name") == poi_id else a
-                for a in acts
+                {**a, **change["new_poi"]} if a.get("poi_name") == poi_id else a for a in acts
             ]
         elif action == "add" and change.get("new_poi"):
             day["activities"] = acts + [change["new_poi"]]
         elif action == "reorder" and change.get("order"):
             order = {name: i for i, name in enumerate(change["order"])}
-            day["activities"] = sorted(
-                acts, key=lambda a: order.get(a.get("poi_name"), len(order))
-            )
+            day["activities"] = sorted(acts, key=lambda a: order.get(a.get("poi_name"), len(order)))
     return new_itinerary
 
 
@@ -424,7 +417,9 @@ def _trace_apply_single_change(
 async def apply_single_change_node(state: dict[str, Any]) -> dict[str, Any]:
     """Apply a single Human-in-the-loop modification and replan locally."""
     change = state.get("pending_change")
-    itinerary = state.get("itinerary") or state.get("itinerary_final") or state.get("itinerary_draft") or []
+    itinerary = (
+        state.get("itinerary") or state.get("itinerary_final") or state.get("itinerary_draft") or []
+    )
     if not change or not itinerary:
         return {"stage": "change_applied"}
 
@@ -510,7 +505,8 @@ def _trace_replan_local(
             if a.get("poi_name")
         }
         candidates = [
-            c for c in (poi_candidates or [])
+            c
+            for c in (poi_candidates or [])
             if (c.get("spot_name") or c.get("name")) not in used
             and (c.get("spot_name") or c.get("name")) != poi
             and c.get("category", "attraction") == "attraction"
@@ -614,14 +610,14 @@ async def replan_local_node(state: dict[str, Any]) -> dict[str, Any]:
     then flows to output → confirm_gate so the user can accept the adjustment.
     """
     event = state.get("external_event") or {}
-    itinerary = state.get("itinerary") or state.get("itinerary_final") or state.get("itinerary_draft") or []
+    itinerary = (
+        state.get("itinerary") or state.get("itinerary_final") or state.get("itinerary_draft") or []
+    )
     if not itinerary:
         # No prior plan to adjust → fall back to a fresh solve.
         return await plan_node(state)
 
-    new_itinerary, note = _trace_replan_local(
-        event, itinerary, state.get("poi_candidates") or []
-    )
+    new_itinerary, note = _trace_replan_local(event, itinerary, state.get("poi_candidates") or [])
 
     return {
         "itinerary": new_itinerary,

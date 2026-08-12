@@ -11,6 +11,19 @@ import core.database as database
 from core.database import Base, async_session_maker, reset_engine
 from models.planning_job import PlanningJob, PlanningJobEvent
 
+
+def pytest_collection_modifyitems(items):
+    """Label tests that transitively require the real PostgreSQL fixture.
+
+    ``client`` depends on ``db``, so checking pytest's expanded fixture list
+    also classifies API tests without maintaining a brittle path allowlist.
+    """
+    requires_db = pytest.mark.requires_db
+    for item in items:
+        if "db" in item.fixturenames:
+            item.add_marker(requires_db)
+
+
 # ===== 1. LLM Global Mock (module-level, before any imports) =====
 # Must set BEFORE agents modules are imported, since they do
 # `from core.llm_client import llm` which binds a local reference.
@@ -49,6 +62,7 @@ def mock_llm(monkeypatch):
 
 
 # ===== 2. Redis Global Mock (module-level) =====
+
 
 def _make_lock_mock():
     lock = AsyncMock()

@@ -57,7 +57,9 @@ class ProfileService:
                 profile["favorite_spots"] = row["favorite_spots"] or []
                 profile["liked_foods"] = row["liked_foods"] or []
                 profile["avoided_foods"] = row["avoided_foods"] or []
-                profile["avg_daily_budget"] = float(row["avg_daily_budget"]) if row["avg_daily_budget"] else None
+                profile["avg_daily_budget"] = (
+                    float(row["avg_daily_budget"]) if row["avg_daily_budget"] else None
+                )
                 profile["preferred_transport"] = row["preferred_transport"] or ""
                 profile["preferred_accommodation"] = row["preferred_accommodation"] or ""
                 return profile
@@ -94,15 +96,25 @@ class ProfileService:
                 if existing:
                     merged: dict = {}
                     if visited_cities:
-                        merged["visited_cities"] = list(set((existing["visited_cities"] or []) + visited_cities))
+                        merged["visited_cities"] = list(
+                            set((existing["visited_cities"] or []) + visited_cities)
+                        )
                     if favorite_spots:
-                        merged["favorite_spots"] = list(set((existing["favorite_spots"] or []) + favorite_spots))
+                        merged["favorite_spots"] = list(
+                            set((existing["favorite_spots"] or []) + favorite_spots)
+                        )
                     if avoid_spots:
-                        merged["avoid_spots"] = list(set((existing["avoid_spots"] or []) + avoid_spots))
+                        merged["avoid_spots"] = list(
+                            set((existing["avoid_spots"] or []) + avoid_spots)
+                        )
                     if liked_foods:
-                        merged["liked_foods"] = list(set((existing["liked_foods"] or []) + liked_foods))
+                        merged["liked_foods"] = list(
+                            set((existing["liked_foods"] or []) + liked_foods)
+                        )
                     if avoided_foods:
-                        merged["avoided_foods"] = list(set((existing["avoided_foods"] or []) + avoided_foods))
+                        merged["avoided_foods"] = list(
+                            set((existing["avoided_foods"] or []) + avoided_foods)
+                        )
                     if trip_budget is not None:
                         old_count = existing["trip_count"] or 0
                         old_avg = float(existing["avg_daily_budget"] or 0)
@@ -122,7 +134,9 @@ class ProfileService:
                         # Build positional SET clause dynamically.
                         columns = list(merged.keys())
                         set_clause = ", ".join(
-                            f"{col} = ${i + 2}::jsonb" if col == "profile_json" else f"{col} = ${i + 2}"
+                            f"{col} = ${i + 2}::jsonb"
+                            if col == "profile_json"
+                            else f"{col} = ${i + 2}"
                             for i, col in enumerate(columns)
                         )
                         values = [merged[col] for col in columns]

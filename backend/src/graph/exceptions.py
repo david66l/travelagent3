@@ -69,7 +69,9 @@ def classify_error(node: str, exc: Exception) -> NodeException:
     elif "refusal" in msg or "content_filter" in msg:
         error_type = NodeErrors.LLM_REFUSAL
     elif "connection" in msg or "unavailable" in msg:
-        error_type = NodeErrors.DB_UNAVAILABLE if "postgres" in msg else NodeErrors.EXTERNAL_API_ERROR
+        error_type = (
+            NodeErrors.DB_UNAVAILABLE if "postgres" in msg else NodeErrors.EXTERNAL_API_ERROR
+        )
     elif "vrp" in msg or "solver" in msg:
         error_type = NodeErrors.VRP_SERVICE_ERROR
     else:

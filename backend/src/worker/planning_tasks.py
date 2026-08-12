@@ -11,6 +11,7 @@ from sqlalchemy import update
 
 from core.celery_app import celery_app
 from core.database import async_session_maker
+from core.dead_letter import push_dead_letter
 from core.metrics import incr
 from core.settings import settings
 from core.task_retry import (
@@ -108,6 +109,7 @@ def execute_planning_job(self: Any, job_id: str) -> bool:
 @celery_app.task(name="worker.planning_tasks.enforce_cancel_deadline")  # type: ignore[untyped-decorator]
 def enforce_cancel_deadline(job_id: str) -> bool:
     """Force-cancel a job stuck in cancelling (PRD §4.7)."""
+
     async def _enforce() -> bool:
         async with async_session_maker() as db:
             repo = PlanningJobRepository(db)

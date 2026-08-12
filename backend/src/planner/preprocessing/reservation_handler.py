@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 from vrp_solver_service.models import POIInput, ReminderOutput, ReservationInput
 
 if TYPE_CHECKING:
-    from vrp_solver_service.models import ConstraintsInput
+    pass
 
 logger = logging.getLogger(__name__)
 

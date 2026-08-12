@@ -94,7 +94,9 @@ class PersonaRules:
         if "max_walk_minutes" in rules:
             profile.max_walk_minutes = min(profile.max_walk_minutes, rules["max_walk_minutes"])
         if "max_transit_minutes" in rules:
-            profile.max_transit_minutes = min(profile.max_transit_minutes, rules["max_transit_minutes"])
+            profile.max_transit_minutes = min(
+                profile.max_transit_minutes, rules["max_transit_minutes"]
+            )
         return profile
 
 
@@ -117,15 +119,11 @@ def feasibility_check(profile: UserProfile) -> list[str]:
 
     # 老年人 + 高强度 = 冲突
     if profile.has_elderly and profile.pace == "intensive":
-        conflicts.append(
-            "有老人同行但选择了紧凑节奏，建议调整为 'moderate' 或 'relaxed'"
-        )
+        conflicts.append("有老人同行但选择了紧凑节奏，建议调整为 'moderate' 或 'relaxed'")
 
     # 儿童 + 深夜活动 = 冲突
     if profile.has_children and profile.pace == "intensive":
-        conflicts.append(
-            "有儿童同行但选择了紧凑节奏，建议增加休息时间"
-        )
+        conflicts.append("有儿童同行但选择了紧凑节奏，建议增加休息时间")
 
     return conflicts
 

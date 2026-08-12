@@ -112,6 +112,7 @@ markers = [
     "performance: timing-sensitive benchmarks (not in standard CI)",
     "security: security regression tests (M5)",
     "chaos: degradation and fault-injection scenarios (M6)",
+    "requires_db: requires the configured PostgreSQL service",
 ]
 
 [tool.coverage.run]

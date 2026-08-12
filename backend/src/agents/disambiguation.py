@@ -83,7 +83,12 @@ class DisambiguationEngine:
         matched = [w for w in vague_words if w in raw_input]
 
         if not matched and not candidates_from_llm:
-            return {"has_ambiguity": False, "field": "destination", "candidates": [], "question": ""}
+            return {
+                "has_ambiguity": False,
+                "field": "destination",
+                "candidates": [],
+                "question": "",
+            }
 
         candidates = candidates_from_llm or []
         if matched:

@@ -121,12 +121,8 @@ class ContentSafetyEngine:
         shopping_flag, shopping_score, shopping_suggestion = cls.detect_shopping_trip(
             itinerary, user_input
         )
-        illegal_flag, illegal_score, illegal_suggestion = cls.detect_illegal_route(
-            itinerary
-        )
-        unsafe_flag, unsafe_score, unsafe_suggestion = cls.detect_unsafe_activity(
-            itinerary
-        )
+        illegal_flag, illegal_score, illegal_suggestion = cls.detect_illegal_route(itinerary)
+        unsafe_flag, unsafe_score, unsafe_suggestion = cls.detect_unsafe_activity(itinerary)
 
         scores = {
             "shopping_trip": shopping_score,

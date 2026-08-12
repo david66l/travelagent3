@@ -85,3 +85,33 @@ def test_execute_planning_job_retryable_marks_retrying():
                         assert "retry scheduled" in str(exc)
 
     mock_retrying.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_finalize_dead_letter_pushes_record_and_marks_job_failed():
+    repo = AsyncMock()
+    db = AsyncMock()
+    db.execute = AsyncMock()
+    db.commit = AsyncMock()
+
+    class SessionContext:
+        async def __aenter__(self):
+            return db
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    with (
+        patch("worker.planning_tasks.push_dead_letter", new=AsyncMock()) as mock_push,
+        patch("worker.planning_tasks.async_session_maker", return_value=SessionContext()),
+        patch("worker.planning_tasks.PlanningJobRepository", return_value=repo),
+        patch("worker.planning_tasks.incr") as mock_incr,
+    ):
+        await planning_tasks._finalize_dead_letter("job-failed", ValueError("bad input"), "task-1")
+
+    mock_push.assert_awaited_once()
+    assert mock_push.await_args.kwargs["job_id"] == "job-failed"
+    assert mock_push.await_args.kwargs["task_id"] == "task-1"
+    repo.update_status.assert_awaited_once_with("job-failed", "failed")
+    db.commit.assert_awaited_once()
+    mock_incr.assert_called_once_with("planning_jobs_failed_total")

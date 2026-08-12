@@ -144,7 +144,7 @@ async def test_acquire_lock_releases_on_exit(fresh_manager, redlock_sim):
 async def test_acquire_lock_does_not_delete_if_token_changed(fresh_manager, redlock_sim):
     rl, holder = redlock_sim
 
-    async with fresh_manager.acquire_lock("s1") as token:
+    async with fresh_manager.acquire_lock("s1"):
         holder["session:s1:lock"] = "someone-elses-token"
 
     rl.release.assert_awaited()
@@ -196,7 +196,7 @@ async def test_acquire_lock_extension_renews_token(fresh_manager, redlock_sim):
 async def test_acquire_lock_extension_stops_when_token_changes(fresh_manager, redlock_sim):
     rl, holder = redlock_sim
 
-    async with fresh_manager.acquire_lock("s1", ttl=0.1) as token:
+    async with fresh_manager.acquire_lock("s1", ttl=0.1):
         holder["session:s1:lock"] = "other-token"
         await asyncio.sleep(0.06)
 
@@ -352,5 +352,3 @@ async def test_archive_to_cold_returns_false_when_no_warm_snapshot(fresh_manager
     mock_redis.get_json = AsyncMock(return_value=None)
     result = await fresh_manager.archive_to_cold("s1", user_id=str(uuid.uuid4()))
     assert result is False
-
-

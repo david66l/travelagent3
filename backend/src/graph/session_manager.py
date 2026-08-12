@@ -59,7 +59,9 @@ class SessionManager:
 
     async def save(self, session_id: str, state: dict[str, Any]) -> None:
         """Persist updated state to hot memory."""
-        state["execution_trace"] = (state.get("execution_trace") or []) + [state.get("stage", "unknown")]
+        state["execution_trace"] = (state.get("execution_trace") or []) + [
+            state.get("stage", "unknown")
+        ]
         await memory_manager.hot_set(session_id, state, ttl=self.ttl_seconds)
 
     async def is_expired(self, session_id: str) -> bool:

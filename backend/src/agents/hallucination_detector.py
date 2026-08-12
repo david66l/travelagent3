@@ -34,20 +34,21 @@ class HallucinationDetectionAgent:
         tool_results = state.get("tool_results") or []
 
         if not itinerary or not tool_results:
-            return ValidationResult(passed=True, total_score=1.0)
+            # No evidence means "not evaluated", not a perfect verification
+            # score. Keep the flow non-blocking while avoiding inflated quality
+            # metrics that would later contaminate SFT/GRPO reward data.
+            return ValidationResult(passed=True, total_score=0.0)
 
         poi_details = cls._extract_poi_details(tool_results)
         route_results = [r for r in tool_results if r.get("name") == "get_route"]
-        reservation_results = [
-            r for r in tool_results if r.get("name") == "check_reservation"
-        ]
+        reservation_results = [r for r in tool_results if r.get("name") == "check_reservation"]
 
         scores: dict[str, float] = {}
         issues: list[str] = []
         critical_failures: list[str] = []
 
-        existence_score, existence_issues, existence_critical = (
-            cls.check_poi_existence(itinerary, poi_candidates, tool_results)
+        existence_score, existence_issues, existence_critical = cls.check_poi_existence(
+            itinerary, poi_candidates, tool_results
         )
         scores["poi_existence"] = existence_score
         issues.extend(existence_issues)
@@ -61,9 +62,7 @@ class HallucinationDetectionAgent:
         scores["ticket_prices"] = price_score
         issues.extend(price_issues)
 
-        route_score, route_issues = cls.check_route_commute(
-            itinerary, route_results
-        )
+        route_score, route_issues = cls.check_route_commute(itinerary, route_results)
         scores["route_commute"] = route_score
         issues.extend(route_issues)
 
@@ -121,11 +120,7 @@ class HallucinationDetectionAgent:
 
         existing_names = candidate_names | tool_names
 
-        activities = [
-            act
-            for day in itinerary or []
-            for act in day.get("activities") or []
-        ]
+        activities = [act for day in itinerary or [] for act in day.get("activities") or []]
         if not activities:
             return 1.0, [], []
 
@@ -143,9 +138,7 @@ class HallucinationDetectionAgent:
 
         score = max(0.0, 1.0 - len(missing) / len(activities))
         issues = [f"POI不存在或无法验证：{name}" for name in missing]
-        critical = [
-            f"关键：POI '{name}' 未在候选结果或工具返回中找到" for name in missing
-        ]
+        critical = [f"关键：POI '{name}' 未在候选结果或工具返回中找到" for name in missing]
         return score, issues, critical
 
     @classmethod
@@ -155,9 +148,7 @@ class HallucinationDetectionAgent:
         poi_details: list[dict[str, Any]],
     ) -> tuple[float, list[str]]:
         """Return (score, issues) for opening-hour consistency."""
-        details_by_name = {
-            p.get("name"): p for p in poi_details or [] if p.get("name")
-        }
+        details_by_name = {p.get("name"): p for p in poi_details or [] if p.get("name")}
         checked = 0
         issues: list[str] = []
 
@@ -204,9 +195,7 @@ class HallucinationDetectionAgent:
         tolerance: float = 0.3,
     ) -> tuple[float, list[str]]:
         """Return (score, issues) for ticket-price consistency."""
-        details_by_name = {
-            p.get("name"): p for p in poi_details or [] if p.get("name")
-        }
+        details_by_name = {p.get("name"): p for p in poi_details or [] if p.get("name")}
         checked = 0
         issues: list[str] = []
 
@@ -229,8 +218,7 @@ class HallucinationDetectionAgent:
                 if detail_price == 0:
                     if activity_price != 0:
                         issues.append(
-                            f"{poi_name} 票价偏差：工具显示免费，"
-                            f"活动标注 {activity_price}"
+                            f"{poi_name} 票价偏差：工具显示免费，活动标注 {activity_price}"
                         )
                     continue
 
@@ -281,8 +269,7 @@ class HallucinationDetectionAgent:
                 if route_duration == 0:
                     if duration != 0:
                         issues.append(
-                            f"{poi_name} 交通时间偏差：活动标注 {duration} 分钟，"
-                            "工具显示 0"
+                            f"{poi_name} 交通时间偏差：活动标注 {duration} 分钟，工具显示 0"
                         )
                     continue
 
@@ -331,18 +318,14 @@ class HallucinationDetectionAgent:
                 text_blob = text_blob.lower()
 
                 if not any(kw in text_blob for kw in cls._RESERVATION_KEYWORDS):
-                    issues.append(
-                        f"{poi_name} 需要预约，但活动未标注预约提醒"
-                    )
+                    issues.append(f"{poi_name} 需要预约，但活动未标注预约提醒")
 
         if checked == 0:
             return 1.0, []
         return max(0.0, 1.0 - len(issues) / checked), issues
 
     @classmethod
-    def _extract_poi_details(
-        cls, tool_results: list[dict[str, Any]]
-    ) -> list[dict[str, Any]]:
+    def _extract_poi_details(cls, tool_results: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Collect POI detail dicts from ``get_poi_detail`` tool results."""
         details: list[dict[str, Any]] = []
         for tr in tool_results or []:

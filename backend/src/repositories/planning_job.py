@@ -9,7 +9,10 @@ from uuid import UUID
 from sqlalchemy import select, update, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.conversation_turn import feedback_from_input_requirements, input_requirements_from_feedback
+from core.conversation_turn import (
+    feedback_from_input_requirements,
+    input_requirements_from_feedback,
+)
 from models.planning_job import PlanningJob, PlanningJobEvent
 
 

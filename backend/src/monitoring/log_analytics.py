@@ -62,9 +62,7 @@ class LogAnalyticsEngine:
         return getattr(log, "action_type", None) or "unknown"
 
     @classmethod
-    async def cluster_planning_failures(
-        cls, db_session, hours: int = 24
-    ) -> list[dict[str, Any]]:
+    async def cluster_planning_failures(cls, db_session, hours: int = 24) -> list[dict[str, Any]]:
         """Cluster recent planning job failures by normalized error message and city.
 
         Args:
@@ -124,10 +122,7 @@ class LogAnalyticsEngine:
 
         try:
             cutoff = datetime.utcnow() - timedelta(hours=hours)
-            stmt = (
-                select(UserModificationLog)
-                .where(UserModificationLog.created_at >= cutoff)
-            )
+            stmt = select(UserModificationLog).where(UserModificationLog.created_at >= cutoff)
             result = await db_session.execute(stmt)
             rows = result.scalars().all()
 

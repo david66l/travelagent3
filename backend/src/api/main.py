@@ -6,9 +6,9 @@ import os
 import sys
 from contextlib import asynccontextmanager
 
-logger = logging.getLogger(__name__)
-
 from fastapi import FastAPI
+
+logger = logging.getLogger(__name__)
 
 # Ensure backend/src is on path (works regardless of project location)
 _src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -39,13 +39,15 @@ async def lifespan(app: FastAPI):
     # LangSmith tracing — auto-instruments all LangGraph/LangChain calls
     if settings.langsmith_api_key:
         import os as _os
+
         _os.environ["LANGSMITH_TRACING"] = "true"
         _os.environ["LANGSMITH_ENDPOINT"] = settings.langsmith_endpoint
         _os.environ["LANGSMITH_API_KEY"] = settings.langsmith_api_key
         _os.environ["LANGSMITH_PROJECT"] = settings.langsmith_project
         logger.info(
             "LangSmith tracing enabled: project=%s endpoint=%s",
-            settings.langsmith_project, settings.langsmith_endpoint,
+            settings.langsmith_project,
+            settings.langsmith_endpoint,
         )
 
     # LangGraph persistent checkpoints. The async context manager must stay open

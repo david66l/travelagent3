@@ -85,9 +85,7 @@ class TravelRetrievalRAGAgent:
         # Mark must-visit reservation reminders
         must_visit = set(slots.must_visit or [])
         for poi in top_pois:
-            poi.reservation_reminder = (
-                poi.spot_name in must_visit and poi.need_reservation
-            )
+            poi.reservation_reminder = poi.spot_name in must_visit and poi.need_reservation
 
         return {
             "poi_candidates": [poi.model_dump() for poi in top_pois],

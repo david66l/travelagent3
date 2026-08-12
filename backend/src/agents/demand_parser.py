@@ -177,7 +177,10 @@ class DemandParserAgent:
         if disambiguation.get("has_ambiguity") and disambiguation.get("question"):
             parsed.clarifying_question = disambiguation["question"]
             ambiguous_field = disambiguation.get("field")
-            if ambiguous_field in self.REQUIRED_SLOTS and ambiguous_field not in parsed.missing_slots:
+            if (
+                ambiguous_field in self.REQUIRED_SLOTS
+                and ambiguous_field not in parsed.missing_slots
+            ):
                 parsed.missing_slots.append(ambiguous_field)
 
         return parsed
@@ -204,7 +207,14 @@ class DemandParserAgent:
     def _is_greeting_only(text: str) -> bool:
         stripped = text.strip().lower()
         return stripped in (
-            "你好", "嗨", "hello", "hi", "在吗", "在不在", "早上好", "晚上好",
+            "你好",
+            "嗨",
+            "hello",
+            "hi",
+            "在吗",
+            "在不在",
+            "早上好",
+            "晚上好",
         )
 
     @classmethod
@@ -274,9 +284,7 @@ class DemandParserAgent:
         return parsed
 
     @classmethod
-    def _merge_known_profile_into_slots(
-        cls, parsed: SlotParseOutput, flat_profile: dict
-    ) -> None:
+    def _merge_known_profile_into_slots(cls, parsed: SlotParseOutput, flat_profile: dict) -> None:
         """Fill empty slots from accumulated session profile (multi-turn gathering)."""
         for slot_key, profile_key in cls.SLOT_TO_PROFILE.items():
             if profile_key not in flat_profile:
@@ -321,7 +329,9 @@ class DemandParserAgent:
         return [q for q in (existing or []) if q]
 
     @classmethod
-    def _apply_required_rules(cls, parsed: SlotParseOutput, user_input: str = "") -> SlotParseOutput:
+    def _apply_required_rules(
+        cls, parsed: SlotParseOutput, user_input: str = ""
+    ) -> SlotParseOutput:
         """Rebuild missing_slots from authoritative rules; ignore LLM extras."""
         if parsed.intent in ("chitchat", "query_info", "update_preferences", "view_history"):
             parsed.missing_slots = []
@@ -350,7 +360,9 @@ class DemandParserAgent:
         return value is None or value == "" or value == []
 
     @classmethod
-    def _build_clarifying_question(cls, missing: list[str], destination: Optional[str] = None) -> str:
+    def _build_clarifying_question(
+        cls, missing: list[str], destination: Optional[str] = None
+    ) -> str:
         """Ask for all missing required slots in one message."""
         if not missing:
             return ""
@@ -414,9 +426,26 @@ class DemandParserAgent:
                 return city
         # First-occurrence fallback for well-known cities.
         cities = [
-            "北京", "上海", "广州", "深圳", "成都", "杭州", "西安", "重庆",
-            "苏州", "南京", "厦门", "青岛", "大理", "丽江", "三亚", "长沙",
-            "武汉", "昆明", "桂林", "拉萨",
+            "北京",
+            "上海",
+            "广州",
+            "深圳",
+            "成都",
+            "杭州",
+            "西安",
+            "重庆",
+            "苏州",
+            "南京",
+            "厦门",
+            "青岛",
+            "大理",
+            "丽江",
+            "三亚",
+            "长沙",
+            "武汉",
+            "昆明",
+            "桂林",
+            "拉萨",
         ]
         best, best_pos = None, len(text)
         for city in cities:
@@ -477,13 +506,29 @@ class DemandParserAgent:
     def _extract_companion(text: str) -> Optional[str]:
         """Extract companion type only when the user explicitly mentions it."""
         companion_map = {
-            "独自": "alone", "一个人": "alone", "自己一个人": "alone",
-            "情侣": "couple", "夫妻": "couple", "两口子": "couple",
-            "女朋友": "couple", "男朋友": "couple", "女友": "couple", "男友": "couple",
-            "亲子": "family", "带孩子": "family", "带孩子去": "family",
-            "家庭": "family", "一家人": "family",
-            "朋友": "friends", "闺蜜": "friends", "兄弟": "friends", "同学": "friends",
-            "父母": "parents", "老人": "parents", "爸妈": "parents", "带爸妈": "parents",
+            "独自": "alone",
+            "一个人": "alone",
+            "自己一个人": "alone",
+            "情侣": "couple",
+            "夫妻": "couple",
+            "两口子": "couple",
+            "女朋友": "couple",
+            "男朋友": "couple",
+            "女友": "couple",
+            "男友": "couple",
+            "亲子": "family",
+            "带孩子": "family",
+            "带孩子去": "family",
+            "家庭": "family",
+            "一家人": "family",
+            "朋友": "friends",
+            "闺蜜": "friends",
+            "兄弟": "friends",
+            "同学": "friends",
+            "父母": "parents",
+            "老人": "parents",
+            "爸妈": "parents",
+            "带爸妈": "parents",
             "同事": "colleagues",
         }
         for keyword, value in companion_map.items():
@@ -510,7 +555,10 @@ class DemandParserAgent:
         # Common phrases
         if any(w in text for w in ("一个人", "独自", " solo ")):
             return 1
-        if any(w in text for w in ("两个人", "情侣", "夫妻", "我们俩", "女朋友", "男朋友", "女友", "男友")):
+        if any(
+            w in text
+            for w in ("两个人", "情侣", "夫妻", "我们俩", "女朋友", "男朋友", "女友", "男友")
+        ):
             return 2
         if any(w in text for w in ("带爸妈", "带父母", "一家三口")):
             return 3

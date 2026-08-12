@@ -28,7 +28,7 @@ class RedisBloomFilter:
         digest = hashlib.sha256(item.encode("utf-8")).digest()
         offsets: list[int] = []
         for i in range(self._num_hashes):
-            chunk = digest[i * 4:(i + 1) * 4]
+            chunk = digest[i * 4 : (i + 1) * 4]
             if len(chunk) < 4:
                 chunk = (chunk + digest)[:4]
             value = int.from_bytes(chunk, "big")

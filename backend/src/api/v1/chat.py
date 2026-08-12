@@ -273,9 +273,7 @@ async def chat_message(
             raise
 
     message_metadata = {"attachments_meta": attachment_metas} if attachment_metas else None
-    await service.add_message(
-        body.conversation_id, "user", user_input, metadata=message_metadata
-    )
+    await service.add_message(body.conversation_id, "user", user_input, metadata=message_metadata)
 
     asyncio.create_task(
         process_chat_message(

@@ -5,7 +5,6 @@ from unittest.mock import AsyncMock
 import pytest
 
 from core.dead_letter import (
-    DLQ_LIST_KEY,
     list_dead_letters,
     push_dead_letter,
     remove_dead_letter_by_task_id,
@@ -23,7 +22,7 @@ async def test_push_and_list_dead_letter(mock_redis):
     async def lrange(key, start, end):
         if end == -1:
             return stored
-        return stored[start:end + 1 if end >= 0 else None]
+        return stored[start : end + 1 if end >= 0 else None]
 
     mock_redis.lpush = AsyncMock(side_effect=lpush)
     mock_redis.lrange = AsyncMock(side_effect=lrange)

@@ -42,8 +42,10 @@ security = HTTPBearer(auto_error=False)
 # Token payload
 # --------------------------------------------------------------------------- #
 
+
 class TokenPayload:
     """Decoded JWT claims."""
+
     __slots__ = ("sub", "role", "exp", "iat", "jti")
 
     def __init__(self, sub: str, role: str, exp: int, iat: int, jti: str = ""):
@@ -61,6 +63,7 @@ class TokenPayload:
 # --------------------------------------------------------------------------- #
 # Token creation
 # --------------------------------------------------------------------------- #
+
 
 def create_access_token(
     sub: str,
@@ -122,6 +125,7 @@ def create_guest_token(session_id: str) -> str:
 # Dependency: require authenticated user
 # --------------------------------------------------------------------------- #
 
+
 async def require_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
 ) -> TokenPayload:
@@ -139,6 +143,7 @@ async def require_user(
 # Dependency: optional user (guest-friendly)
 # --------------------------------------------------------------------------- #
 
+
 async def optional_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
 ) -> Optional[TokenPayload]:
@@ -155,6 +160,7 @@ async def optional_user(
 # Role checkers
 # --------------------------------------------------------------------------- #
 
+
 class RequireRole:
     """Dependency factory: require specific role(s)."""
 
@@ -162,7 +168,8 @@ class RequireRole:
         self.roles = set(roles)
 
     async def __call__(
-        self, user: TokenPayload = Depends(require_user),
+        self,
+        user: TokenPayload = Depends(require_user),
     ) -> TokenPayload:
         if user.role not in self.roles:
             raise HTTPException(
@@ -176,11 +183,14 @@ class RequireRole:
 # Internal
 # --------------------------------------------------------------------------- #
 
+
 def _decode_token(token: str) -> TokenPayload:
     """Decode and validate a JWT. Raises HTTPException on failure."""
     try:
         payload = jwt.decode(
-            token, settings.jwt_secret, algorithms=[settings.jwt_algorithm],
+            token,
+            settings.jwt_secret,
+            algorithms=[settings.jwt_algorithm],
         )
     except JWTError:
         raise HTTPException(
@@ -203,4 +213,5 @@ def _decode_token(token: str) -> TokenPayload:
 
 def _rand_id(length: int = 16) -> str:
     import secrets
+
     return secrets.token_hex(length)

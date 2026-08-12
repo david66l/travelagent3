@@ -6,7 +6,6 @@ import base64
 import io
 import logging
 import mimetypes
-from typing import Any
 
 import httpx
 
@@ -60,9 +59,7 @@ class AudioInputParser:
             )
         except Exception as exc:
             logger.warning("Audio transcription failed: %s", exc)
-            return self._error_meta(
-                source, filename, str(exc), mime_type=mime_type or "audio/*"
-            )
+            return self._error_meta(source, filename, str(exc), mime_type=mime_type or "audio/*")
 
     async def _load_audio(self, source: str) -> tuple[bytes, str | None]:
         """Resolve audio bytes and MIME type from a data URI or URL."""
@@ -70,7 +67,9 @@ class AudioInputParser:
             return self._decode_data_uri(source)
 
         if source.startswith(("http://", "https://")):
-            client = self._client or httpx.AsyncClient(timeout=_FETCH_TIMEOUT, follow_redirects=True)
+            client = self._client or httpx.AsyncClient(
+                timeout=_FETCH_TIMEOUT, follow_redirects=True
+            )
             try:
                 response = await client.get(source)
                 response.raise_for_status()

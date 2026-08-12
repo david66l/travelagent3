@@ -1,20 +1,14 @@
 """Unit tests for HallucinationDetectionAgent."""
 
-import pytest
-
 from agents.hallucination_detector import HallucinationDetectionAgent
 
 
 class TestHallucinationDetectionAgent:
     def test_poi_existence_passes_with_candidates(self):
-        itinerary = [
-            {"activities": [{"poi_name": "故宫"}, {"poi_name": "长城"}]}
-        ]
+        itinerary = [{"activities": [{"poi_name": "故宫"}, {"poi_name": "长城"}]}]
         poi_candidates = [{"name": "故宫"}, {"name": "长城"}]
-        score, issues, critical = (
-            HallucinationDetectionAgent.check_poi_existence(
-                itinerary, poi_candidates, []
-            )
+        score, issues, critical = HallucinationDetectionAgent.check_poi_existence(
+            itinerary, poi_candidates, []
         )
         assert score == 1.0
         assert not issues
@@ -28,24 +22,18 @@ class TestHallucinationDetectionAgent:
                 "result": {"data": {"name": "故宫"}},
             }
         ]
-        score, issues, critical = (
-            HallucinationDetectionAgent.check_poi_existence(
-                itinerary, [], tool_results
-            )
+        score, issues, critical = HallucinationDetectionAgent.check_poi_existence(
+            itinerary, [], tool_results
         )
         assert score == 1.0
         assert not issues
         assert not critical
 
     def test_poi_existence_fails_for_missing_poi(self):
-        itinerary = [
-            {"activities": [{"poi_name": "故宫"}, {"poi_name": "火星博物馆"}]}
-        ]
+        itinerary = [{"activities": [{"poi_name": "故宫"}, {"poi_name": "火星博物馆"}]}]
         poi_candidates = [{"name": "故宫"}]
-        score, issues, critical = (
-            HallucinationDetectionAgent.check_poi_existence(
-                itinerary, poi_candidates, []
-            )
+        score, issues, critical = HallucinationDetectionAgent.check_poi_existence(
+            itinerary, poi_candidates, []
         )
         assert score == 0.5
         assert len(issues) == 1
@@ -65,12 +53,8 @@ class TestHallucinationDetectionAgent:
                 ]
             }
         ]
-        poi_details = [
-            {"name": "故宫", "open_time": "09:00", "close_time": "17:00"}
-        ]
-        score, issues = HallucinationDetectionAgent.check_opening_hours(
-            itinerary, poi_details
-        )
+        poi_details = [{"name": "故宫", "open_time": "09:00", "close_time": "17:00"}]
+        score, issues = HallucinationDetectionAgent.check_opening_hours(itinerary, poi_details)
         assert score == 1.0
         assert not issues
 
@@ -86,12 +70,8 @@ class TestHallucinationDetectionAgent:
                 ]
             }
         ]
-        poi_details = [
-            {"name": "故宫", "open_time": "09:00", "close_time": "17:00"}
-        ]
-        score, issues = HallucinationDetectionAgent.check_opening_hours(
-            itinerary, poi_details
-        )
+        poi_details = [{"name": "故宫", "open_time": "09:00", "close_time": "17:00"}]
+        score, issues = HallucinationDetectionAgent.check_opening_hours(itinerary, poi_details)
         assert score == 0.0
         assert len(issues) == 1
         assert "故宫" in issues[0]
@@ -109,16 +89,12 @@ class TestHallucinationDetectionAgent:
             }
         ]
         poi_details = [{"name": "故宫", "open_hours": "09:00-17:00"}]
-        score, issues = HallucinationDetectionAgent.check_opening_hours(
-            itinerary, poi_details
-        )
+        score, issues = HallucinationDetectionAgent.check_opening_hours(itinerary, poi_details)
         assert score == 1.0
         assert not issues
 
     def test_ticket_price_deviation_above_tolerance(self):
-        itinerary = [
-            {"activities": [{"poi_name": "故宫", "ticket_price": 100}]}
-        ]
+        itinerary = [{"activities": [{"poi_name": "故宫", "ticket_price": 100}]}]
         poi_details = [{"name": "故宫", "ticket_price": 60}]
         score, issues = HallucinationDetectionAgent.check_ticket_prices(
             itinerary, poi_details, tolerance=0.3
@@ -128,9 +104,7 @@ class TestHallucinationDetectionAgent:
         assert "故宫" in issues[0]
 
     def test_ticket_price_within_tolerance(self):
-        itinerary = [
-            {"activities": [{"poi_name": "故宫", "ticket_price": 65}]}
-        ]
+        itinerary = [{"activities": [{"poi_name": "故宫", "ticket_price": 65}]}]
         poi_details = [{"name": "故宫", "ticket_price": 60}]
         score, issues = HallucinationDetectionAgent.check_ticket_prices(
             itinerary, poi_details, tolerance=0.3
@@ -152,9 +126,7 @@ class TestHallucinationDetectionAgent:
         route_results = [
             {
                 "name": "get_route",
-                "result": {
-                    "data": {"destination": "故宫", "minutes": 30}
-                },
+                "result": {"data": {"destination": "故宫", "minutes": 30}},
             }
         ]
         score, issues = HallucinationDetectionAgent.check_route_commute(
@@ -178,9 +150,7 @@ class TestHallucinationDetectionAgent:
         route_results = [
             {
                 "name": "get_route",
-                "result": {
-                    "data": {"destination": "故宫", "minutes": 30}
-                },
+                "result": {"data": {"destination": "故宫", "minutes": 30}},
             }
         ]
         score, issues = HallucinationDetectionAgent.check_route_commute(
@@ -190,38 +160,30 @@ class TestHallucinationDetectionAgent:
         assert not issues
 
     def test_reservation_annotation_missing(self):
-        itinerary = [
-            {"activities": [{"poi_name": "故宫", "tags": ["历史"]}]}
-        ]
+        itinerary = [{"activities": [{"poi_name": "故宫", "tags": ["历史"]}]}]
         reservation_results = [
             {
                 "name": "check_reservation",
                 "result": {"data": {"poi": "故宫", "need_reserve": True}},
             }
         ]
-        score, issues = (
-            HallucinationDetectionAgent.check_reservation_annotations(
-                itinerary, reservation_results
-            )
+        score, issues = HallucinationDetectionAgent.check_reservation_annotations(
+            itinerary, reservation_results
         )
         assert score == 0.0
         assert len(issues) == 1
         assert "故宫" in issues[0]
 
     def test_reservation_annotation_present_in_tags(self):
-        itinerary = [
-            {"activities": [{"poi_name": "故宫", "tags": ["历史", "预约"]}]}
-        ]
+        itinerary = [{"activities": [{"poi_name": "故宫", "tags": ["历史", "预约"]}]}]
         reservation_results = [
             {
                 "name": "check_reservation",
                 "result": {"data": {"poi": "故宫", "need_reserve": True}},
             }
         ]
-        score, issues = (
-            HallucinationDetectionAgent.check_reservation_annotations(
-                itinerary, reservation_results
-            )
+        score, issues = HallucinationDetectionAgent.check_reservation_annotations(
+            itinerary, reservation_results
         )
         assert score == 1.0
         assert not issues
@@ -244,10 +206,8 @@ class TestHallucinationDetectionAgent:
                 "result": {"data": {"poi": "故宫", "need_reserve": True}},
             }
         ]
-        score, issues = (
-            HallucinationDetectionAgent.check_reservation_annotations(
-                itinerary, reservation_results
-            )
+        score, issues = HallucinationDetectionAgent.check_reservation_annotations(
+            itinerary, reservation_results
         )
         assert score == 1.0
         assert not issues
@@ -295,9 +255,7 @@ class TestHallucinationDetectionAgent:
                 },
                 {
                     "name": "check_reservation",
-                    "result": {
-                        "data": {"poi": "故宫", "need_reserve": True}
-                    },
+                    "result": {"data": {"poi": "故宫", "need_reserve": True}},
                 },
             ],
         }

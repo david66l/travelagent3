@@ -46,11 +46,7 @@ class TimeoutCallback(cp_model.CpSolverSolutionCallback):
             return
 
         # Converged: the latest improvement is negligible after the min-time floor.
-        if (
-            self._rel_improve_stop > 0
-            and prev is not None
-            and elapsed >= self._min_seconds
-        ):
+        if self._rel_improve_stop > 0 and prev is not None and elapsed >= self._min_seconds:
             denom = abs(prev) or 1
             if abs(obj - prev) / denom < self._rel_improve_stop:
                 self.StopSearch()

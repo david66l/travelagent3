@@ -3,7 +3,7 @@
 import asyncio
 import pytest
 from datetime import datetime, timedelta
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession

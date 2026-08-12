@@ -6,7 +6,6 @@ import html
 import logging
 import re
 from html.parser import HTMLParser
-from typing import Any
 
 import httpx
 
@@ -32,7 +31,10 @@ class _TextExtractor(HTMLParser):
             self._skip += 1
 
     def handle_endtag(self, tag: str) -> None:
-        if tag in ("head", "script", "style", "nav", "footer", "header", "aside") and self._skip > 0:
+        if (
+            tag in ("head", "script", "style", "nav", "footer", "header", "aside")
+            and self._skip > 0
+        ):
             self._skip -= 1
 
     def handle_data(self, data: str) -> None:

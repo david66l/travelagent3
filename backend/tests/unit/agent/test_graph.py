@@ -35,7 +35,12 @@ async def test_rag_retrieval_node_returns_poi_state():
         "poi_candidates": [_make_poi_dict("p1", "故宫"), _make_poi_dict("p2", "天坛")],
         "retrieval_query": "北京 历史 文化 旅游景点",
         "retrieval_empty": False,
-        "retrieval_stats": {"structured_count": 2, "vector_count": 0, "bm25_count": 0, "merged_count": 2},
+        "retrieval_stats": {
+            "structured_count": 2,
+            "vector_count": 0,
+            "bm25_count": 0,
+            "merged_count": 2,
+        },
     }
 
     with patch("agents.rag_retrieval.TravelRetrievalRAGAgent") as MockAgent:
@@ -97,9 +102,16 @@ async def test_planner_node_calls_vrp_service_and_returns_itinerary():
                 day_number=1,
                 activities=[
                     ActivityOutput(
-                        poi_id="p1", poi_name="故宫", category="attraction",
-                        start_time="08:00", end_time="11:00", duration_min=180, ticket_price=60.0,
-                        lat=39.9, lng=116.4, tags=["历史"],
+                        poi_id="p1",
+                        poi_name="故宫",
+                        category="attraction",
+                        start_time="08:00",
+                        end_time="11:00",
+                        duration_min=180,
+                        ticket_price=60.0,
+                        lat=39.9,
+                        lng=116.4,
+                        tags=["历史"],
                     ),
                 ],
                 total_cost=60.0,
@@ -109,7 +121,9 @@ async def test_planner_node_calls_vrp_service_and_returns_itinerary():
         solve_time_ms=120,
     )
 
-    with patch("vrp_solver_service.client.VRPSolverClient.solve", new=AsyncMock(return_value=mock_response)):
+    with patch(
+        "vrp_solver_service.client.VRPSolverClient.solve", new=AsyncMock(return_value=mock_response)
+    ):
         result = await _planner_async(state)
 
     assert result["stage"] == "planned"
@@ -129,7 +143,10 @@ async def test_planner_node_falls_back_when_vrp_service_fails():
         ],
     }
 
-    with patch("vrp_solver_service.client.VRPSolverClient.solve", new=AsyncMock(side_effect=RuntimeError("connection refused"))):
+    with patch(
+        "vrp_solver_service.client.VRPSolverClient.solve",
+        new=AsyncMock(side_effect=RuntimeError("connection refused")),
+    ):
         result = await _planner_async(state)
 
     assert result["stage"] == "planned"

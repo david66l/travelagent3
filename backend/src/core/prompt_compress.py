@@ -85,9 +85,7 @@ def compress_message_history(
         summary_text = (summarizer or _extractive_summary)(overflow)
         if summary_text:
             summary_text = _truncate_middle(summary_text, max_chars)
-            summary_head.append(
-                {"role": "system", "content": _SUMMARY_PREFIX + summary_text}
-            )
+            summary_head.append({"role": "system", "content": _SUMMARY_PREFIX + summary_text})
 
     compressed: list[Message] = []
     for msg in recent:

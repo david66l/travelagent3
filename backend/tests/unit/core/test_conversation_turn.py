@@ -30,16 +30,23 @@ async def test_process_user_turn_parses_and_updates_state():
     parsed = _make_parsed(
         slots=TravelSlots(destination="成都", travel_days=3),
     )
-    with patch("core.conversation_turn.DemandParserAgent.parse", new=AsyncMock(return_value=parsed)):
-        with patch("core.conversation_turn.ProfileRecallAgent.recall", new=AsyncMock(return_value={
-            "source": "anonymous",
-            "short_term_profile": AsyncMock(model_dump=lambda **kw: {}),
-            "long_term_profile": AsyncMock(model_dump=lambda **kw: {}),
-            "merged_profile": AsyncMock(model_dump=lambda **kw: {}),
-            "recalled_profile": AsyncMock(model_dump=lambda **kw: {}),
-            "inferred_slots": {},
-            "confidence": 0.0,
-        })):
+    with patch(
+        "core.conversation_turn.DemandParserAgent.parse", new=AsyncMock(return_value=parsed)
+    ):
+        with patch(
+            "core.conversation_turn.ProfileRecallAgent.recall",
+            new=AsyncMock(
+                return_value={
+                    "source": "anonymous",
+                    "short_term_profile": AsyncMock(model_dump=lambda **kw: {}),
+                    "long_term_profile": AsyncMock(model_dump=lambda **kw: {}),
+                    "merged_profile": AsyncMock(model_dump=lambda **kw: {}),
+                    "recalled_profile": AsyncMock(model_dump=lambda **kw: {}),
+                    "inferred_slots": {},
+                    "confidence": 0.0,
+                }
+            ),
+        ):
             result = await process_user_turn(state, "成都3天")
 
     assert result.intent == "generate_itinerary"
@@ -61,16 +68,23 @@ async def test_process_user_turn_adds_feasibility_issues_to_questions():
     parsed = _make_parsed(
         slots=TravelSlots(destination="北京", travel_days=5, travelers_count=2, total_budget=500),
     )
-    with patch("core.conversation_turn.DemandParserAgent.parse", new=AsyncMock(return_value=parsed)):
-        with patch("core.conversation_turn.ProfileRecallAgent.recall", new=AsyncMock(return_value={
-            "source": "anonymous",
-            "short_term_profile": AsyncMock(model_dump=lambda **kw: {}),
-            "long_term_profile": AsyncMock(model_dump=lambda **kw: {}),
-            "merged_profile": AsyncMock(model_dump=lambda **kw: {}),
-            "recalled_profile": AsyncMock(model_dump=lambda **kw: {}),
-            "inferred_slots": {},
-            "confidence": 0.0,
-        })):
+    with patch(
+        "core.conversation_turn.DemandParserAgent.parse", new=AsyncMock(return_value=parsed)
+    ):
+        with patch(
+            "core.conversation_turn.ProfileRecallAgent.recall",
+            new=AsyncMock(
+                return_value={
+                    "source": "anonymous",
+                    "short_term_profile": AsyncMock(model_dump=lambda **kw: {}),
+                    "long_term_profile": AsyncMock(model_dump=lambda **kw: {}),
+                    "merged_profile": AsyncMock(model_dump=lambda **kw: {}),
+                    "recalled_profile": AsyncMock(model_dump=lambda **kw: {}),
+                    "inferred_slots": {},
+                    "confidence": 0.0,
+                }
+            ),
+        ):
             result = await process_user_turn(state, "北京5天预算500")
 
     assert result.feasibility_report is not None
@@ -93,16 +107,23 @@ async def test_process_user_turn_triggers_disambiguation():
         },
         clarifying_question="您说的目的地比较宽泛，以下几个城市您更倾向哪个？",
     )
-    with patch("core.conversation_turn.DemandParserAgent.parse", new=AsyncMock(return_value=parsed)):
-        with patch("core.conversation_turn.ProfileRecallAgent.recall", new=AsyncMock(return_value={
-            "source": "anonymous",
-            "short_term_profile": AsyncMock(model_dump=lambda **kw: {}),
-            "long_term_profile": AsyncMock(model_dump=lambda **kw: {}),
-            "merged_profile": AsyncMock(model_dump=lambda **kw: {}),
-            "recalled_profile": AsyncMock(model_dump=lambda **kw: {}),
-            "inferred_slots": {},
-            "confidence": 0.0,
-        })):
+    with patch(
+        "core.conversation_turn.DemandParserAgent.parse", new=AsyncMock(return_value=parsed)
+    ):
+        with patch(
+            "core.conversation_turn.ProfileRecallAgent.recall",
+            new=AsyncMock(
+                return_value={
+                    "source": "anonymous",
+                    "short_term_profile": AsyncMock(model_dump=lambda **kw: {}),
+                    "long_term_profile": AsyncMock(model_dump=lambda **kw: {}),
+                    "merged_profile": AsyncMock(model_dump=lambda **kw: {}),
+                    "recalled_profile": AsyncMock(model_dump=lambda **kw: {}),
+                    "inferred_slots": {},
+                    "confidence": 0.0,
+                }
+            ),
+        ):
             result = await process_user_turn(state, "想去南方玩3天")
 
     assert len(result.disambiguation_candidates) > 0
@@ -135,7 +156,10 @@ async def test_process_user_turn_second_turn_fills_origin_dates_budget():
         "structured_call",
         new=AsyncMock(side_effect=[turn1, turn2_llm]),
     ):
-        with patch("core.conversation_turn.ProfileRecallAgent.recall", new=AsyncMock(return_value=recall_payload)):
+        with patch(
+            "core.conversation_turn.ProfileRecallAgent.recall",
+            new=AsyncMock(return_value=recall_payload),
+        ):
             await process_user_turn(state, "我要去上海玩4天")
             result = await process_user_turn(state, "济南出发，明天出发，预算5000")
 
@@ -169,16 +193,23 @@ async def test_process_user_turn_recomputes_missing_from_merged_profile():
         missing_slots=[],
         clarifying_question=None,
     )
-    with patch("core.conversation_turn.DemandParserAgent.parse", new=AsyncMock(return_value=parsed)):
-        with patch("core.conversation_turn.ProfileRecallAgent.recall", new=AsyncMock(return_value={
-            "source": "anonymous",
-            "short_term_profile": AsyncMock(model_dump=lambda **kw: {}),
-            "long_term_profile": AsyncMock(model_dump=lambda **kw: {}),
-            "merged_profile": AsyncMock(model_dump=lambda **kw: {}),
-            "recalled_profile": AsyncMock(model_dump=lambda **kw: {}),
-            "inferred_slots": {},
-            "confidence": 0.0,
-        })):
+    with patch(
+        "core.conversation_turn.DemandParserAgent.parse", new=AsyncMock(return_value=parsed)
+    ):
+        with patch(
+            "core.conversation_turn.ProfileRecallAgent.recall",
+            new=AsyncMock(
+                return_value={
+                    "source": "anonymous",
+                    "short_term_profile": AsyncMock(model_dump=lambda **kw: {}),
+                    "long_term_profile": AsyncMock(model_dump=lambda **kw: {}),
+                    "merged_profile": AsyncMock(model_dump=lambda **kw: {}),
+                    "recalled_profile": AsyncMock(model_dump=lambda **kw: {}),
+                    "inferred_slots": {},
+                    "confidence": 0.0,
+                }
+            ),
+        ):
             result = await process_user_turn(state, "5000块")
 
     assert "destination" not in result.missing_required
@@ -198,16 +229,23 @@ async def test_process_user_turn_recalls_profile_and_marks_inferred():
     parsed = _make_parsed(
         slots=TravelSlots(destination="北京", travel_days=3),
     )
-    with patch("core.conversation_turn.DemandParserAgent.parse", new=AsyncMock(return_value=parsed)):
-        with patch("core.conversation_turn.ProfileRecallAgent.recall", new=AsyncMock(return_value={
-            "source": "long_term",
-            "short_term_profile": AsyncMock(model_dump=lambda **kw: {}),
-            "long_term_profile": AsyncMock(model_dump=lambda **kw: {"pace": "relaxed"}),
-            "merged_profile": AsyncMock(model_dump=lambda **kw: {"pace": "relaxed"}),
-            "recalled_profile": AsyncMock(model_dump=lambda **kw: {"pace": "relaxed"}),
-            "inferred_slots": {"pace": "relaxed"},
-            "confidence": 0.75,
-        })):
+    with patch(
+        "core.conversation_turn.DemandParserAgent.parse", new=AsyncMock(return_value=parsed)
+    ):
+        with patch(
+            "core.conversation_turn.ProfileRecallAgent.recall",
+            new=AsyncMock(
+                return_value={
+                    "source": "long_term",
+                    "short_term_profile": AsyncMock(model_dump=lambda **kw: {}),
+                    "long_term_profile": AsyncMock(model_dump=lambda **kw: {"pace": "relaxed"}),
+                    "merged_profile": AsyncMock(model_dump=lambda **kw: {"pace": "relaxed"}),
+                    "recalled_profile": AsyncMock(model_dump=lambda **kw: {"pace": "relaxed"}),
+                    "inferred_slots": {"pace": "relaxed"},
+                    "confidence": 0.75,
+                }
+            ),
+        ):
             result = await process_user_turn(state, "北京3天")
 
     assert state["inferred_slots"] == {"pace": "relaxed"}
@@ -235,15 +273,20 @@ async def test_step3_acceptance_beijing_parents_3days(mock_llm):
     mock_llm.structured_call = AsyncMock(return_value=parsed)
     demand_parser.llm = mock_llm
 
-    with patch("core.conversation_turn.ProfileRecallAgent.recall", new=AsyncMock(return_value={
-        "source": "long_term",
-        "short_term_profile": AsyncMock(model_dump=lambda **kw: {}),
-        "long_term_profile": AsyncMock(model_dump=lambda **kw: {"pace": "moderate"}),
-        "merged_profile": AsyncMock(model_dump=lambda **kw: {"pace": "moderate"}),
-        "recalled_profile": AsyncMock(model_dump=lambda **kw: {"pace": "moderate"}),
-        "inferred_slots": {},
-        "confidence": 0.75,
-    })):
+    with patch(
+        "core.conversation_turn.ProfileRecallAgent.recall",
+        new=AsyncMock(
+            return_value={
+                "source": "long_term",
+                "short_term_profile": AsyncMock(model_dump=lambda **kw: {}),
+                "long_term_profile": AsyncMock(model_dump=lambda **kw: {"pace": "moderate"}),
+                "merged_profile": AsyncMock(model_dump=lambda **kw: {"pace": "moderate"}),
+                "recalled_profile": AsyncMock(model_dump=lambda **kw: {"pace": "moderate"}),
+                "inferred_slots": {},
+                "confidence": 0.75,
+            }
+        ),
+    ):
         result = await process_user_turn(state, "我想带爸妈去北京玩3天，预算5000")
 
     assert result.intent == "generate_itinerary"

@@ -77,7 +77,9 @@ class TravelVRPSolver:
             dist = request.dist_matrix
             tc = request.tc_matrix
         else:
-            dist, tc = self._transport_selector.build_matrices(pois, constraints, request.amap_minutes)
+            dist, tc = self._transport_selector.build_matrices(
+                pois, constraints, request.amap_minutes
+            )
             for i in range(len(pois)):
                 dist[0][i] = 0
                 dist[i][0] = 0
@@ -95,7 +97,9 @@ class TravelVRPSolver:
 
         try:
             if use_greedy:
-                logger.info("Using greedy heuristic (%d POIs, %d days)", n_real, constraints.travel_days)
+                logger.info(
+                    "Using greedy heuristic (%d POIs, %d days)", n_real, constraints.travel_days
+                )
                 days = _greedy_solve(pois, constraints, dist, tc, walk_limits)
                 status = "fallback"
             else:
@@ -133,8 +137,7 @@ class TravelVRPSolver:
         day_consuming |= {
             i
             for i in range(1, len(pois))
-            if not pois[i].id.startswith("__meal_d")
-            and pois[i].duration_minutes >= 360
+            if not pois[i].id.startswith("__meal_d") and pois[i].duration_minutes >= 360
         }
         if day_consuming:
             scheduled_ids = {a.poi_id for day in days for a in day.activities}
@@ -187,7 +190,9 @@ class TravelVRPSolver:
             dist = request.dist_matrix
             tc = request.tc_matrix
         else:
-            dist, tc = self._transport_selector.build_matrices(pois, constraints, request.amap_minutes)
+            dist, tc = self._transport_selector.build_matrices(
+                pois, constraints, request.amap_minutes
+            )
 
         # The virtual hotel is a start/end anchor; zero its commute so the
         # solver does not reject every POI because the hotel is at (0, 0).
@@ -406,7 +411,9 @@ def _cpsat_solve(
             for j in route_nodes:
                 if i != j:
                     X[(d, i, j)] = model.NewBoolVar(f"X_{d}_{i}_{j}")
-        DC[d] = model.NewIntVar(0, int(day_budget * 2) if day_budget != float("inf") else 100000, f"DC_{d}")
+        DC[d] = model.NewIntVar(
+            0, int(day_budget * 2) if day_budget != float("inf") else 100000, f"DC_{d}"
+        )
         DW[d] = model.NewIntVar(0, max(walk_limits) * 2, f"DW_{d}")
 
     # Constraint 1: AddCircuit for each day over routed nodes (hotel + real POIs)
@@ -504,9 +511,7 @@ def _cpsat_solve(
     # genuinely cannot do both well in one day), which simply spreads them apart.
     _remote_min = max(0, constraints.remote_pair_min or 0)
     if _remote_min:
-        _real = [
-            i for i in range(1, n) if not pois[i].id.startswith("__meal_d")
-        ]
+        _real = [i for i in range(1, n) if not pois[i].id.startswith("__meal_d")]
         for a_idx in range(len(_real)):
             for b_idx in range(a_idx + 1, len(_real)):
                 i, j = _real[a_idx], _real[b_idx]
@@ -523,9 +528,7 @@ def _cpsat_solve(
     suburban_idx = _suburban_indices(pois, constraints)
     if suburban_idx:
         _nearby = max(0, constraints.suburb_nearby_min or 0)
-        _real_attr = [
-            i for i in range(1, n) if not pois[i].id.startswith("__meal_d")
-        ]
+        _real_attr = [i for i in range(1, n) if not pois[i].id.startswith("__meal_d")]
         for i in suburban_idx:
             for j in _real_attr:
                 if j == i:
@@ -578,7 +581,10 @@ def _cpsat_solve(
                     # made every itinerary that needed to wait for opening hours
                     # infeasible.
                     travel_eff = travel + _arc_extra(i, j)
-                    model.Add(A[(d, j)] >= A[(d, i)] + durations[i] + travel_eff - M_travel * (1 - X[(d, i, j)]))
+                    model.Add(
+                        A[(d, j)]
+                        >= A[(d, i)] + durations[i] + travel_eff - M_travel * (1 - X[(d, i, j)])
+                    )
 
     # Constraint 5: daily duration excluding return-to-hotel commute. Commute
     # includes the per-arc transition/queue slack so the day budget reflects
@@ -628,10 +634,7 @@ def _cpsat_solve(
     )
     for d in range(days_count):
         day_tc = sum(
-            X[(d, i, j)] * int(tc[i][j])
-            for i in route_nodes
-            for j in route_nodes
-            if i != j
+            X[(d, i, j)] * int(tc[i][j]) for i in route_nodes for j in route_nodes if i != j
         )
         model.Add(DC[d] == int(food_day) + sum(V[(d, i)] * costs[i] for i in range(1, n)) + day_tc)
         if day_budget != float("inf"):
@@ -655,9 +658,7 @@ def _cpsat_solve(
 
     # Constraint 8: per-day attraction cap. Meal nodes are excluded so the cap
     # bounds sightseeing only — meals must not eat into the day's POI budget.
-    attraction_indices = [
-        i for i in range(1, n) if not pois[i].id.startswith("__meal_d")
-    ]
+    attraction_indices = [i for i in range(1, n) if not pois[i].id.startswith("__meal_d")]
     for d in range(days_count):
         model.Add(sum(V[(d, i)] for i in attraction_indices) <= MAX_POI_PER_DAY)
 
@@ -669,10 +670,14 @@ def _cpsat_solve(
         if interests:
             s += len(set(p.tags) & interests) * 0.1
         prefs.append(min(s, 1.0))
-    pref_score = sum(V[(d, i)] * int(prefs[i] * 100) for d in range(days_count) for i in range(1, n))
+    pref_score = sum(
+        V[(d, i)] * int(prefs[i] * 100) for d in range(days_count) for i in range(1, n)
+    )
 
     # Peak score
-    peak_score = sum(V[(d, i)] * (100 if pois[i].is_peak else 0) for d in range(days_count) for i in range(1, n))
+    peak_score = sum(
+        V[(d, i)] * (100 if pois[i].is_peak else 0) for d in range(days_count) for i in range(1, n)
+    )
 
     # Walk diff
     walk_diffs = []
@@ -756,7 +761,8 @@ def _cpsat_solve(
     COMPACT_KM = 8.0
     compact_terms = []
     _real_attr_c = [
-        i for i in range(1, n)
+        i
+        for i in range(1, n)
         if not pois[i].id.startswith("__meal_d") and (pois[i].lat or pois[i].lng)
     ]
     for _a in range(len(_real_attr_c)):
@@ -1006,9 +1012,7 @@ def _greedy_solve(
                     continue
                 # #3 remote isolation: do not add a POI that is a long hop from any
                 # attraction already scheduled today.
-                if _remote_min and any(
-                    dist[i][j] > _remote_min for j in day_poi_indices
-                ):
+                if _remote_min and any(dist[i][j] > _remote_min for j in day_poi_indices):
                     continue
                 # Suburb isolation: a far-suburb attraction shares its day only with
                 # genuinely adjacent stops (mirrors CP-SAT constraint 2f).
@@ -1039,9 +1043,7 @@ def _greedy_solve(
                 # #4 day-budget check counts commute + slack (idle wait is not
                 # ground time, so it is excluded from the duration budget).
                 total_day_time = (
-                    sum(a.duration_min for a in activities) + duration
-                    + travel + extra
-                    + rest_day
+                    sum(a.duration_min for a in activities) + duration + travel + extra + rest_day
                 )
                 if total_day_time > day_available:
                     continue

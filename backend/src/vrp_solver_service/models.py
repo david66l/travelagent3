@@ -82,7 +82,9 @@ class ConstraintsInput(BaseModel):
     meals_per_day: int = 0
     lunch_window: tuple[int, int] = (11 * 60 + 30, 13 * 60 + 30)
     dinner_window: tuple[int, int] = (17 * 60 + 30, 20 * 60)
-    travelers_type: Literal["solo", "couple", "family_kid", "family_elder", "friends", "adult", "young"] = "adult"
+    travelers_type: Literal[
+        "solo", "couple", "family_kid", "family_elder", "friends", "adult", "young"
+    ] = "adult"
     fatigue_recovery_rate: float | None = None
 
     # Slack added to every selected inter-POI commute (queueing/photos/rest/transit

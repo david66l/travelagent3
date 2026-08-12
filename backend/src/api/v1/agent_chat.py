@@ -10,7 +10,6 @@ import asyncio
 import json
 import logging
 import time
-from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -19,7 +18,6 @@ from fastapi.responses import StreamingResponse
 from graph.runner import runner as graph_runner
 from api.deps import get_conversation_service, get_current_user
 from api.v1.schemas import ChatMessageRequest
-from core.database import async_session_maker
 from core.exceptions import NotFoundException
 from core.redis_client import redis_client
 from core.responses import success_response
@@ -28,6 +26,7 @@ from services import ConversationService
 
 router = APIRouter(prefix="/agent", tags=["agent"])
 logger = logging.getLogger(__name__)
+
 
 # SSE 事件格式化
 def _sse_event(event: str, data: dict) -> str:
@@ -89,7 +88,7 @@ async def agent_stream(
 
         async def run_agent():
             try:
-                async for event in agent_runner.stream(
+                async for event in graph_runner.stream(
                     "",  # 空消息，实际由 /message 端点触发
                     session_id=session_id,
                     user_id=str(user.id),
@@ -108,9 +107,7 @@ async def agent_stream(
         try:
             while time.monotonic() < deadline:
                 try:
-                    data = await asyncio.wait_for(
-                        queue.get(), timeout=30.0
-                    )
+                    data = await asyncio.wait_for(queue.get(), timeout=30.0)
                 except asyncio.TimeoutError:
                     yield ": keepalive\n\n"
                     continue
@@ -244,14 +241,10 @@ async def _run_agent_and_notify(
                     if result.get("itinerary")
                     else None,
                 },
-                "recent_messages": [
-                    {"role": "assistant", "content": result.get("content", "")}
-                ],
+                "recent_messages": [{"role": "assistant", "content": result.get("content", "")}],
                 "phase": "completed",
             }
-            await redis_client.set_json(
-                f"session:{session_id}:state", state, ttl=3600
-            )
+            await redis_client.set_json(f"session:{session_id}:state", state, ttl=3600)
         except Exception:
             pass
 
@@ -269,9 +262,7 @@ async def _run_agent_and_notify(
         )
 
 
-def _save_itinerary_background(
-    conversation_id: UUID, user_id: str, result: dict
-):
+def _save_itinerary_background(conversation_id: UUID, user_id: str, result: dict):
     """异步保存行程到数据库。"""
     import asyncio
 

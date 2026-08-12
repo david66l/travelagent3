@@ -1,7 +1,5 @@
 """Unit tests for DisambiguationEngine."""
 
-import pytest
-
 from agents.disambiguation import DisambiguationEngine
 from models.travel_slots import TravelSlots
 

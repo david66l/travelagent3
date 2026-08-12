@@ -101,9 +101,7 @@ class CongestionDetector:
         try:
             total = 0
             errors = 0
-            metrics: dict[tuple[str, ...], Counter] = getattr(
-                self._http_requests, "_metrics", {}
-            )
+            metrics: dict[tuple[str, ...], Counter] = getattr(self._http_requests, "_metrics", {})
             for labels, child in metrics.items():
                 value_obj = getattr(child, "_value", None)
                 value = float(value_obj.get()) if value_obj is not None else 0.0
@@ -131,9 +129,7 @@ class CongestionDetector:
             if histogram is None:
                 return 0.0
 
-            metrics: dict[tuple[str, ...], Histogram] = getattr(
-                histogram, "_metrics", {}
-            )
+            metrics: dict[tuple[str, ...], Histogram] = getattr(histogram, "_metrics", {})
             if not metrics:
                 return 0.0
 
@@ -192,8 +188,12 @@ class CongestionDetector:
 
         queue_score = min(max_queue / self.queue_threshold, 1.0)
         session_score = min(sessions / self.session_threshold, 1.0)
-        error_score = min(errors / self.error_rate_threshold, 1.0) if self.error_rate_threshold else 0.0
-        latency_score = min(p99 / self.p99_threshold_seconds, 1.0) if self.p99_threshold_seconds else 0.0
+        error_score = (
+            min(errors / self.error_rate_threshold, 1.0) if self.error_rate_threshold else 0.0
+        )
+        latency_score = (
+            min(p99 / self.p99_threshold_seconds, 1.0) if self.p99_threshold_seconds else 0.0
+        )
 
         # If any dimension exceeds its threshold it saturates at 1.0, making
         # the detector sensitive to single-axis overload while still keeping

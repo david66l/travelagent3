@@ -36,10 +36,14 @@ class MemoryConflictResolver:
         resolved["total_budget"] = short_term.get("total_budget") or long_term.get("total_budget")
 
         # People count: explicit short-term wins.
-        resolved["travelers_count"] = short_term.get("travelers_count") or long_term.get("travelers_count")
+        resolved["travelers_count"] = short_term.get("travelers_count") or long_term.get(
+            "travelers_count"
+        )
 
         # Companion type: explicit short-term wins.
-        resolved["travel_companion"] = short_term.get("travel_companion") or long_term.get("travel_companion")
+        resolved["travel_companion"] = short_term.get("travel_companion") or long_term.get(
+            "travel_companion"
+        )
 
         # Dietary taboos: merge; short-term additions take priority.
         resolved["food_taboos"] = self._merge_lists(
@@ -66,9 +70,11 @@ class MemoryConflictResolver:
         short_transport = short_term.get("transport_preference")
         long_transport = long_term.get("transport_mode")
         resolved["transport_preference"] = (
-            short_transport if short_transport and short_transport != "any" else
-            long_transport if long_transport and long_transport != "any" else
-            None
+            short_transport
+            if short_transport and short_transport != "any"
+            else long_transport
+            if long_transport and long_transport != "any"
+            else None
         )
 
         # Physical constraints: conservative merge.
@@ -84,7 +90,14 @@ class MemoryConflictResolver:
         )
 
         # Special flags: unknown stays null; explicit values merge conservatively (true wins).
-        for key in ("has_elderly", "has_children", "has_pregnant", "has_wheelchair", "avoid_crowds", "prefer_morning"):
+        for key in (
+            "has_elderly",
+            "has_children",
+            "has_pregnant",
+            "has_wheelchair",
+            "avoid_crowds",
+            "prefer_morning",
+        ):
             short_val = short_term.get(key)
             long_val = long_term.get(key)
             if short_val is not None and long_val is not None:

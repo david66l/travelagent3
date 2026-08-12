@@ -55,7 +55,7 @@ async def record_external_api_usage(
         return
 
     unit_cost = _API_UNIT_COST.get(api_name, settings.external_api_default_cost_cny)
-    total_cost = await record_external_api_cost(unit_cost)
+    await record_external_api_cost(unit_cost)
     record_external_api_cost_cny(api_name, unit_cost)
 
     if user_id and role:

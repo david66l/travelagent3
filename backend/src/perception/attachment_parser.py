@@ -48,9 +48,7 @@ class AttachmentParser:
             metadata={},
         )
 
-    async def parse_many(
-        self, attachments: list[dict[str, Any]]
-    ) -> list[AttachmentMeta]:
+    async def parse_many(self, attachments: list[dict[str, Any]]) -> list[AttachmentMeta]:
         """Parse a list of attachments concurrently."""
         import asyncio
 

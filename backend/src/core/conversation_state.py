@@ -151,11 +151,11 @@ def merge_profile(profile: dict[str, Any], patch: ProfilePatch) -> dict[str, Any
             "destination": merged.get("destination"),
             "travel_days": merged.get("travel_days"),
             "travel_dates": merged.get("travel_dates"),
-        "travelers_count": merged.get("travelers_count"),
-        "travelers_type": merged.get("travelers_type"),
-        "has_elderly": merged.get("has_elderly"),
-        "has_children": merged.get("has_children"),
-        "budget_range": merged.get("budget_range"),
+            "travelers_count": merged.get("travelers_count"),
+            "travelers_type": merged.get("travelers_type"),
+            "has_elderly": merged.get("has_elderly"),
+            "has_children": merged.get("has_children"),
+            "budget_range": merged.get("budget_range"),
             "special_requests": merged.get("special_requests") or [],
         }
 

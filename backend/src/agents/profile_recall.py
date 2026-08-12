@@ -148,7 +148,9 @@ class ProfileRecallAgent:
         inferred = self._extract_inferred(merged_profile, current_slots)
 
         source = self._determine_source(
-            bool(short_term_dict), bool(long_term_dict or similar_dict), attempted_long_term=bool(user_id)
+            bool(short_term_dict),
+            bool(long_term_dict or similar_dict),
+            attempted_long_term=bool(user_id),
         )
         confidence = 0.75 if (long_term_dict or similar_dict) else 0.6 if short_term_dict else 0.25
 
@@ -233,7 +235,9 @@ class ProfileRecallAgent:
                 return False
             return True
 
-        if current_slots.total_budget is None and _is_memory_value("budget_range", profile_dict.get("budget_range")):
+        if current_slots.total_budget is None and _is_memory_value(
+            "budget_range", profile_dict.get("budget_range")
+        ):
             days = current_slots.travel_days or profile_dict.get("travel_days") or 3
             inferred["total_budget"] = float(profile_dict["budget_range"]) * days
 
@@ -256,19 +260,24 @@ class ProfileRecallAgent:
         ):
             inferred["transport_preference"] = profile_dict["transport_mode"]
 
-        if (
-            current_slots.max_walk_minutes is None
-            and _is_memory_value("max_walk_minutes", profile_dict.get("max_walk_minutes"))
+        if current_slots.max_walk_minutes is None and _is_memory_value(
+            "max_walk_minutes", profile_dict.get("max_walk_minutes")
         ):
             inferred["max_walk_minutes"] = profile_dict["max_walk_minutes"]
 
-        if (
-            current_slots.max_transit_minutes is None
-            and _is_memory_value("max_transit_minutes", profile_dict.get("max_transit_minutes"))
+        if current_slots.max_transit_minutes is None and _is_memory_value(
+            "max_transit_minutes", profile_dict.get("max_transit_minutes")
         ):
             inferred["max_transit_minutes"] = profile_dict["max_transit_minutes"]
 
-        for key in ("has_elderly", "has_children", "has_pregnant", "has_wheelchair", "avoid_crowds", "prefer_morning"):
+        for key in (
+            "has_elderly",
+            "has_children",
+            "has_pregnant",
+            "has_wheelchair",
+            "avoid_crowds",
+            "prefer_morning",
+        ):
             current_value = getattr(current_slots, key)
             profile_value = profile_dict.get(key)
             # Only infer positive flags; False is the default and should not be treated as memory.
@@ -278,7 +287,9 @@ class ProfileRecallAgent:
         return inferred
 
     @staticmethod
-    def _determine_source(has_short: bool, has_long: bool, attempted_long_term: bool = False) -> str:
+    def _determine_source(
+        has_short: bool, has_long: bool, attempted_long_term: bool = False
+    ) -> str:
         if has_short and has_long:
             return "mixed"
         if has_short:
@@ -364,7 +375,9 @@ def _row_to_profile_dict(row) -> dict[str, Any]:
     profile["favorite_spots"] = row.get("favorite_spots") or []
     profile["liked_foods"] = row.get("liked_foods") or []
     profile["avoided_foods"] = row.get("avoided_foods") or []
-    profile["avg_daily_budget"] = float(row["avg_daily_budget"]) if row.get("avg_daily_budget") else None
+    profile["avg_daily_budget"] = (
+        float(row["avg_daily_budget"]) if row.get("avg_daily_budget") else None
+    )
     profile["preferred_transport"] = row.get("preferred_transport") or ""
     profile["preferred_accommodation"] = row.get("preferred_accommodation") or ""
     return profile

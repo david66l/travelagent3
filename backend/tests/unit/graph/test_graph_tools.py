@@ -59,11 +59,16 @@ async def test_output_node_populates_urls():
         "messages": [],
         "session_id": "s1",
     }
-    with patch("graph.node_impl._output_async", new=AsyncMock(return_value={
-            "messages": [{"role": "assistant", "content": "# 北京", "type": "itinerary"}],
-            "itinerary": state["itinerary"],
-            "stage": "awaiting_booking",
-        })):
+    with patch(
+        "graph.node_impl._output_async",
+        new=AsyncMock(
+            return_value={
+                "messages": [{"role": "assistant", "content": "# 北京", "type": "itinerary"}],
+                "itinerary": state["itinerary"],
+                "stage": "awaiting_booking",
+            }
+        ),
+    ):
         with patch(
             "agents.output_format.output_format_agent.stream_markdown",
             new=AsyncMock(return_value="# 北京"),

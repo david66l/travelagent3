@@ -20,9 +20,7 @@ from core.settings import settings
 logger = logging.getLogger(__name__)
 
 # Output directories relative to project root.
-_PROJECT_ROOT = os.path.dirname(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-)
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 PDF_DIR = os.path.join(_PROJECT_ROOT, "outputs", "pdfs")
 EXCEL_DIR = os.path.join(_PROJECT_ROOT, "outputs", "excel")
 
@@ -129,8 +127,7 @@ class OutputFormatAgent:
                 cost_str = f"，门票¥{cost:.0f}" if cost else ""
                 lines.append(
                     f"- {time_str} {act.get('poi_name', '')}"
-                    f"（{act.get('category', '')}{cost_str}）"
-                    + (f" 标签：{tags}" if tags else "")
+                    f"（{act.get('category', '')}{cost_str}）" + (f" 标签：{tags}" if tags else "")
                 )
         return "\n".join(lines)
 
@@ -305,9 +302,7 @@ class OutputFormatAgent:
                 os.environ["DYLD_LIBRARY_PATH"] = path
                 break
 
-    async def generate_pdf(
-        self, markdown_text: str, file_id: str
-    ) -> tuple[str | None, str | None]:
+    async def generate_pdf(self, markdown_text: str, file_id: str) -> tuple[str | None, str | None]:
         """Convert Markdown to PDF via WeasyPrint if available."""
         if not markdown_text:
             return None, None

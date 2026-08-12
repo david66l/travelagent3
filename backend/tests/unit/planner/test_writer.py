@@ -432,10 +432,22 @@ class TestLLMEnrichment:
                         "day_number": 1,
                         "theme": "文艺漫游",
                         "activities": [
-                            {"poi_name": "M50创意园", "recommendation_reason": "艺术工业风的悠闲漫步", "tags": ["文艺"]},
+                            {
+                                "poi_name": "M50创意园",
+                                "recommendation_reason": "艺术工业风的悠闲漫步",
+                                "tags": ["文艺"],
+                            },
                             # Drops the "午餐 · " label — must still match via normalization.
-                            {"poi_name": "南翔馒头店", "recommendation_reason": "一笼齿颊留香的地道小笼", "tags": ["美食"]},
-                            {"poi_name": "武康路", "recommendation_reason": "梧桐与老洋房的文艺街角", "tags": ["文艺"]},
+                            {
+                                "poi_name": "南翔馒头店",
+                                "recommendation_reason": "一笼齿颊留香的地道小笼",
+                                "tags": ["美食"],
+                            },
+                            {
+                                "poi_name": "武康路",
+                                "recommendation_reason": "梧桐与老洋房的文艺街角",
+                                "tags": ["文艺"],
+                            },
                         ],
                     }
                 ]
@@ -485,6 +497,6 @@ class TestLLMEnrichment:
         await enrich(itinerary, family_profile)
 
         # At least one prompt should mention 亲子
-        assert any(
-            "亲子" in p for p in captured_prompts
-        ), f"Expected 亲子 in enrichment prompts, got: {captured_prompts[:1]}"
+        assert any("亲子" in p for p in captured_prompts), (
+            f"Expected 亲子 in enrichment prompts, got: {captured_prompts[:1]}"
+        )

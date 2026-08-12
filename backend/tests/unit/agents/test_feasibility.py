@@ -1,7 +1,5 @@
 """Unit tests for FeasibilityChecker."""
 
-import pytest
-
 from agents.feasibility import FeasibilityChecker
 from models.travel_slots import TravelSlots
 

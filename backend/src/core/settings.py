@@ -86,9 +86,7 @@ class Settings(BaseSettings):
 
     # Seed Data
     seed_data_dir: str = "backend/seed_data"
-    seed_cities: str = (
-        "北京,上海,广州,深圳,成都,杭州,西安,重庆,苏州,南京,厦门,青岛,大理,丽江,三亚,长沙,武汉,昆明,桂林,拉萨"
-    )
+    seed_cities: str = "北京,上海,广州,深圳,成都,杭州,西安,重庆,苏州,南京,厦门,青岛,大理,丽江,三亚,长沙,武汉,昆明,桂林,拉萨"
 
     # Vector embeddings are optional. The structured + lexical RAG path works
     # without a local model; enable "local" only in an image/environment that

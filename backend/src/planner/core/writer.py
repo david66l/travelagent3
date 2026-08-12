@@ -262,9 +262,7 @@ async def _llm_enrich_all_days(
             if act.poi_name in skip:
                 continue
             time_str = (
-                f" {act.start_time}-{act.end_time}"
-                if act.start_time and act.end_time
-                else ""
+                f" {act.start_time}-{act.end_time}" if act.start_time and act.end_time else ""
             )
             lines.append(f"- {time_str} {act.poi_name} [{act.category}]")
             total += 1
@@ -707,9 +705,7 @@ async def enrich(
         # P0: prefill known/draft POIs (no LLM) and record what each day still needs.
         prefill_map = {day.day_number: _prefill_day(day) for day in enriched}
         pending = [
-            d
-            for d in enriched
-            if len(prefill_map.get(d.day_number, set())) < len(d.activities)
+            d for d in enriched if len(prefill_map.get(d.day_number, set())) < len(d.activities)
         ]
 
         if pending:
@@ -751,9 +747,7 @@ async def _enrich_one_day(day: DayPlan, profile: UserProfile) -> None:
         # Fallback path: per-activity LLM (parallel) + rule-based theme
         if not day.theme:
             day.theme = _template_theme(day.activities)
-        todo = [
-            i for i, a in enumerate(day.activities) if a.poi_name not in prefilled
-        ]
+        todo = [i for i, a in enumerate(day.activities) if a.poi_name not in prefilled]
         results = await asyncio.gather(
             *(_enrich_activity_with_retry(day.activities[i], profile) for i in todo)
         )

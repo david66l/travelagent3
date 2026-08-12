@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
@@ -132,11 +131,13 @@ def list_local_traces(limit: int = 20) -> list[dict]:
     results = []
     for fp in files[:limit]:
         stat = fp.stat()
-        results.append({
-            "file": str(fp),
-            "size_kb": round(stat.st_size / 1024, 1),
-            "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-        })
+        results.append(
+            {
+                "file": str(fp),
+                "size_kb": round(stat.st_size / 1024, 1),
+                "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+            }
+        )
     return results
 
 
