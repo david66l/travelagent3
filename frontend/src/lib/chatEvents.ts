@@ -5,14 +5,30 @@ import {
 } from "@/stores/chatStore";
 import { labelForStage, resolveActivityPhase } from "@/lib/stageLabels";
 
+function splitTravelDates(value: unknown): {
+  travel_dates?: string;
+  startDate?: string;
+  endDate?: string;
+} {
+  if (typeof value !== "string" || !value.trim()) return {};
+  const travelDates = value.trim();
+  const dates = travelDates.match(/\d{4}-\d{2}-\d{2}/g) || [];
+  return {
+    travel_dates: travelDates,
+    startDate: dates[0],
+    endDate: dates[1] || dates[0],
+  };
+}
+
 export function profileToConfirmedInfo(profile: unknown): ConfirmedInfo | null {
   if (!profile || typeof profile !== "object") return null;
   const p = profile as Record<string, unknown>;
   const trip = (p.trip as Record<string, unknown>) || p;
   const personal = (p.personal as Record<string, unknown>) || {};
+  const dateRange = splitTravelDates(trip.travel_dates);
   const merged: ConfirmedInfo = {
     destination: (trip.destination as string) || undefined,
-    travel_dates: (trip.travel_dates as string) || undefined,
+    ...dateRange,
     travelers_count: (trip.travelers_count as number) || undefined,
     budget_range: (trip.budget_range as number) || undefined,
     travelers_type: (trip.travelers_type as string) || undefined,
@@ -87,6 +103,12 @@ function finalizeStreamingToMessage() {
   }
   store.stopStreaming();
   store.setStreamingContent("");
+}
+
+function commitConfirmedItinerary() {
+  const store = useChatStore.getState();
+  if (!store.itinerary?.length || store.waitingForConfirmation) return;
+  store.confirmCurrentItinerary();
 }
 
 export function handleChatEvent(
@@ -190,6 +212,7 @@ export function handleChatEvent(
     if (content) {
       commitAssistantProse(content);
     }
+    commitConfirmedItinerary();
     store.saveChatSnapshot();
     return;
   }
@@ -272,6 +295,7 @@ export function handleChatEvent(
     if (content) {
       commitAssistantProse(content);
     }
+    commitConfirmedItinerary();
     store.saveChatSnapshot();
     return;
   }
@@ -351,6 +375,7 @@ export function handleChatEvent(
           >[0]
         );
       }
+      commitConfirmedItinerary();
       store.saveChatSnapshot();
     } else if (stage === "failed" || stage === "cancelled") {
       refs.activeJobIdRef.current = null;

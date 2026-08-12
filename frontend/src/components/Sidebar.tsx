@@ -34,9 +34,6 @@ export function Sidebar({ onNewChat }: SidebarProps) {
     if (trip) {
       loadTrip(trip.id);
       setActiveView("itinerary");
-    } else {
-      // 暂无行程时给出反馈
-      alert("暂无行程，请先规划并确认一个行程。");
     }
   };
 
@@ -53,11 +50,14 @@ export function Sidebar({ onNewChat }: SidebarProps) {
       {/* Current Trip Button */}
       <button
         onClick={handleCurrentTrip}
+        disabled={trips.length === 0}
+        title={trips.length === 0 ? "请先规划并确认一个行程" : undefined}
         className={cn(
           "w-full rounded-[10px] px-2.5 py-2 text-[13px] font-medium transition-colors",
           activeView === "itinerary"
             ? "bg-ink text-canvas"
-            : "bg-canvas text-ink hover:bg-primary-pale"
+            : "bg-canvas text-ink hover:bg-primary-pale",
+          trips.length === 0 && "cursor-not-allowed opacity-50"
         )}
       >
         当前行程

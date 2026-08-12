@@ -299,6 +299,24 @@ export const useChatStore = create<ChatState>()(
         const destination = state.confirmedInfo?.destination || "";
         const startDate = state.confirmedInfo?.startDate || "";
         const endDate = state.confirmedInfo?.endDate || "";
+        const totalBudget = state.confirmedInfo?.budget_range;
+        const itineraryCost = state.itinerary.reduce(
+          (total, day) => total + (Number(day.total_cost) || 0),
+          0
+        );
+        const budgetPanel = state.budgetPanel || {
+          total_budget: totalBudget,
+          spent: itineraryCost,
+          remaining:
+            totalBudget === undefined ? undefined : totalBudget - itineraryCost,
+          breakdown: { itinerary: itineraryCost },
+          status:
+            totalBudget === undefined
+              ? "estimate"
+              : itineraryCost <= totalBudget
+                ? "within_budget"
+                : "over_budget",
+        };
 
         // 防重：检查是否已存在相同目的地和日期的行程
         const duplicate = state.trips.find(
@@ -330,11 +348,7 @@ export const useChatStore = create<ChatState>()(
             interests: [],
             special_requests: [],
           },
-          budgetPanel: state.budgetPanel || {
-            spent: 0,
-            breakdown: {},
-            status: "within_budget",
-          },
+          budgetPanel,
         };
 
         set((s) => ({
