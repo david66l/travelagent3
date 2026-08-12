@@ -240,8 +240,12 @@ def _turn_rewards(episode: AgentEpisode, terminal_kind: str) -> list[TurnReward]
         else:
             tool_score = 0.0
 
-        grounded = _arguments_grounded(step.action.arguments, step.context.model_dump(mode="json"))
         protected = bool(set(step.action.arguments) & _protected_arguments())
+        grounded = (
+            True
+            if not is_tool
+            else _arguments_grounded(step.action.arguments, step.context.model_dump(mode="json"))
+        )
         grounding_score = -1.0 if protected or not grounded else 1.0
         if protected:
             signals.append("PROTECTED_ARGUMENT_FORGERY")

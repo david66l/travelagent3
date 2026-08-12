@@ -196,3 +196,40 @@ def test_reward_config_enforces_terminal_dominance_and_process_cap():
         RewardConfig(task_weight=0.2, constraint_weight=0.2)
     with pytest.raises(ValidationError, match="process weights"):
         RewardConfig(format_weight=0.1, tool_weight=0.1, grounding_weight=0.1)
+
+
+def test_generated_user_question_is_not_treated_as_ungrounded_tool_argument():
+    episode = _episode()
+    question = TrajectoryStep(
+        step_index=0,
+        task_id="resolve_missing_information",
+        context=_context(
+            episode.trajectory_id,
+            "resolve_missing_information",
+            "ask_user",
+        ),
+        action=PolicyAction(
+            action="ask_user", arguments={"question": "What is your travel budget?"}
+        ),
+        observations=[],
+        verification={},
+        state_before_hash="before-question",
+        state_after_hash="after-question",
+    )
+    question.context.original_request = "Plan Shanghai without a budget"
+    goal = {
+        "missing_information": ["budget_range"],
+        "capability": {"status": "needs_user"},
+    }
+    episode.steps = [question]
+    episode.initial_state = {"goal": goal}
+    episode.final_state = {"goal": goal}
+    episode.status = "interrupted"
+    episode.termination_reason = "awaiting_user"
+    _rehash(episode)
+
+    reward = HierarchicalRewardEngine().score(episode)
+
+    assert reward.components.task == 1
+    assert reward.turn_rewards[0].grounding == 1
+    assert reward.gate_status == "passed"
