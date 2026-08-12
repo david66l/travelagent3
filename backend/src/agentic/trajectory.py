@@ -69,6 +69,11 @@ class AgentEpisode(BaseModel):
         return self
 
 
+def episode_content_hash(episode: AgentEpisode) -> str:
+    """Return the canonical integrity hash used by finalized episodes."""
+    return _canonical_hash(episode.model_dump(mode="json", exclude={"content_hash"}))
+
+
 class EpisodeRecorder:
     """Append-only recorder with deterministic state hashes."""
 
@@ -128,8 +133,7 @@ class EpisodeRecorder:
         self.episode.status = result.status
         self.episode.termination_reason = result.termination_reason
         self.episode.completed_at = _now()
-        dump = self.episode.model_dump(mode="json", exclude={"content_hash"})
-        self.episode.content_hash = _canonical_hash(dump)
+        self.episode.content_hash = episode_content_hash(self.episode)
         return self.episode
 
 
@@ -177,7 +181,7 @@ class EpisodeReplayVerifier:
             if step.action.action not in step.context.allowed_actions:
                 errors.append(f"ACTION_NOT_ALLOWED:{step.step_index}")
         if parsed.content_hash is not None:
-            actual = _canonical_hash(parsed.model_dump(mode="json", exclude={"content_hash"}))
+            actual = episode_content_hash(parsed)
             if actual != parsed.content_hash:
                 errors.append("CONTENT_HASH_MISMATCH")
         return errors

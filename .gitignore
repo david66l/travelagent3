@@ -30,3 +30,7 @@ htmlcov/
 # Local research/rendering artifacts (keep source notes and citation indexes)
 tmp/
 docs/research/**/*.pdf
+
+# Generated Agentic SFT/RL data and reports (manifests belong in artifact storage)
+ml/agentic/datasets/candidates*.jsonl
+ml/agentic/datasets/build/

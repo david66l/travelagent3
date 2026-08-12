@@ -20,7 +20,7 @@ class PolicyDecision(BaseModel):
     arguments: dict[str, Any] = Field(default_factory=dict)
 
 
-_SYSTEM_PROMPT = """You are the action policy inside a bounded travel-planning agent.
+AGENT_POLICY_SYSTEM_PROMPT = """You are the action policy inside a bounded travel-planning agent.
 Select exactly one action from allowed_actions for the current subtask.
 Never claim a task succeeded and never claim constraints passed; programmatic
 verifiers decide that. Use only facts present in the supplied context. Return a
@@ -38,7 +38,7 @@ class ApiAgentPolicy:
             raise PolicyOutputError("controller supplied no allowed actions")
         decision = await self.client.structured_call(
             [
-                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "system", "content": AGENT_POLICY_SYSTEM_PROMPT},
                 {
                     "role": "user",
                     "content": json.dumps(

@@ -1,4 +1,13 @@
-# ML training pipeline skeleton (M4/M5 integration with MLflow)
+# Legacy ML training placeholder (not Agent Policy SFT)
+
+The scripts in this directory only exercise MLflow wiring and simple JSONL
+format checks. They do **not** run PEFT/QLoRA, do not produce model weights, and
+must not be reported as completed SFT.
+
+Audited Agent Policy data is built through
+`scripts/build_sft_dataset.py`; see `ml/agentic/datasets/README.md`. A real
+TRL/PEFT training entrypoint will consume that versioned dataset in the next
+phase.
 
 ## Prerequisites
 
