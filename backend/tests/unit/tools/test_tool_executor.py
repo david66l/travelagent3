@@ -16,7 +16,7 @@ def executor():
 
 @pytest.mark.asyncio
 async def test_available_tools_count(executor):
-    assert len(executor.available_tools) == 11
+    assert len(executor.available_tools) == 12
 
 
 @pytest.mark.asyncio
@@ -95,6 +95,33 @@ async def test_get_poi_detail_fallback(executor):
 async def test_update_user_profile_handler(executor):
     result = await executor._handle_update_user_profile({"key": "budget_per_day", "value": 500})
     assert result.data["updated"]["budget_per_day"] == 500
+
+
+@pytest.mark.asyncio
+async def test_validate_itinerary_handler(executor):
+    result = await executor._handle_validate_itinerary(
+        {
+            "itinerary": [
+                {
+                    "day_number": 1,
+                    "activities": [
+                        {
+                            "poi_name": "Museum",
+                            "start_time": "09:00",
+                            "end_time": "10:00",
+                        }
+                    ],
+                    "total_cost": 100,
+                    "total_transit_time_min": 0,
+                }
+            ],
+            "constraints": {"travel_days": 1, "total_budget": 500},
+        }
+    )
+
+    assert result.data_source == "built_in"
+    assert result.data["hard_pass"] is True
+    assert result.data["validator_version"] == "travel-validator.v1"
 
 
 @pytest.mark.asyncio

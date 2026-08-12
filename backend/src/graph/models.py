@@ -86,6 +86,7 @@ class AgentState(TypedDict):
     # FactCheck output
     factcheck_passed: NotRequired[bool]
     validation_report: NotRequired[dict[str, Any]]
+    completion_decision: NotRequired[dict[str, Any]]
     # Accumulator: nodes return only their *new* warnings; the reducer concatenates.
     # NOTE: Annotated must be top-level (not wrapped in NotRequired) for LangGraph
     # to detect the reducer; the channel still defaults to [] when unset.

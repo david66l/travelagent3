@@ -29,6 +29,7 @@ def test_all_expected_tools_present():
         "get_emergency_services",
         "get_poi_detail",
         "update_user_profile",
+        "validate_itinerary",
     }
     assert names == expected
 

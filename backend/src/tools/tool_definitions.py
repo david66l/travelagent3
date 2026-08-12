@@ -85,6 +85,14 @@ class UpdateProfileParams(BaseModel):
     value: str | int | float | bool = Field(..., description="字段值")
 
 
+class ValidateItineraryParams(BaseModel):
+    itinerary: list[dict[str, Any]] = Field(..., description="待校验的结构化逐日行程")
+    constraints: dict[str, Any] = Field(default_factory=dict, description="用户约束")
+    facts: list[dict[str, Any]] | dict[str, Any] = Field(
+        default_factory=list, description="版本化事实快照"
+    )
+
+
 def _schema(model: type[BaseModel]) -> dict[str, Any]:
     """Build a JSON schema dict and strip the title for compactness."""
     schema = model.model_json_schema()
@@ -181,6 +189,14 @@ TOOLS: list[dict[str, Any]] = [
             "parameters": _schema(UpdateProfileParams),
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "validate_itinerary",
+            "description": "程序化校验行程硬约束并返回稳定违规码、软分和指标。",
+            "parameters": _schema(ValidateItineraryParams),
+        },
+    },
 ]
 
 # Map name -> schema for quick lookup.
@@ -197,6 +213,7 @@ TOOL_NAME_TO_MODEL: dict[str, type[BaseModel]] = {
     "get_emergency_services": EmergencyServicesParams,
     "get_poi_detail": POIDetailParams,
     "update_user_profile": UpdateProfileParams,
+    "validate_itinerary": ValidateItineraryParams,
 }
 
 __all__ = ["TOOLS", "TOOL_NAME_TO_MODEL", "TOOL_NAME_TO_SCHEMA"]

@@ -18,6 +18,7 @@ from planner.transport_router import HaversineFallback, MapServiceRouter
 from agentic.observations import ObservationEnvelope
 from agentic.guard import GuardContext, GuardDecision, ToolGuard
 from core.settings import settings
+from evaluation.validator import ItineraryValidator
 from schemas import ToolResult
 from tools.tool_definitions import TOOL_NAME_TO_SCHEMA
 
@@ -49,6 +50,7 @@ class ToolExecutor:
             "get_emergency_services": self._handle_get_emergency_services,
             "get_poi_detail": self._handle_get_poi_detail,
             "update_user_profile": self._handle_update_user_profile,
+            "validate_itinerary": self._handle_validate_itinerary,
         }
         self._weather = WeatherQuerySkill()
         self._poi = POISearchSkill()
@@ -434,6 +436,18 @@ class ToolExecutor:
         value = args.get("value")
         return ToolResult(
             data={"updated": {key: value}},
+            data_source="built_in",
+            confidence=1.0,
+        )
+
+    async def _handle_validate_itinerary(self, args: dict[str, Any]) -> ToolResult:
+        report = ItineraryValidator().validate(
+            args.get("itinerary") or [],
+            constraints=args.get("constraints") or {},
+            facts=args.get("facts") or [],
+        )
+        return ToolResult(
+            data=report.model_dump(),
             data_source="built_in",
             confidence=1.0,
         )

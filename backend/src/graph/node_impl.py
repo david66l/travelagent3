@@ -1133,6 +1133,14 @@ async def _fact_check_async(state: dict) -> dict:
         )
         .model_dump()
     )
+    from agentic.termination import CompletionGuard
+    from core.settings import settings
+
+    completion_decision = (
+        CompletionGuard(mode=settings.agentic_completion_guard_mode)
+        .evaluate(validation_report)
+        .model_dump()
+    )
 
     conflicts = []
     try:
@@ -1178,6 +1186,7 @@ async def _fact_check_async(state: dict) -> dict:
             # warnings is a reducer field → return only the delta.
             return {
                 "validation_report": validation_report,
+                "completion_decision": completion_decision,
                 "warnings": conflicts,
                 "loop_count": loops + 1,
                 "next_action": "planner",
@@ -1186,12 +1195,17 @@ async def _fact_check_async(state: dict) -> dict:
         # Budget exhausted → keep current plan, surface the unresolved conflict.
         return {
             "validation_report": validation_report,
+            "completion_decision": completion_decision,
             "warnings": conflicts + ["事实校验冲突未解决，仍按当前方案输出。"],
             "next_action": "factcheck_done",
             "stage": "fact_check_exhausted",
         }
 
-    return {"stage": "fact_check_done", "validation_report": validation_report}
+    return {
+        "stage": "fact_check_done",
+        "validation_report": validation_report,
+        "completion_decision": completion_decision,
+    }
 
 
 # ---------------------------------------------------------------------------

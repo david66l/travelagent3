@@ -186,6 +186,7 @@ class Settings(BaseSettings):
     tool_timeout_seconds: float = 3.0
     tool_max_retries: int = 3
     agentic_guard_mode: Literal["off", "shadow", "enforce"] = "shadow"
+    agentic_completion_guard_mode: Literal["off", "shadow", "enforce"] = "shadow"
     agentic_tool_call_budget: int = 12
     circuit_breaker_failure_threshold: float = 0.5
     circuit_breaker_min_failures: int = 20
