@@ -20,6 +20,12 @@ celery_app.conf.update(
     task_default_queue=settings.celery_task_default_queue,
     worker_prefetch_multiplier=settings.celery_worker_prefetch_multiplier,
     result_expires=3600,
+    broker_transport_options={
+        # Redis has no broker-side ack; a message is re-delivered if it is not
+        # acked within visibility_timeout. Set it well above the longest task /
+        # countdown (now ~30s) so long tasks are never executed twice.
+        "visibility_timeout": settings.celery_visibility_timeout_seconds,
+    },
     task_routes={
         "worker.planning_tasks.execute_planning_job": {
             "queue": settings.celery_planning_queue,
@@ -39,6 +45,9 @@ celery_app.conf.update(
         "worker.memory_tasks.compact_stale_sessions": {
             "queue": settings.celery_memory_queue,
         },
+        "worker.memory_tasks.sweep_due_archives": {
+            "queue": settings.celery_memory_queue,
+        },
     },
     beat_schedule={
         "archive-active-sessions": {
@@ -52,6 +61,10 @@ celery_app.conf.update(
         "compact-stale-sessions": {
             "task": "worker.memory_tasks.compact_stale_sessions",
             "schedule": 3600.0,  # every hour
+        },
+        "sweep-due-archives": {
+            "task": "worker.memory_tasks.sweep_due_archives",
+            "schedule": 60.0,  # reap sessions past the disconnect grace period
         },
         "warm-top-cities-cache": {
             "task": "worker.cache_tasks.warm_top_cities_cache",

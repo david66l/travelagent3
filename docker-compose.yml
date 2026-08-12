@@ -34,6 +34,7 @@ services:
       - travel_agent_network
 
   backend:
+    image: travelagent2-backend:latest
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -64,11 +65,9 @@ services:
     restart: unless-stopped
 
   vrp_solver:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    image: travelagent2-backend:latest
     container_name: travel_agent_vrp_solver
-    command: uv run python -m vrp_solver_service.main
+    command: python -m vrp_solver_service.main
     env_file:
       - .env
     environment:
@@ -90,11 +89,16 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        INTERNAL_API_URL: http://backend:8000
     container_name: travel_agent_frontend
     ports:
       - "3000:3000"
     environment:
-      NEXT_PUBLIC_API_URL: http://backend:8000
+      NEXT_PUBLIC_API_URL: ""
+      # Next standalone otherwise binds to Docker's container-id hostname,
+      # making localhost health checks fail despite the published port working.
+      HOSTNAME: 0.0.0.0
     depends_on:
       - backend
     networks:
@@ -102,9 +106,7 @@ services:
     restart: unless-stopped
 
   celery_worker:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    image: travelagent2-backend:latest
     container_name: travel_agent_celery_worker
     command: celery -A core.celery_app worker -Q default,planning -l info
     env_file:
@@ -112,19 +114,24 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://travelagent:travelagent123@postgres:5432/travel_agent
       REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+    # The shared backend image checks FastAPI on :8000; Celery does not expose
+    # that port, so inheriting the image healthcheck would mark a healthy worker
+    # as unhealthy.
+    healthcheck:
+      disable: true
     networks:
       - travel_agent_network
     restart: unless-stopped
 
   celery_beat:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    image: travelagent2-backend:latest
     container_name: travel_agent_celery_beat
     command: celery -A core.celery_app beat -l info
     env_file:
@@ -132,11 +139,15 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://travelagent:travelagent123@postgres:5432/travel_agent
       REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      disable: true
     networks:
       - travel_agent_network
     restart: unless-stopped

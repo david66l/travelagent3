@@ -240,12 +240,15 @@ class WeatherQuerySkill(Tool):
         if not adcode:
             return []
 
+        from core.amap_rate import amap_rate_gate
+
         client = await self._get_http()
         params = {
             "key": settings.amap_key,
             "city": adcode,
             "extensions": "all",  # "base" = today, "all" = 4-day forecast
         }
+        await amap_rate_gate()
         resp = await client.get(AMAP_WEATHER_URL, params=params)
         resp.raise_for_status()
         data = resp.json()

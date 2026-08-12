@@ -579,4 +579,27 @@ class DemandParserAgent:
                 next_mon = today + timedelta(days=days_until_next_mon)
                 target = next_mon + timedelta(days=target_weekday)
                 return target.strftime("%Y-%m-%d")
+
+        # Normalize common absolute Chinese dates so weather APIs, weekday
+        # closure constraints and itinerary cards all receive ISO dates. Keep a
+        # possible end date using the same ``|`` separator accepted downstream.
+        absolute = re.findall(
+            r"(?:(\d{4})\s*[年/-])?\s*(\d{1,2})\s*[月/-]\s*(\d{1,2})\s*日?",
+            date_str,
+        )
+        if absolute:
+            resolved: list[str] = []
+            inherited_year: int | None = None
+            for year_text, month_text, day_text in absolute[:2]:
+                year = int(year_text) if year_text else inherited_year or today.year
+                try:
+                    value = datetime(year, int(month_text), int(day_text))
+                except ValueError:
+                    return None
+                if not year_text and inherited_year is None and value.date() < today.date():
+                    value = value.replace(year=year + 1)
+                    year = value.year
+                inherited_year = year
+                resolved.append(value.strftime("%Y-%m-%d"))
+            return "|".join(resolved)
         return date_str

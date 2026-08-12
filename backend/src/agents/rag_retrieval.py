@@ -254,4 +254,4 @@ class TravelRetrievalRAGAgent:
     async def embed_query(self, query_text: str) -> list[float]:
         """Utility: encode a query text for external callers."""
         embedder = await get_embedder()
-        return embedder.encode_single(query_text)
+        return await embedder.aencode_single(query_text)

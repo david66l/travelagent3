@@ -1,4 +1,25 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+// Use same-origin API calls. In production the Go gateway owns /api; when the
+// Next.js dev/server port is opened directly, next.config.js proxies /api to the
+// internal backend. This keeps browser traffic on the gateway instead of
+// bypassing its auth, rate-limit and circuit-breaker middleware.
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
+
+export type ItineraryChange = {
+  action:
+    | "remove"
+    | "replace"
+    | "add"
+    | "reorder"
+    | "set_budget"
+    | "set_pace"
+    | "change_days";
+  day_number?: number;
+  poi_id?: string;
+  new_poi?: Record<string, unknown>;
+  order?: string[];
+  value?: number | string;
+  delta?: number;
+};
 
 const TOKEN_KEY = "ta_access_token";
 const REFRESH_KEY = "ta_refresh_token";
@@ -40,6 +61,27 @@ export function clearStoredTokens(): void {
   localStorage.removeItem(REFRESH_KEY);
 }
 
+/**
+ * True if a stored JWT is still safely usable. Guest tokens expire after 30 min,
+ * but the token persists in localStorage — reusing an expired one made every
+ * request 401 and a page refresh could not self-heal. We decode the `exp` claim
+ * and require >30s of remaining life so a token cannot expire mid-request.
+ */
+export function isTokenValid(token: string | null): token is string {
+  if (!token) return false;
+  try {
+    const payload = token.split(".")[1];
+    if (!payload) return false;
+    const claims = JSON.parse(
+      atob(payload.replace(/-/g, "+").replace(/_/g, "/"))
+    );
+    if (typeof claims.exp !== "number") return true; // no expiry → assume usable
+    return claims.exp * 1000 > Date.now() + 30_000;
+  } catch {
+    return false;
+  }
+}
+
 export function authHeaders(token: string, fingerprint: string): HeadersInit {
   return {
     Authorization: `Bearer ${token}`,
@@ -63,9 +105,12 @@ export async function ensureGuestSession(): Promise<{
 }> {
   const fingerprint = getDeviceFingerprint();
   const stored = getStoredAccessToken();
-  if (stored) {
+  // Reuse only a still-valid token; an expired one is dropped so we mint a fresh
+  // guest session instead of looping on 401s.
+  if (isTokenValid(stored)) {
     return { token: stored, fingerprint, role: "guest" };
   }
+  clearStoredTokens();
 
   const res = await fetch(`${API_URL}/api/v1/auth/guest`, {
     method: "POST",
@@ -114,11 +159,22 @@ export async function createConversation(
   fingerprint: string,
   title = "新对话"
 ): Promise<string> {
-  const res = await fetch(`${API_URL}/api/v1/conversations`, {
+  let res = await fetch(`${API_URL}/api/v1/conversations`, {
     method: "POST",
     headers: authHeaders(token, fingerprint),
     body: JSON.stringify({ title }),
   });
+  // Self-heal a rejected token (expired / secret rotated): drop it, mint a fresh
+  // guest session, and retry once before surfacing an error to the user.
+  if (res.status === 401) {
+    clearStoredTokens();
+    const fresh = await ensureGuestSession();
+    res = await fetch(`${API_URL}/api/v1/conversations`, {
+      method: "POST",
+      headers: authHeaders(fresh.token, fresh.fingerprint),
+      body: JSON.stringify({ title }),
+    });
+  }
   if (!res.ok) {
     throw new Error(`Create conversation failed: ${res.status}`);
   }
@@ -149,6 +205,162 @@ export async function postChatMessage(
     const text = await res.text();
     throw new Error(`Chat message failed: ${res.status} ${text}`);
   }
+}
+
+export async function postChatAction(
+  token: string,
+  fingerprint: string,
+  conversationId: string,
+  action: "confirm" | "modify" | "reject" | "trip_event",
+  payload?: { change?: unknown; external_event?: unknown }
+): Promise<void> {
+  const res = await fetch(`${API_URL}/api/v1/chat/message`, {
+    method: "POST",
+    headers: authHeaders(token, fingerprint),
+    body: JSON.stringify({
+      conversation_id: conversationId,
+      content: "",
+      stream: true,
+      action,
+      change: payload?.change,
+      external_event: payload?.external_event,
+    }),
+  });
+  if (!res.ok && res.status !== 202) {
+    const text = await res.text();
+    throw new Error(`Chat action failed: ${res.status} ${text}`);
+  }
+}
+
+// --- Booking (mock backend, source="mock") -------------------------------
+
+export interface FlightResult {
+  flight_no: string;
+  departure: string;
+  arrival: string;
+  duration: string;
+  price: number;
+  airline: string;
+}
+export interface HotelResult {
+  name: string;
+  district: string;
+  price_per_night: number;
+  rating: number;
+  has_breakfast: boolean;
+  has_parking: boolean;
+  distance_to_center: string;
+}
+export interface TicketResult {
+  poi_name: string;
+  ticket_price: number;
+  available: boolean;
+  need_reservation: boolean;
+}
+export interface ReserveResult {
+  restaurant: string;
+  reservation_id: string;
+  status: string;
+}
+
+async function bookingPost<T>(path: string, body: unknown): Promise<T> {
+  const auth = await ensureGuestSession();
+  const res = await fetch(`${API_URL}/api/v1/bookings${path}`, {
+    method: "POST",
+    headers: authHeaders(auth.token, auth.fingerprint),
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`Booking ${path} failed: ${res.status}`);
+  const json = await res.json();
+  return json.data as T;
+}
+
+export const searchFlights = (origin: string, dest: string, date: string) =>
+  bookingPost<{ flights: FlightResult[] }>("/flights/search", { origin, dest, date });
+
+export const searchHotels = (
+  city: string,
+  checkin: string,
+  checkout: string,
+  budgetPerNight?: number
+) =>
+  bookingPost<{ hotels: HotelResult[] }>("/hotels/search", {
+    city,
+    checkin,
+    checkout,
+    guests: 1,
+    budget_per_night: budgetPerNight,
+  });
+
+export const checkTicket = (poiName: string, date: string) =>
+  bookingPost<TicketResult>("/attractions/tickets", { poi_name: poiName, date });
+
+export const reserveRestaurant = (
+  restaurant: string,
+  date: string,
+  time: string,
+  persons: number
+) =>
+  bookingPost<ReserveResult>("/restaurants/reserve", { restaurant, date, time, persons });
+
+// --- Account & profile (memory) ------------------------------------------
+
+export interface MeResponse {
+  id: string;
+  email?: string | null;
+  phone?: string | null;
+  role: string;
+  created_at: string;
+}
+export interface ProfileResponse {
+  user_id: string;
+  personal?: Record<string, unknown> | null;
+  preferences?: Record<string, unknown> | null;
+  frequent_destinations?: unknown[] | null;
+  updated_at?: string;
+}
+
+async function authedGet<T>(path: string): Promise<T> {
+  const auth = await ensureGuestSession();
+  const res = await fetch(`${API_URL}/api/v1${path}`, {
+    headers: authHeaders(auth.token, auth.fingerprint),
+  });
+  if (!res.ok) throw new Error(`GET ${path} failed: ${res.status}`);
+  return (await res.json()).data as T;
+}
+
+export const getMe = () => authedGet<MeResponse>("/users/me");
+export const getMyProfile = () => authedGet<ProfileResponse | null>("/users/me/profile");
+
+export async function updateMyProfile(body: {
+  personal?: Record<string, unknown>;
+  preferences?: Record<string, unknown>;
+  frequent_destinations?: unknown[];
+}): Promise<ProfileResponse> {
+  const auth = await ensureGuestSession();
+  const res = await fetch(`${API_URL}/api/v1/users/me/profile`, {
+    method: "PUT",
+    headers: authHeaders(auth.token, auth.fingerprint),
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`Update profile failed: ${res.status}`);
+  return (await res.json()).data as ProfileResponse;
+}
+
+/** Revoke the session server-side and clear the stored token. */
+export async function logoutUser(): Promise<void> {
+  const token = getStoredAccessToken();
+  if (token) {
+    try {
+      await fetch(`${API_URL}/api/v1/auth/logout`, {
+        method: "POST",
+        headers: authHeaders(token, getDeviceFingerprint()),
+      });
+    } catch {
+      /* best-effort — clear locally regardless */
+    }
+  }
+  clearStoredTokens();
 }
 
 export function buildChatStreamUrl(

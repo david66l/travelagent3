@@ -187,7 +187,7 @@ class ProfileService:
         from data.embedding import get_embedder
 
         embedder = await get_embedder()
-        embedding = embedder.encode_single(embedding_text)
+        embedding = await embedder.aencode_single(embedding_text)
 
         conn: asyncpg.Connection | None = None
         try:

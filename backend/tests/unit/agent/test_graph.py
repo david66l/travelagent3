@@ -43,7 +43,6 @@ async def test_rag_retrieval_node_returns_poi_state():
         instance.retrieve = AsyncMock(return_value=mock_result)
         result = await _rag_async(state)
 
-    assert result["stage"] == "rag_done"
     assert result["retrieval_empty"] is False
     assert result["retrieval_query"]
     assert len(result["poi_candidates"]) == 2

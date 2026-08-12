@@ -59,30 +59,49 @@ async def _ensure_conversation(
         raise NotFoundException("Conversation", conversation_id)
 
 
-async def _track_sse_connection(user_id: UUID, timeout: int) -> str:
+def _sse_session_key(user_id: UUID, session_id: str) -> str:
+    return f"sse:session:{user_id}:{session_id}"
+
+
+async def _count_active_sse_sessions(user_id: UUID) -> int:
+    """Count live SSE session keys (each key has TTL — stale slots self-heal)."""
+    pattern = f"sse:session:{user_id}:*"
+    cursor = 0
+    total = 0
+    while True:
+        cursor, keys = await redis_client.scan(cursor, match=pattern, count=100)
+        total += len(keys)
+        if cursor == 0:
+            break
+    return total
+
+
+async def _track_sse_connection(user_id: UUID, session_id: str, timeout: int) -> str:
     """Secondary SSE guard - primary control is at Go gateway.
 
-    Uses Redis key `sse:connections:{user_id}` independent of gateway
-    `gw:sse:{user_id}` so each layer has its own counter for defense-in-depth.
+    Tracks one slot per *conversation* (session_id). Reconnecting the same
+    conversation refreshes TTL instead of consuming another concurrent slot,
+    so frontend backoff/reconnect loops do not hit 429 spuriously.
     """
-    key = f"sse:connections:{user_id}"
-    count = await redis_client.incr(key)
-    if count == 1:
-        await redis_client.expire(key, timeout)
-    if count > settings.rate_limit_max_concurrent_sse:
-        await redis_client.decr(key)
-        raise RateLimitException(
-            "Too many concurrent SSE connections",
-            retry_after=60,
-        )
+    key = _sse_session_key(user_id, session_id)
+    is_reconnect = await redis_client.get(key) is not None
+    if not is_reconnect:
+        active = await _count_active_sse_sessions(user_id)
+        limit = settings.rate_limit_max_concurrent_sse
+        if settings.debug:
+            limit = max(limit, 10)
+        if active >= limit:
+            raise RateLimitException(
+                "Too many concurrent SSE connections",
+                retry_after=30,
+            )
+    await redis_client.set(key, "1", ttl=timeout + 120)
     return key
 
 
 async def _release_sse_connection(key: str) -> None:
     try:
-        remaining = await redis_client.decr(key)
-        if remaining <= 0:
-            await redis_client.delete(key)
+        await redis_client.delete(key)
     except Exception:
         logger.debug("Failed to release SSE connection counter for %s", key)
 
@@ -100,7 +119,7 @@ async def chat_stream(
     """SSE stream for chat events (stage / message / job / error / done)."""
     await _ensure_conversation(conversation_id, user, service)
     session_id = _session_id_for(conversation_id)
-    sse_key = await _track_sse_connection(user.id, timeout)
+    sse_key = await _track_sse_connection(user.id, session_id, timeout)
 
     request_id = request.headers.get("X-Request-ID") or str(conversation_id)
 
@@ -197,6 +216,36 @@ async def chat_message(
         concurrent_sse=False,
         estimated_tokens=0,
     )
+
+    # --- Control actions (confirm/modify/reject/trip_event) ---
+    # Button-driven; carry no new user text and bypass perception/safety.
+    if body.action != "chat":
+        if body.action == "modify":
+            action_payload: dict | None = {"change": body.change}
+        elif body.action == "trip_event":
+            action_payload = body.external_event or {}
+        else:
+            action_payload = None
+        asyncio.create_task(
+            process_chat_message(
+                session_id,
+                str(user.id),
+                body.content or "",
+                conversation_id=body.conversation_id,
+                user_role=user.role,
+                action=body.action,
+                action_payload=action_payload,
+            )
+        )
+        return success_response(
+            data={
+                "conversation_id": str(body.conversation_id),
+                "status": "accepted",
+                "stream": body.stream,
+                "action": body.action,
+            },
+            status_code=202,
+        )
 
     # --- Perception layer: unify text + attachments ---
     attachment_metas = await parser.parse_many(

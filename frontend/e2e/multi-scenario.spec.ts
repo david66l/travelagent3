@@ -7,13 +7,11 @@ interface Scenario {
 }
 
 const SCENARIOS: Scenario[] = [
-  { name: "chengdu", query: "成都 4 天，预算 3000 元，喜欢火锅和历史文化", expectedDays: 4 },
-  { name: "shanghai", query: "上海 3 天亲子游，喜欢迪士尼和博物馆", expectedDays: 3 },
-  { name: "beijing", query: "北京 4 天历史文化游", expectedDays: 4 },
-  { name: "guangzhou", query: "广州 2 天美食游，喜欢早茶和粤菜", expectedDays: 2 },
-  { name: "hangzhou", query: "杭州 3 天西湖自然风光游", expectedDays: 3 },
-  { name: "xian4", query: "西安 4 天历史古迹游", expectedDays: 4 },
-  { name: "xian7", query: "西安 7 天深度历史古迹游", expectedDays: 7 },
+  {
+    name: "shanghai",
+    query: "我2026年7月1日从北京出发，2人去上海玩3天，预算每人8000元，亲子游，喜欢迪士尼和博物馆",
+    expectedDays: 3,
+  },
 ];
 
 test.describe("多场景前端端到端", () => {

@@ -129,7 +129,7 @@ export interface ChatState {
   needsClarification: boolean;
   waitingForConfirmation: boolean;
   activeTab: "chat" | "itinerary" | "panels";
-  activeView: "chat" | "itinerary" | "export" | "settings";
+  activeView: "chat" | "itinerary" | "export" | "booking" | "settings";
 
   chatHistory: ChatHistoryItem[];
   chatSnapshots: ChatSnapshot[];  // 新增：完整对话快照
@@ -165,7 +165,7 @@ export interface ChatState {
   setNeedsClarification: (v: boolean) => void;
   setWaitingForConfirmation: (v: boolean) => void;
   setActiveTab: (v: "chat" | "itinerary" | "panels") => void;
-  setActiveView: (v: "chat" | "itinerary" | "export" | "settings") => void;
+  setActiveView: (v: "chat" | "itinerary" | "export" | "booking" | "settings") => void;
 
   setConfirmedInfo: (v: ConfirmedInfo | null) => void;
   setActiveBriefDay: (v: number) => void;

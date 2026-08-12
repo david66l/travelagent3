@@ -81,18 +81,15 @@ export function StreamingText({
     );
   }
 
-  if (isStreaming) {
-    return (
-      <span className={className}>
-        {displayed}
-        <span className="ml-0.5 inline-block h-4 w-1 animate-pulse bg-current" />
-      </span>
-    );
-  }
-
+  // Render Markdown progressively — even while streaming — so headings, lists and
+  // emphasis format live as text arrives (instead of showing raw "#"/"**" syntax
+  // and only formatting once the stream ends). A blinking caret marks the tail.
   return (
     <div className={`prose prose-sm max-w-none text-inherit ${className}`}>
       <ReactMarkdown remarkPlugins={[remarkGfm]}>{displayed}</ReactMarkdown>
+      {isStreaming && (
+        <span className="ml-0.5 inline-block h-4 w-1 animate-pulse bg-current align-middle" />
+      )}
     </div>
   );
 }

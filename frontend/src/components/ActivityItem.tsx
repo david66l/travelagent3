@@ -2,13 +2,14 @@
 
 import { useState } from "react";
 import type { Activity } from "@/stores/chatStore";
+import type { ItineraryChange } from "@/lib/api";
 
 interface ActivityItemProps {
   activity: Activity;
   index: number;
   isLast: boolean;
   dayNumber: number;
-  onModify?: (message: string) => void | Promise<void>;
+  onModify?: (change: ItineraryChange) => void | Promise<void>;
   isLoading?: boolean;
 }
 
@@ -56,16 +57,23 @@ export function ActivityItem({
   const handleReplace = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!replaceName.trim() || isLoading || !onModify) return;
-    await onModify(
-      `把第 ${dayNumber} 天的 ${activity.poi_name} 替换为 ${replaceName.trim()}`
-    );
+    await onModify({
+      action: "replace",
+      day_number: dayNumber,
+      poi_id: activity.poi_name,
+      new_poi: { poi_name: replaceName.trim(), category: activity.category },
+    });
     setReplaceName("");
     setShowReplaceInput(false);
   };
 
   const handleDelete = async () => {
     if (isLoading || !onModify) return;
-    await onModify(`删除第 ${dayNumber} 天的 ${activity.poi_name}`);
+    await onModify({
+      action: "remove",
+      day_number: dayNumber,
+      poi_id: activity.poi_name,
+    });
   };
 
   const buttonBase =

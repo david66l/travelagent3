@@ -1,9 +1,10 @@
 import type { DayPlan } from "@/stores/chatStore";
+import type { ItineraryChange } from "@/lib/api";
 import { ActivityItem } from "./ActivityItem";
 
 interface DayCardProps {
   day: DayPlan;
-  onModify?: (message: string) => void | Promise<void>;
+  onModify?: (change: ItineraryChange) => void | Promise<void>;
   isLoading?: boolean;
 }
 

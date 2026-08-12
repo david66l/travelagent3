@@ -1,43 +1,58 @@
-"""Unit tests for model routing."""
+"""Unit tests for model routing.
+
+Policy: every task — including intent recognition — goes to the DeepSeek Flash
+cloud model (``settings.llm_model``). Cost-circuit or a missing cloud key falls
+back to the local model.
+"""
+
+import pytest
 
 from core.model_router import select_model
 from core.settings import settings
 
 
-def test_guest_uses_small_model():
-    model = select_model(role="guest", task_type="chat")
-    assert model == settings.small_model
+@pytest.fixture
+def cloud_ready(monkeypatch):
+    """Ensure a DeepSeek key + local model are configured for deterministic routing."""
+    monkeypatch.setattr(settings, "deepseek_api_key", "sk-test", raising=False)
+    monkeypatch.setattr(settings, "local_llm_enabled", True, raising=False)
+    monkeypatch.setattr(settings, "local_llm_model", "qwen2.5-7b-instruct", raising=False)
+    monkeypatch.setattr(settings, "llm_model", "deepseek-v4-flash", raising=False)
+    return settings
 
 
-def test_cost_circuit_forces_small_model():
-    model = select_model(
-        role="user",
-        task_type="planning",
-        cost_circuit_active=True,
-    )
-    assert model == settings.small_model
+def test_intent_task_uses_cloud_model(cloud_ready):
+    assert select_model(role="user", task_type="intent") == settings.llm_model
 
 
-def test_intent_task_uses_small_model():
-    model = select_model(role="user", task_type="intent")
-    assert model == settings.small_model
+def test_chat_uses_cloud_model(cloud_ready):
+    assert select_model(role="guest", task_type="chat") == settings.llm_model
 
 
-def test_premium_allows_large_model_for_planning():
-    model = select_model(role="premium", task_type="planning")
-    assert model == settings.default_model
+def test_planning_uses_cloud_model(cloud_ready):
+    assert select_model(role="user", task_type="planning") == settings.llm_model
 
 
-def test_itinerary_task_uses_large_model():
-    model = select_model(role="premium", task_type="itinerary")
-    assert model == settings.default_model
+def test_itinerary_uses_cloud_model(cloud_ready):
+    assert select_model(role="premium", task_type="itinerary") == settings.llm_model
 
 
-def test_repair_task_uses_repair_model():
-    model = select_model(role="premium", task_type="repair")
-    assert model == settings.repair_model
+def test_repair_uses_cloud_model(cloud_ready):
+    assert select_model(role="premium", task_type="repair") == settings.llm_model
 
 
-def test_polish_task_uses_large_model():
-    model = select_model(role="user", task_type="polish")
-    assert model == settings.default_model
+def test_polish_uses_cloud_model(cloud_ready):
+    assert select_model(role="user", task_type="polish") == settings.llm_model
+
+
+def test_cost_circuit_falls_back_to_local(cloud_ready):
+    model = select_model(role="user", task_type="planning", cost_circuit_active=True)
+    assert model == settings.local_llm_model
+
+
+def test_missing_cloud_key_falls_back_to_local(monkeypatch):
+    monkeypatch.setattr(settings, "deepseek_api_key", "", raising=False)
+    monkeypatch.setattr(settings, "openai_api_key", "", raising=False)
+    monkeypatch.setattr(settings, "local_llm_enabled", True, raising=False)
+    monkeypatch.setattr(settings, "local_llm_model", "qwen2.5-7b-instruct", raising=False)
+    assert select_model(role="user", task_type="planning") == settings.local_llm_model

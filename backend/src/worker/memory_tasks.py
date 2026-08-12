@@ -21,6 +21,7 @@ from models import Conversation
 logger = logging.getLogger(__name__)
 
 DISCONNECT_ARCHIVE_DELAY_SECONDS = 30 * 60  # PRD: archive 30min after disconnect
+PENDING_ARCHIVE_ZSET = "memory:archive:pending"  # session_id -> due epoch seconds
 ACTIVE_ARCHIVE_INTERVAL_SECONDS = 300  # PRD: active session incremental archive every 5min
 COMPRESS_AGE_DAYS = 90
 ARCHIVE_AGE_SECONDS = 24 * 3600  # archive warm snapshots older than 24h
@@ -123,9 +124,58 @@ def schedule_delayed_archive(
     user_id: str | None = None,
     delay_seconds: int = DISCONNECT_ARCHIVE_DELAY_SECONDS,
 ) -> str:
-    """Enqueue final archive after disconnect grace period."""
-    archive_session.apply_async(args=[session_id, user_id], countdown=delay_seconds)
+    """Register a session for final archive after the disconnect grace period.
+
+    Records a due-timestamp in a sorted set instead of a long Celery
+    ``countdown``. A 30-minute in-flight message risks duplicate delivery on
+    the Redis broker once it approaches ``visibility_timeout``; the
+    ``sweep_due_archives`` beat reaps due entries every minute instead.
+    ``user_id`` is resolved from the live snapshot at sweep time.
+    """
+
+    async def _register() -> None:
+        await _ensure_redis()
+        await redis_client.zadd(
+            PENDING_ARCHIVE_ZSET, {session_id: time.time() + delay_seconds}
+        )
+
+    _run_async(_register())
     return session_id
+
+
+@celery_app.task(bind=True, max_retries=1, default_retry_delay=30)  # type: ignore[untyped-decorator]
+def sweep_due_archives(self: Any) -> dict[str, int]:
+    """Archive sessions whose disconnect grace period has elapsed.
+
+    Replaces the per-session Celery countdown with one periodic sweep over a
+    due-timestamp sorted set, so no long-lived message sits in the broker.
+    """
+    _run_async(_ensure_redis())
+
+    async def _sweep() -> dict[str, int]:
+        now = time.time()
+        due = await redis_client.zrangebyscore(PENDING_ARCHIVE_ZSET, 0, now)
+        archived = 0
+        for session_id in due:
+            snapshot = await memory_manager.warm_get(session_id)
+            if not snapshot:
+                continue
+            ok = await memory_manager.archive_to_cold(
+                session_id, snapshot.get("user_id"), snapshot.get("user_role")
+            )
+            if ok:
+                archived += 1
+        # New disconnects are always scheduled in the future, so this score
+        # range only covers members that were already due.
+        if due:
+            await redis_client.zremrangebyscore(PENDING_ARCHIVE_ZSET, 0, now)
+        return {"archived": archived, "due": len(due)}
+
+    try:
+        return _run_async(_sweep())
+    except Exception as exc:
+        logger.exception("sweep_due_archives failed")
+        raise self.retry(exc=exc)
 
 
 @celery_app.task(bind=True, max_retries=2, default_retry_delay=120)  # type: ignore[untyped-decorator]

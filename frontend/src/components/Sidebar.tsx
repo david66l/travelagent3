@@ -89,7 +89,8 @@ export function Sidebar({ onNewChat }: SidebarProps) {
                     restoreChat(chat.id);
                     setActiveView("chat");
                   }}
-                  className="w-full px-2.5 py-2 text-left text-[13px] font-medium transition-colors chat-item-inactive text-ink"
+                  title={chat.title}
+                  className="block w-full truncate px-2.5 py-2 text-left text-[13px] font-medium transition-colors chat-item-inactive text-ink"
                 >
                   {chat.title}
                 </button>
@@ -125,10 +126,11 @@ export function Sidebar({ onNewChat }: SidebarProps) {
                     loadTrip(trip.id);
                     setActiveView("itinerary");
                   }}
-                  className="flex w-full items-center justify-between px-2.5 py-2 text-left text-[13px] font-medium transition-colors chat-item-inactive text-ink"
+                  title={trip.title}
+                  className="flex w-full items-center justify-between gap-1.5 px-2.5 py-2 text-left text-[13px] font-medium transition-colors chat-item-inactive text-ink"
                 >
-                  <span>{trip.title}</span>
-                  <span className="text-[11px] text-mute/60">
+                  <span className="min-w-0 flex-1 truncate">{trip.title}</span>
+                  <span className="shrink-0 text-[11px] text-mute/60">
                     {trip.status === "active"
                       ? "(进行中)"
                       : trip.status === "upcoming"

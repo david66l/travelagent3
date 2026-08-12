@@ -10,11 +10,12 @@ import { ItineraryPanel } from "@/components/ItineraryPanel";
 import { PanelSidebar } from "@/components/PanelSidebar";
 import { PreviewPanel } from "@/components/PreviewPanel";
 import { ExportCenter } from "@/components/ExportCenter";
+import { BookingPanel } from "@/components/BookingPanel";
 import { SettingsPanel } from "@/components/SettingsPanel";
 import { cn } from "@/lib/utils";
 
 export default function Home() {
-  const { sendMessage, reconnect } = useChat();
+  const { sendMessage, sendAction, reconnect } = useChat();
   const store = useChatStore();
   const { activeView, activeTab, refreshTripStatuses } = store;
 
@@ -68,7 +69,7 @@ export default function Home() {
           {activeView === "chat" && (
             <>
               <div className="flex-1">
-                <ChatPanel sendMessage={sendMessage} />
+                <ChatPanel sendMessage={sendMessage} sendAction={sendAction} />
               </div>
               <div className="w-[360px]">
                 <PreviewPanel />
@@ -79,9 +80,12 @@ export default function Home() {
             <>
               <div className="flex-1">
                 <ItineraryPanel
-                  onModify={async (msg) => {
-                    await sendMessage(msg);
+                  onModify={async (change) => {
+                    store.addMessage({ role: "user", content: "修改行程草案", timestamp: Date.now() });
+                    await sendAction("modify", { change });
                   }}
+                  onConfirm={async () => { await sendAction("confirm"); }}
+                  onRegenerate={async () => { await sendAction("reject"); }}
                 />
               </div>
               <div className="w-[350px]">
@@ -92,6 +96,11 @@ export default function Home() {
           {activeView === "export" && (
             <div className="flex flex-1">
               <ExportCenter />
+            </div>
+          )}
+          {activeView === "booking" && (
+            <div className="flex flex-1">
+              <BookingPanel />
             </div>
           )}
           {activeView === "settings" && (
@@ -109,15 +118,18 @@ export default function Home() {
                 <PreviewPanel />
               </div>
               <div className="min-h-0 flex-1">
-                <ChatPanel sendMessage={sendMessage} />
+                <ChatPanel sendMessage={sendMessage} sendAction={sendAction} />
               </div>
             </div>
           )}
           {activeTab === "itinerary" && (
             <ItineraryPanel
-              onModify={async (msg) => {
-                await sendMessage(msg);
+              onModify={async (change) => {
+                store.addMessage({ role: "user", content: "修改行程草案", timestamp: Date.now() });
+                await sendAction("modify", { change });
               }}
+              onConfirm={async () => { await sendAction("confirm"); }}
+              onRegenerate={async () => { await sendAction("reject"); }}
             />
           )}
           {activeTab === "panels" && (

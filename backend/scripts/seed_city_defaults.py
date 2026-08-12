@@ -131,7 +131,7 @@ async def _insert_attractions(db, city: str, pois: list[Any], embedder) -> int:
                     :rating, :lat, :lng, :address, :duration_minutes, :walk_intensity,
                     :indoor_outdoor, :tags, :description,
                     (:embedding)::vector,
-                    to_tsvector('chinese', :search_text),
+                    to_tsvector('simple', :search_text),
                     :source, :status, :created_at
                 )
                 ON CONFLICT (name, city) DO UPDATE SET

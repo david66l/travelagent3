@@ -2,6 +2,8 @@
 
 from tools.base import Tool, ToolResult
 from tools.tool_definitions import TOOL_NAME_TO_SCHEMA, TOOLS
-from tools.tool_executor import ToolExecutor, tool_executor
 
-__all__ = ["Tool", "ToolResult", "ToolExecutor", "tool_executor", "TOOLS", "TOOL_NAME_TO_SCHEMA"]
+# Do NOT import tool_executor here — skills.poi_search → tools.base loads this
+# package, and eager ToolExecutor() init re-imports poi_search (circular).
+
+__all__ = ["Tool", "ToolResult", "TOOLS", "TOOL_NAME_TO_SCHEMA"]

@@ -19,16 +19,30 @@ class CPSATTuningGuide:
         days = constraints.travel_days
         arcs = nodes * nodes * days
 
+        # Small instances find a proven-optimal solution in a few seconds. Large
+        # ones (5-day, ~25+ POI) were stopping at the 12s cap with status=FEASIBLE
+        # — i.e. the incumbent was still improving when time ran out, so the day
+        # grouping was visibly sub-optimal. Single-worker CP-SAT keeps improving
+        # the incumbent monotonically, so giving big instances more wall time
+        # directly buys a better route (the extra seconds are not just optimality
+        # proof here). Tiers raised; small trips stay snappy.
         if arcs <= 900:  # <= ~15 POIs, 3 days
-            time_limit = 5.0
+            time_limit = 4.0
         elif arcs <= 3600:
-            time_limit = 15.0
+            time_limit = 10.0
+        elif arcs <= 8000:
+            time_limit = 18.0
         else:
-            time_limit = 30.0
+            time_limit = 25.0
 
         return {
             "max_time_in_seconds": time_limit,
-            "num_search_workers": 4,  # v4.0 fixed 4 workers
+            # Single worker on purpose: multi-worker CP-SAT (>=2) dead-hangs on
+            # this platform (macOS + ortools 9.15), and crucially the hang occurs
+            # before search starts, so `max_time_in_seconds` never fires and the
+            # request blocks indefinitely. A single deterministic worker solves
+            # these small instances (<=30 POIs) in well under the time limit.
+            "num_search_workers": 1,
             "log_search_progress": False,
             "maximize": True,
         }

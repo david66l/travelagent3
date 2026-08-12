@@ -127,7 +127,7 @@ class DataRepository:
         from data.embedding import get_embedder
 
         embedder = await get_embedder()
-        embedding = embedder.encode_single(query_text)
+        embedding = await embedder.aencode_single(query_text)
 
         async with async_session_maker() as db:
             result = await db.execute(
@@ -210,7 +210,7 @@ class DataRepository:
         from data.embedding import get_embedder
 
         embedder = await get_embedder()
-        embedding = embedder.encode_single(content)
+        embedding = await embedder.aencode_single(content)
 
         async with async_session_maker() as db:
             await db.execute(

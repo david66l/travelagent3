@@ -38,6 +38,41 @@ STATE_TTL = 1800
 STATE_KEY = "session:{}:state"
 
 
+async def _persist_assistant_message(
+    conversation_id: UUID | None,
+    content: str,
+    *,
+    message_type: str,
+    itinerary: list[dict[str, Any]] | None = None,
+) -> None:
+    """Persist assistant output alongside user messages.
+
+    Redis remains the hot graph state, but conversation history must not lose
+    every assistant turn when Redis expires or the service restarts.
+    """
+    if conversation_id is None or not content.strip():
+        return
+    try:
+        from models import Message
+
+        metadata: dict[str, Any] = {"message_type": message_type}
+        if itinerary:
+            metadata["itinerary"] = itinerary
+        async with async_session_maker() as db:
+            db.add(
+                Message(
+                    conversation_id=conversation_id,
+                    role="assistant",
+                    content=content,
+                    token_count=0,
+                    metadata_=metadata,
+                )
+            )
+            await db.commit()
+    except Exception as exc:
+        logger.warning("Failed to persist assistant message for %s: %s", conversation_id, exc)
+
+
 def enqueue_planning_job(job_id: str) -> None:
     """Dispatch planning execution to Celery or rely on embedded worker polling."""
     incr("planning_jobs_created_total")
@@ -60,6 +95,14 @@ class ConnectionManager:
     def __init__(self) -> None:
         self._connections: dict[str, Any] = {}
         self._sse_queues: dict[str, list[asyncio.Queue]] = defaultdict(list)
+        # Buffer events when no SSE client is connected yet (e.g. postMessage
+        # before openStream). Flushed on register_sse so polish tokens are not lost.
+        self._pending_sse: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        # Chinese streaming providers often emit one character per token. A
+        # five-day plan can exceed 800 events before the final confirmation
+        # signal; the old 512-item live queue could drop that signal and leave
+        # the UI stuck on the draft. Keep enough headroom for a full turn.
+        self._pending_sse_max = 4096
 
     async def connect_ws(self, session_id: str, websocket: Any) -> None:
         await websocket.accept()
@@ -72,8 +115,14 @@ class ConnectionManager:
         return sum(len(qs) for qs in self._sse_queues.values())
 
     async def register_sse(self, session_id: str) -> asyncio.Queue:
-        queue: asyncio.Queue = asyncio.Queue(maxsize=512)
+        queue: asyncio.Queue = asyncio.Queue(maxsize=4096)
         self._sse_queues[session_id].append(queue)
+        for item in self._pending_sse.pop(session_id, []):
+            try:
+                queue.put_nowait(item)
+            except asyncio.QueueFull:
+                logger.warning("SSE queue full while replaying pending for %s", session_id)
+                break
         set_active_sessions(self._total_sse_queues())
         return queue
 
@@ -87,15 +136,24 @@ class ConnectionManager:
         ws = self._connections.get(session_id)
         if ws:
             try:
-                await ws.send_json(data)
+                # send_text with default=str so non-serializable values (e.g. a
+                # LangGraph Interrupt) degrade instead of crashing the socket.
+                await ws.send_text(json.dumps(data, ensure_ascii=False, default=str))
             except Exception as exc:
                 logger.warning("Failed to send WebSocket message to %s: %s", session_id, exc)
 
-        for queue in list(self._sse_queues.get(session_id, [])):
-            try:
-                queue.put_nowait(data)
-            except asyncio.QueueFull:
-                logger.warning("SSE queue full for session %s", session_id)
+        subs = list(self._sse_queues.get(session_id, []))
+        if subs:
+            for queue in subs:
+                try:
+                    queue.put_nowait(data)
+                except asyncio.QueueFull:
+                    logger.warning("SSE queue full for session %s", session_id)
+        else:
+            pending = self._pending_sse[session_id]
+            pending.append(data)
+            if len(pending) > self._pending_sse_max:
+                del pending[0 : len(pending) - self._pending_sse_max]
 
     async def load_state(self, session_id: str) -> dict[str, Any]:
         """Recover session state: memory tiers (hot/warm/cold) then planning job fallback."""
@@ -269,7 +327,10 @@ def format_sse_event(data: dict[str, Any]) -> str:
         event_name = "done"
     else:
         event_name = "message"
-    payload = json.dumps(data, ensure_ascii=False)
+    # default=str so non-JSON-serializable values (e.g. a LangGraph Interrupt
+    # object that slipped into an event payload) degrade gracefully instead of
+    # crashing the stream.
+    payload = json.dumps(data, ensure_ascii=False, default=str)
     event_id = data.get("event_id")
     id_line = f"id: {event_id}\n" if event_id is not None else ""
     return f"event: {event_name}\n{id_line}data: {payload}\n\n"
@@ -280,6 +341,9 @@ async def _stream_graph_to_manager(
     user_id: str,
     user_input: str,
     state: dict[str, Any],
+    action: str = "chat",
+    action_payload: dict[str, Any] | None = None,
+    conversation_id: UUID | None = None,
 ) -> None:
     """Run the LangGraph turn and forward events to the connection manager."""
     from core.conversation_state import append_message, flatten_profile
@@ -297,6 +361,7 @@ async def _stream_graph_to_manager(
     profile = state.get("profile") or {}
     slots = flatten_profile(profile)
 
+    latest_assistant_content = ""
     async for event in stream_graph_events(
         session_id=session_id,
         user_id=user_id,
@@ -306,11 +371,19 @@ async def _stream_graph_to_manager(
         profile=profile,
         slots=slots,
         conversation_state=state,
+        action=action,
+        action_payload=action_payload,
     ):
         event_type = event.get("type", "message")
         payload = event.get("payload", {})
 
         if event_type == "clarify":
+            clarify_messages = payload.get("messages", []) if isinstance(payload, dict) else []
+            clarify_content = (
+                clarify_messages[-1].get("content", "")
+                if clarify_messages and isinstance(clarify_messages[-1], dict)
+                else ""
+            )
             _apply_conversation_sync(state, payload if isinstance(payload, dict) else None)
             await manager.send_json(
                 session_id,
@@ -332,6 +405,9 @@ async def _stream_graph_to_manager(
                 },
             )
             await manager.save_gathering_state(session_id, state)
+            await _persist_assistant_message(
+                conversation_id, clarify_content, message_type="clarification"
+            )
         elif event_type == "intent_ready":
             content = (
                 payload.get("intent_ready_message", "")
@@ -368,8 +444,13 @@ async def _stream_graph_to_manager(
                 {
                     "type": "message",
                     "role": "assistant",
+                    "stage": payload.get("stage", "completed"),
                     "content": payload.get("content", ""),
                     "itinerary": payload.get("itinerary"),
+                    "profile": payload.get("profile"),
+                    "tool_results": payload.get("tool_results"),
+                    "booking_results": payload.get("booking_results"),
+                    "budget_breakdown": payload.get("budget_breakdown"),
                     "output_pdf_url": payload.get("output_pdf_url"),
                     "output_excel_url": payload.get("output_excel_url"),
                     "output_map_url": payload.get("output_map_url"),
@@ -379,6 +460,7 @@ async def _stream_graph_to_manager(
                 session_id,
                 {
                     "type": "done",
+                    "stage": payload.get("stage", "completed"),
                     "job_id": None,
                     "output_pdf_url": payload.get("output_pdf_url"),
                     "output_excel_url": payload.get("output_excel_url"),
@@ -405,12 +487,59 @@ async def _stream_graph_to_manager(
             state["recent_messages"] = state["recent_messages"][-10:]
             state["phase"] = "completed"
             await manager.save_gathering_state(session_id, state)
+            await _persist_assistant_message(
+                conversation_id,
+                payload.get("content", ""),
+                message_type=payload.get("message_type", "itinerary"),
+                itinerary=payload.get("itinerary"),
+            )
+        elif event_type == "awaiting_confirm":
+            # Draft is ready; graph is paused at the confirm interrupt.
+            if isinstance(payload, dict) and payload.get("itinerary"):
+                state["itinerary"] = payload["itinerary"]
+            state["phase"] = "awaiting_confirm"
+            await manager.send_json(
+                session_id,
+                {
+                    "type": "awaiting_confirm",
+                    "itinerary": payload.get("itinerary") if isinstance(payload, dict) else None,
+                    "warnings": payload.get("warnings", []) if isinstance(payload, dict) else [],
+                },
+            )
+            await manager.save_gathering_state(session_id, state)
+            await _persist_assistant_message(
+                conversation_id,
+                latest_assistant_content,
+                message_type="itinerary_draft",
+                itinerary=payload.get("itinerary") if isinstance(payload, dict) else None,
+            )
         elif event_type in ("thinking", "tool_call"):
             await manager.send_json(
                 session_id,
                 {
                     "type": "stage",
                     "stage": event.get("stage", event_type),
+                },
+            )
+        elif event_type == "stage":
+            await manager.send_json(
+                session_id,
+                {
+                    "type": "stage",
+                    "stage": event.get("stage"),
+                    "payload": payload,
+                },
+            )
+        elif event_type == "partial":
+            # Output node finished enrich + polish; surface prose + artifacts.
+            if isinstance(payload, dict) and payload.get("content"):
+                latest_assistant_content = str(payload["content"])
+            await manager.send_json(
+                session_id,
+                {
+                    "type": "partial",
+                    "stage": event.get("stage", "writing"),
+                    "payload": payload,
                 },
             )
         else:
@@ -432,12 +561,19 @@ async def process_chat_message_graph(
     conversation_id: UUID | None = None,
     user_role: str = "guest",
     attachments_meta: list[dict] | None = None,
+    action: str = "chat",
+    action_payload: dict[str, Any] | None = None,
 ) -> str | None:
     """Graph-based message handler. All turns enter via the gathering subgraph."""
-    safe_content = sanitize_user_input(content.strip())
-    if not safe_content:
-        await manager.send_json(session_id, {"error": "Empty message", "type": "error"})
-        return None
+    # Control actions (confirm/modify/reject/trip_event) are button-driven and
+    # may carry no free text; only "chat" turns require non-empty content.
+    if action == "chat":
+        safe_content = sanitize_user_input(content.strip())
+        if not safe_content:
+            await manager.send_json(session_id, {"error": "Empty message", "type": "error"})
+            return None
+    else:
+        safe_content = sanitize_user_input((content or "").strip())
 
     state = await manager.load_state(session_id)
     state["user_id"] = user_id
@@ -445,7 +581,17 @@ async def process_chat_message_graph(
     if attachments_meta:
         state["attachments_meta"] = attachments_meta
 
-    asyncio.create_task(_stream_graph_to_manager(session_id, user_id, safe_content, state))
+    asyncio.create_task(
+        _stream_graph_to_manager(
+            session_id,
+            user_id,
+            safe_content,
+            state,
+            action=action,
+            action_payload=action_payload,
+            conversation_id=conversation_id,
+        )
+    )
     return None
 
 
@@ -457,6 +603,8 @@ async def process_chat_message(
     conversation_id: UUID | None = None,
     user_role: str = "guest",
     attachments_meta: list[dict] | None = None,
+    action: str = "chat",
+    action_payload: dict[str, Any] | None = None,
 ) -> str | None:
     """Handle one user message via LangGraph (gathering subgraph + planning)."""
     return await process_chat_message_graph(
@@ -466,6 +614,8 @@ async def process_chat_message(
         conversation_id=conversation_id,
         user_role=user_role,
         attachments_meta=attachments_meta,
+        action=action,
+        action_payload=action_payload,
     )
 
 
@@ -481,6 +631,40 @@ async def publish_token(job_id: str, chunk: str) -> None:
         )
     except Exception as exc:
         logger.warning("Failed to publish token for job %s: %s", job_id, exc)
+
+
+async def publish_live_stage(
+    *,
+    session_id: str | None,
+    job_id: str | None,
+    stage: str,
+    payload: dict | None = None,
+) -> None:
+    """Push an ephemeral stage hint (writing, etc.) without a DB job event.
+
+    WS clients receive it directly; SSE clients get it via the ``live:{job_id}``
+    Redis channel that ``push_job_status`` forwards alongside token chunks.
+    """
+    message: dict[str, Any] = {
+        "type": "stage",
+        "stage": stage,
+        "payload": payload or {},
+    }
+    if job_id:
+        message["job_id"] = job_id
+    if session_id:
+        try:
+            await manager.send_json(session_id, message)
+        except Exception as exc:
+            logger.debug("Live stage push to session %s failed: %s", session_id, exc)
+    if job_id:
+        try:
+            await redis_client._client.publish(
+                f"live:{job_id}",
+                json.dumps(message, ensure_ascii=False),
+            )
+        except Exception as exc:
+            logger.warning("Failed to publish live stage for job %s: %s", job_id, exc)
 
 
 async def push_job_status(job_id: str, session_id: str, from_event_id: int = 0) -> None:
@@ -536,6 +720,7 @@ async def push_job_status(job_id: str, session_id: str, from_event_id: int = 0) 
             pubsub = redis_client._client.pubsub()
             await pubsub.subscribe(f"job:status:{job_id}")
             await pubsub.subscribe(f"token:{job_id}")
+            await pubsub.subscribe(f"live:{job_id}")
             try:
                 async for message in pubsub.listen():
                     if message["type"] != "message":
@@ -548,7 +733,7 @@ async def push_job_status(job_id: str, session_id: str, from_event_id: int = 0) 
                         logger.debug("Invalid Redis message on %s", channel)
                         continue
 
-                    if channel == f"token:{job_id}":
+                    if channel in (f"token:{job_id}", f"live:{job_id}"):
                         await manager.send_json(session_id, data)
                         continue
 
@@ -560,6 +745,7 @@ async def push_job_status(job_id: str, session_id: str, from_event_id: int = 0) 
             finally:
                 await pubsub.unsubscribe(f"job:status:{job_id}")
                 await pubsub.unsubscribe(f"token:{job_id}")
+                await pubsub.unsubscribe(f"live:{job_id}")
         except Exception:
             logger.debug("Redis listener for %s exited", job_id, exc_info=True)
 

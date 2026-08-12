@@ -75,7 +75,7 @@ async def test_search_vector_calls_embedding_and_db():
     ]
     ctx, db = _make_mock_session(rows)
     embedder = MagicMock()
-    embedder.encode_single = MagicMock(return_value=[0.1] * 1024)
+    embedder.aencode_single = AsyncMock(return_value=[0.1] * 1024)
 
     repo = RetrievalRepository()
     with patch("data.retrieval_repository.async_session_maker", ctx):
@@ -85,11 +85,11 @@ async def test_search_vector_calls_embedding_and_db():
     assert len(pois) == 1
     assert pois[0].spot_name == "天坛"
     assert pois[0].source == "vector"
-    embedder.encode_single.assert_called_once_with("北京 历史")
+    embedder.aencode_single.assert_awaited_once_with("北京 历史")
 
 
 @pytest.mark.asyncio
-async def test_search_bm25_uses_tsvector():
+async def test_search_bm25_uses_portable_chinese_lexical_match():
     rows = [
         {
             "id": "uuid-3",
@@ -112,4 +112,7 @@ async def test_search_bm25_uses_tsvector():
     assert len(pois) == 1
     assert pois[0].spot_name == "颐和园"
     assert pois[0].source == "bm25"
-    assert "plainto_tsquery" in db.execute.call_args[0][0].text
+    query = db.execute.call_args[0][0].text
+    assert "regexp_split_to_array" in query
+    assert "ILIKE" in query
+    assert "plainto_tsquery" not in query

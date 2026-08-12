@@ -12,6 +12,7 @@ from graph.models import AgentState
 from graph.nodes import (
     apply_single_change_node,
     booking_node,
+    confirm_gate_node,
     error_handler_node,
     factcheck_node,
     hallucination_check_node,
@@ -26,11 +27,12 @@ from graph.nodes import (
 )
 from graph.routers import (
     route_after_booking,
+    route_after_apply_change,
+    route_after_confirm_gate,
     route_after_factcheck,
     route_after_gathering,
     route_after_hallucination,
     route_after_output,
-    route_after_plan,
     route_after_profile,
     route_after_retrieve,
     route_after_tool_call,
@@ -54,6 +56,7 @@ def build_graph(checkpointer: Optional[Any] = None) -> StateGraph:
     builder.add_node("retrieve", retrieve_node)
     builder.add_node("weather_check", weather_check_node)
     builder.add_node("plan", plan_node)
+    builder.add_node("confirm_gate", confirm_gate_node)
     builder.add_node("tool_call", tool_call_node)
     builder.add_node("factcheck", factcheck_node)
     builder.add_node("hallucination", hallucination_check_node)
@@ -72,20 +75,26 @@ def build_graph(checkpointer: Optional[Any] = None) -> StateGraph:
         {
             "clarify": "output",
             "respond": "output",
-            "planning": "profile_recall",
+            "infeasible": "output",
+            # Planning enters at profile_recall, which then fans out.
+            "profile_recall": "profile_recall",
         },
     )
 
+    # profile_recall fans out into retrieve ∥ weather_check (equal-length branches
+    # that re-join at plan in a single superstep), or ends on memory write-back.
     builder.add_conditional_edges(
         "profile_recall",
         route_after_profile,
-        {"retrieve": "retrieve", "__end__": END},
+        {"retrieve": "retrieve", "weather_check": "weather_check", "__end__": END},
     )
 
+    # retrieve and weather_check are parallel branches that both re-join at plan;
+    # plan runs once, after both have completed.
     builder.add_conditional_edges(
         "retrieve",
         route_after_retrieve,
-        {"plan": "weather_check"},  # weather before plan
+        {"plan": "plan"},
     )
 
     builder.add_conditional_edges(
@@ -94,11 +103,18 @@ def build_graph(checkpointer: Optional[Any] = None) -> StateGraph:
         {"plan": "plan"},
     )
 
-    # plan → output (show draft) or tool_call (Phase 2 enrichment)
+    # plan → output (always show the draft); output then routes to confirm_gate
+    builder.add_edge("plan", "output")
+
+    # confirm_gate pauses (interrupt); on resume → enrich / modify / re-solve
     builder.add_conditional_edges(
-        "plan",
-        route_after_plan,
-        {"tool_call": "tool_call", "output": "output"},
+        "confirm_gate",
+        route_after_confirm_gate,
+        {
+            "tool_call": "tool_call",
+            "apply_single_change": "apply_single_change",
+            "plan": "plan",
+        },
     )
 
     # Phase 2: tool_call (tickets/hotels/restaurants) → factcheck → hallucination → output → booking
@@ -120,11 +136,11 @@ def build_graph(checkpointer: Optional[Any] = None) -> StateGraph:
         {"output": "output"},
     )
 
-    # output → booking (final) or END (draft awaiting confirmation)
+    # output → booking (confirmed final) | confirm_gate (draft/post-modify) | END
     builder.add_conditional_edges(
         "output",
         route_after_output,
-        {"booking": "booking", "__end__": END},
+        {"booking": "booking", "confirm_gate": "confirm_gate", "__end__": END},
     )
 
     builder.add_conditional_edges(
@@ -133,8 +149,12 @@ def build_graph(checkpointer: Optional[Any] = None) -> StateGraph:
         {"profile_recall": "profile_recall"},
     )
 
-    builder.add_edge("apply_single_change", "factcheck")
-    builder.add_edge("replan_local", "plan")
+    builder.add_conditional_edges(
+        "apply_single_change",
+        route_after_apply_change,
+        {"plan": "plan", "factcheck": "factcheck"},
+    )
+    builder.add_edge("replan_local", "output")
     builder.add_edge("human_interrupt", END)
     builder.add_edge("error_handler", END)
 

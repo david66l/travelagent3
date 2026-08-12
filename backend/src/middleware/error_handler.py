@@ -19,12 +19,19 @@ def setup_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(AppException)
     async def handle_app_exception(request: Request, exc: AppException):
         """Handle application exceptions."""
-        return error_response(
+        response = error_response(
             status_code=exc.status_code,
             code=exc.code,
             message=exc.message,
             details=exc.details,
         )
+        if exc.status_code == status.HTTP_429_TOO_MANY_REQUESTS:
+            retry_after = None
+            if isinstance(exc.details, dict):
+                retry_after = exc.details.get("retry_after")
+            if retry_after is not None:
+                response.headers["Retry-After"] = str(retry_after)
+        return response
 
     @app.exception_handler(RequestValidationError)
     async def handle_validation_exception(request: Request, exc: RequestValidationError):

@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { CheckCircle, XCircle } from "lucide-react";
 import { useChatStore } from "@/stores/chatStore";
 import { MessageBubble } from "./MessageBubble";
 import { ThinkingBubble } from "./ThinkingBubble";
@@ -10,14 +9,86 @@ import { cn } from "@/lib/utils";
 
 type SendStatus = "sent" | "queued" | "failed";
 
+type ActionStatus = "sent" | "failed";
+
 interface ChatPanelProps {
   sendMessage: (content: string) => SendStatus | Promise<SendStatus>;
+  sendAction?: (
+    action: "confirm" | "modify" | "reject" | "trip_event",
+    payload?: { change?: unknown; external_event?: unknown }
+  ) => ActionStatus | Promise<ActionStatus>;
 }
 
-export function ChatPanel({ sendMessage }: ChatPanelProps) {
+const TRIP_EVENT_LABELS: Record<"closure" | "weather" | "delay", string> = {
+  closure: "景点临时关闭",
+  weather: "天气变化",
+  delay: "行程延误",
+};
+
+export function ChatPanel({ sendMessage, sendAction }: ChatPanelProps) {
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const store = useChatStore();
+
+  const sendDraftAction = async (action: "confirm" | "reject") => {
+    if (!sendAction || store.isLoading) return;
+    const label = action === "confirm" ? "确认行程" : "重新生成一版行程";
+    store.addMessage({ role: "user", content: label, timestamp: Date.now() });
+    store.setLoading(true);
+    store.setActivityPhase("planning");
+    store.setCurrentStage(
+      action === "confirm" ? "正在查询实时信息并校验…" : "正在重新规划…"
+    );
+    const status = await sendAction(action);
+    if (status === "failed") store.setLoading(false);
+  };
+
+  // In-trip disruption reporting → local replan (trip_event action).
+  const [eventOpen, setEventOpen] = useState(false);
+  const [evtType, setEvtType] = useState<"closure" | "weather" | "delay">("delay");
+  const [evtPoi, setEvtPoi] = useState("");
+  const [evtDetail, setEvtDetail] = useState("");
+
+  const itineraryPois = (store.itinerary ?? []).flatMap((d) =>
+    (d.activities ?? []).map((a) => a.poi_name).filter(Boolean)
+  );
+  const canReportEvent = !!sendAction && itineraryPois.length > 0;
+
+  const handleTripEvent = async () => {
+    if (!sendAction || store.isLoading) return;
+    const externalEvent: Record<string, string> = {
+      type: evtType,
+      detail: evtDetail.trim(),
+    };
+    if (evtType === "closure" && evtPoi) externalEvent.poi = evtPoi;
+
+    const summary = [
+      `[行程突发] ${TRIP_EVENT_LABELS[evtType]}`,
+      evtType === "closure" && evtPoi ? `· ${evtPoi}` : "",
+      evtDetail.trim() ? `· ${evtDetail.trim()}` : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+    store.addMessage({ role: "user", content: summary, timestamp: Date.now() });
+    store.setLoading(true);
+    store.setCurrentStage("正在根据突发情况调整行程…");
+    setEventOpen(false);
+    setEvtDetail("");
+
+    try {
+      const status = await sendAction("trip_event", { external_event: externalEvent });
+      if (status === "failed") {
+        store.addMessage({
+          role: "assistant",
+          content: "上报突发情况失败，请重试。",
+          timestamp: Date.now(),
+        });
+        store.setLoading(false);
+      }
+    } catch {
+      store.setLoading(false);
+    }
+  };
 
   const handleSend = async () => {
     if (!input.trim() || store.isLoading) return;
@@ -53,40 +124,6 @@ export function ChatPanel({ sendMessage }: ChatPanelProps) {
         content: "发送失败，请检查网络后重试。",
         timestamp: Date.now(),
       });
-      store.setLoading(false);
-    }
-  };
-
-  const handleConfirm = async () => {
-    if (store.isLoading) return;
-    store.addMessage({
-      role: "user",
-      content: "确认行程",
-      timestamp: Date.now(),
-    });
-    store.setLoading(true);
-    store.setCurrentStage("正在规划…");
-    store.setActivityPhase("planning");
-    try {
-      await sendMessage("确认行程");
-    } catch {
-      store.setLoading(false);
-    }
-  };
-
-  const handleModify = async () => {
-    if (store.isLoading) return;
-    store.addMessage({
-      role: "user",
-      content: "继续修改行程",
-      timestamp: Date.now(),
-    });
-    store.setLoading(true);
-    store.setCurrentStage("正在规划…");
-    store.setActivityPhase("planning");
-    try {
-      await sendMessage("继续修改行程");
-    } catch {
       store.setLoading(false);
     }
   };
@@ -144,24 +181,117 @@ export function ChatPanel({ sendMessage }: ChatPanelProps) {
         {store.isLoading && !store.isStreaming && <ThinkingBubble />}
       </div>
 
-      {/* Confirmation buttons */}
-      {store.waitingForConfirmation && (
-        <div className="glass-card p-3">
-          <p className="mb-2 text-xs text-body">对行程满意吗？</p>
-          <div className="flex gap-2">
+      {/* In-trip disruption reporting → triggers a local replan */}
+      {canReportEvent && (
+        <div className="flex flex-col gap-2">
+          {!eventOpen ? (
             <button
-              onClick={handleConfirm}
-              className="btn-primary-dark flex flex-1 items-center justify-center gap-1.5"
+              data-testid="trip-event-toggle"
+              onClick={() => setEventOpen(true)}
+              disabled={store.isLoading}
+              className="self-start rounded-2xl border border-hairline bg-canvas px-3 py-1.5 font-mono text-xs text-mute transition-colors hover:text-ink disabled:opacity-50"
             >
-              <CheckCircle className="h-4 w-4" />
-              确认行程
+              🚨 行程中遇到突发情况
+            </button>
+          ) : (
+            <div className="glass-card flex flex-col gap-2.5 rounded-[20px] p-3">
+              <div className="flex items-center justify-between">
+                <span className="text-[13px] font-semibold text-ink">上报突发情况，重新调整行程</span>
+                <button
+                  onClick={() => setEventOpen(false)}
+                  className="font-mono text-xs text-mute hover:text-ink"
+                >
+                  取消
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {(Object.keys(TRIP_EVENT_LABELS) as Array<keyof typeof TRIP_EVENT_LABELS>).map(
+                  (t) => (
+                    <button
+                      key={t}
+                      onClick={() => setEvtType(t)}
+                      className={cn(
+                        "rounded-xl px-2.5 py-1 font-mono text-xs transition-colors",
+                        evtType === t
+                          ? "bg-primary text-ink"
+                          : "border border-hairline bg-canvas text-mute hover:text-ink"
+                      )}
+                    >
+                      {TRIP_EVENT_LABELS[t]}
+                    </button>
+                  )
+                )}
+              </div>
+              {evtType === "closure" && (
+                <select
+                  data-testid="trip-event-poi"
+                  value={evtPoi}
+                  onChange={(e) => setEvtPoi(e.target.value)}
+                  className="rounded-2xl border border-hairline bg-canvas px-3 py-2 font-mono text-xs text-ink outline-none"
+                >
+                  <option value="">选择受影响的景点…</option>
+                  {Array.from(new Set(itineraryPois)).map((p) => (
+                    <option key={p} value={p}>
+                      {p}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <input
+                type="text"
+                data-testid="trip-event-detail"
+                value={evtDetail}
+                onChange={(e) => setEvtDetail(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleTripEvent()}
+                placeholder={
+                  evtType === "weather"
+                    ? "例如：下午有雷阵雨"
+                    : evtType === "delay"
+                      ? "例如：航班延误 2 小时"
+                      : "补充说明（可选）"
+                }
+                className="rounded-2xl border border-hairline bg-canvas px-3 py-2 font-mono text-xs text-ink placeholder:text-mute outline-none"
+              />
+              <button
+                data-testid="trip-event-submit"
+                onClick={handleTripEvent}
+                disabled={store.isLoading || (evtType === "closure" && !evtPoi)}
+                className={cn(
+                  "self-end rounded-2xl px-4 py-2 text-xs font-semibold transition-all",
+                  !store.isLoading && !(evtType === "closure" && !evtPoi)
+                    ? "bg-primary text-ink shadow-panel hover:bg-primary-active"
+                    : "cursor-not-allowed bg-hairline text-mute"
+                )}
+              >
+                提交并调整
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {store.waitingForConfirmation && sendAction && (
+        <div className="glass-card flex items-center justify-between gap-3 rounded-[20px] p-3">
+          <div>
+            <p className="text-sm font-semibold text-ink">这是行程草案</p>
+            <p className="text-xs text-mute">可在行程页替换或删除景点，满意后再确认。</p>
+          </div>
+          <div className="flex shrink-0 gap-2">
+            <button
+              data-testid="regenerate-itinerary"
+              onClick={() => sendDraftAction("reject")}
+              disabled={store.isLoading}
+              className="rounded-xl border border-hairline px-3 py-2 text-xs text-mute hover:text-ink disabled:opacity-50"
+            >
+              重新生成
             </button>
             <button
-              onClick={handleModify}
-              className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-hairline bg-canvas px-4 py-2.5 text-sm font-medium text-ink transition-colors hover:bg-primary-pale"
+              data-testid="confirm-itinerary"
+              onClick={() => sendDraftAction("confirm")}
+              disabled={store.isLoading}
+              className="btn-primary-dark px-4 py-2 text-xs disabled:opacity-50"
             >
-              <XCircle className="h-4 w-4" />
-              继续修改
+              确认并完善
             </button>
           </div>
         </div>
@@ -176,14 +306,19 @@ export function ChatPanel({ sendMessage }: ChatPanelProps) {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleSend()}
-            placeholder="试试：'成都 4 天，预算 3000 元，喜欢火锅和历史文化'"
+            disabled={store.waitingForConfirmation}
+            placeholder={
+              store.waitingForConfirmation
+                ? "请先确认草案，或前往行程页进行修改"
+                : "试试：'成都 4 天，预算 3000 元，喜欢火锅和历史文化'"
+            }
             className="w-full bg-transparent font-mono text-sm text-ink placeholder:text-mute outline-none"
           />
         </div>
         <button
           data-testid="send-button"
           onClick={handleSend}
-          disabled={!input.trim() || store.isLoading}
+          disabled={!input.trim() || store.isLoading || store.waitingForConfirmation}
           className={cn(
             "flex items-center gap-1 rounded-2xl px-4 py-3 text-sm font-semibold transition-all",
             input.trim() && !store.isLoading

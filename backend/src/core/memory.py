@@ -124,52 +124,75 @@ class MemoryManager:
             await self.warm_delete(session_id)
             return False
 
-        snapshot = await self.warm_get(session_id)
-        if not snapshot:
-            logger.debug("No warm snapshot to archive for session %s", session_id)
-            return False
+        # Serialize archives per session. Duplicate task delivery (the Redis
+        # broker re-delivers after visibility_timeout) or concurrent sweeps must
+        # not both see conversation_id == None and insert two Conversation rows.
+        # Reading the snapshot inside the lock lets the second caller observe the
+        # conversation_id the first one wrote back.
+        lock = None
+        try:
+            lock = redis_client.lock(
+                f"memory:archive:{session_id}", ttl=30, blocking_timeout=5
+            )
+            if not await lock.acquire():
+                logger.debug("Archive already running for %s; skipping duplicate", session_id)
+                return False
+        except Exception:
+            lock = None  # lock backend unavailable (e.g. tests) — proceed unlocked
 
-        user_uuid = self._parse_uuid(user_id)
-        if user_uuid is None:
-            logger.debug("Skipping cold archive for anonymous session %s", session_id)
-            return False
+        try:
+            snapshot = await self.warm_get(session_id)
+            if not snapshot:
+                logger.debug("No warm snapshot to archive for session %s", session_id)
+                return False
 
-        conversation_id = self._parse_uuid(snapshot.get("conversation_id"))
+            user_uuid = self._parse_uuid(user_id)
+            if user_uuid is None:
+                logger.debug("Skipping cold archive for anonymous session %s", session_id)
+                return False
 
-        async with async_session_maker() as db:
-            conv: Optional[Conversation] = None
-            if conversation_id is not None:
-                result = await db.execute(
-                    select(Conversation).where(Conversation.id == conversation_id)
-                )
-                conv = result.scalar_one_or_none()
+            conversation_id = self._parse_uuid(snapshot.get("conversation_id"))
 
-            if conv is None:
-                conv = Conversation(
-                    user_id=user_uuid,
-                    state_snapshot=snapshot,
-                    title=snapshot.get("last_intent") or "旅行规划",
-                )
-                db.add(conv)
-                await db.flush()
-                await db.refresh(conv)
-                # Remember the conversation id in the warm snapshot so future
-                # archives update the same row.
-                snapshot["conversation_id"] = str(conv.id)
-                await self.warm_set(session_id, snapshot)
-            else:
-                conv.state_snapshot = snapshot
+            async with async_session_maker() as db:
+                conv: Optional[Conversation] = None
+                if conversation_id is not None:
+                    result = await db.execute(
+                        select(Conversation).where(Conversation.id == conversation_id)
+                    )
+                    conv = result.scalar_one_or_none()
 
-            await db.commit()
+                if conv is None:
+                    conv = Conversation(
+                        user_id=user_uuid,
+                        state_snapshot=snapshot,
+                        title=snapshot.get("last_intent") or "旅行规划",
+                    )
+                    db.add(conv)
+                    await db.flush()
+                    await db.refresh(conv)
+                    # Remember the conversation id in the warm snapshot so future
+                    # archives update the same row.
+                    snapshot["conversation_id"] = str(conv.id)
+                    await self.warm_set(session_id, snapshot)
+                else:
+                    conv.state_snapshot = snapshot
 
-        await redis_client.set(
-            _conv_id_key(session_id),
-            str(conv.id),
-            ttl=CONV_ID_TTL_SECONDS,
-        )
+                await db.commit()
 
-        logger.info("Archived session %s to conversation %s", session_id, conv.id)
-        return True
+            await redis_client.set(
+                _conv_id_key(session_id),
+                str(conv.id),
+                ttl=CONV_ID_TTL_SECONDS,
+            )
+
+            logger.info("Archived session %s to conversation %s", session_id, conv.id)
+            return True
+        finally:
+            if lock is not None:
+                try:
+                    await lock.release()
+                except Exception:
+                    pass
 
     async def cold_get_by_conversation_id(self, conversation_id: UUID) -> Optional[dict[str, Any]]:
         """Load archived snapshot from PostgreSQL."""

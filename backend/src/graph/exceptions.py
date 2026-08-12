@@ -6,6 +6,8 @@ import logging
 from enum import Enum
 from typing import Any, Awaitable, Callable
 
+from langgraph.errors import GraphBubbleUp
+
 logger = logging.getLogger(__name__)
 
 
@@ -99,7 +101,8 @@ async def global_error_handler(
     patch = {
         "error_node": node_exc.node,
         "error_message": node_exc.message,
-        "fallback_used": (state.get("fallback_used") or []) + [f"{node_exc.node}:{node_exc.level.value}"],
+        # fallback_used is a reducer field → return only this node's delta.
+        "fallback_used": [f"{node_exc.node}:{node_exc.level.value}"],
         **node_exc.state_patch,
     }
 
@@ -124,6 +127,10 @@ def with_error_handling(node_name: str):
         async def wrapper(state: dict[str, Any]) -> dict[str, Any]:
             try:
                 return await func(state)
+            except GraphBubbleUp:
+                # LangGraph control flow (interrupt / Command bubble-up) must
+                # propagate untouched — never degrade it as a node error.
+                raise
             except Exception as exc:
                 return await global_error_handler(state, exc, node_name)
 

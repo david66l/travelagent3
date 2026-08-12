@@ -100,8 +100,10 @@ def test_fatigue_model_forces_recovery_day_after_high_streak():
     assert any(limit <= 4 for limit in limits[2:])
 
 
-def test_cp_sat_tuning_scales_time_and_uses_four_workers():
+def test_cp_sat_tuning_scales_time_and_uses_single_worker():
     small = CPSATTuningGuide().recommend(ConstraintsInput(travel_days=1), 5)
     large = CPSATTuningGuide().recommend(ConstraintsInput(travel_days=5), 50)
-    assert small["num_search_workers"] == large["num_search_workers"] == 4
+    # Single worker on purpose: multi-worker CP-SAT dead-hangs on macOS+ortools
+    # 9.15 before search begins, so the time limit never fires. See tuning guide.
+    assert small["num_search_workers"] == large["num_search_workers"] == 1
     assert small["max_time_in_seconds"] < large["max_time_in_seconds"]

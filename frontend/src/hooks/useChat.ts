@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from "react";
 import {
   createConversation,
   ensureGuestSession,
+  postChatAction,
   postChatMessage,
 } from "@/lib/api";
 import { useSSE } from "@/hooks/useSSE";
@@ -73,15 +74,15 @@ export function useChat() {
           );
           store.setSessionId(conversationId);
         }
+        if (!useChatStore.getState().isConnected) {
+          await openStream(conversationId);
+        }
         await postChatMessage(
           auth.token,
           auth.fingerprint,
           conversationId,
           content
         );
-        if (!useChatStore.getState().isConnected) {
-          await openStream(conversationId);
-        }
         return "sent";
       } catch (err) {
         console.error("sendMessage failed:", err);
@@ -89,6 +90,37 @@ export function useChat() {
       }
     },
     [ensureAuth, openStream, store]
+  );
+
+  const sendAction = useCallback(
+    async (
+      action: "confirm" | "modify" | "reject" | "trip_event",
+      payload?: { change?: unknown; external_event?: unknown }
+    ): Promise<"sent" | "failed"> => {
+      try {
+        const auth = await ensureAuth();
+        const conversationId = useChatStore.getState().sessionId;
+        if (!conversationId) return "failed";
+        useChatStore.getState().setWaitingForConfirmation(false);
+        useChatStore.getState().setLoading(true);
+        if (!useChatStore.getState().isConnected) {
+          await openStream(conversationId);
+        }
+        await postChatAction(
+          auth.token,
+          auth.fingerprint,
+          conversationId,
+          action,
+          payload
+        );
+        return "sent";
+      } catch (err) {
+        console.error("sendAction failed:", err);
+        useChatStore.getState().setLoading(false);
+        return "failed";
+      }
+    },
+    [ensureAuth, openStream]
   );
 
   const reconnect = useCallback(async () => {
@@ -104,5 +136,5 @@ export function useChat() {
     await openStream(conversationId);
   }, [ensureAuth, openStream, store, activeJobIdRef, lastEventIdRef]);
 
-  return { sendMessage, reconnect, disconnect };
+  return { sendMessage, sendAction, reconnect, disconnect };
 }

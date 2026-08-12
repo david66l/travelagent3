@@ -384,6 +384,82 @@ class TestLLMEnrichment:
         assert activity_fields_match(itinerary[0].activities[1], yu_act)
 
     @pytest.mark.asyncio
+    async def test_batch_match_avoids_per_activity_llm(self, profile_shanghai, monkeypatch):
+        """A successful day-batch must enrich the whole day in ONE LLM call.
+
+        Uses non-template POIs (so the batch actually runs) including a meal whose
+        venue the batch echoes WITHOUT the "午餐 · " label; normalized matching must
+        still resolve it so no per-activity fallback LLM fires.
+        """
+        day = DayPlan(
+            day_number=1,
+            activities=[
+                Activity(
+                    poi_name="M50创意园",
+                    category="attraction",
+                    start_time="09:00",
+                    end_time="11:00",
+                    duration_min=120,
+                    location=Location(lat=31.25, lng=121.45),
+                ),
+                Activity(
+                    poi_name="午餐 · 南翔馒头店",
+                    category="restaurant",
+                    start_time="12:00",
+                    end_time="13:00",
+                    duration_min=60,
+                    meal_cost=60,
+                ),
+                Activity(
+                    poi_name="武康路",
+                    category="attraction",
+                    start_time="14:00",
+                    end_time="16:00",
+                    duration_min=120,
+                    location=Location(lat=31.21, lng=121.43),
+                ),
+            ],
+            total_cost=60,
+        )
+
+        call_count = [0]
+
+        async def _batch(messages, **kwargs):
+            call_count[0] += 1
+            return {
+                "days": [
+                    {
+                        "day_number": 1,
+                        "theme": "文艺漫游",
+                        "activities": [
+                            {"poi_name": "M50创意园", "recommendation_reason": "艺术工业风的悠闲漫步", "tags": ["文艺"]},
+                            # Drops the "午餐 · " label — must still match via normalization.
+                            {"poi_name": "南翔馒头店", "recommendation_reason": "一笼齿颊留香的地道小笼", "tags": ["美食"]},
+                            {"poi_name": "武康路", "recommendation_reason": "梧桐与老洋房的文艺街角", "tags": ["文艺"]},
+                        ],
+                    }
+                ]
+            }
+
+        mock = AsyncMock()
+        mock.json_chat = AsyncMock(side_effect=_batch)
+        mock.chat = AsyncMock(return_value="")
+        mock.structured_call = AsyncMock(return_value=None)
+        monkeypatch.setattr("planner.core.writer.llm", mock)
+
+        enriched, _ = await enrich([day], profile_shanghai)
+
+        # ONE all-days LLM call covers the whole trip; no per-day / per-activity calls.
+        assert call_count[0] == 1
+        # The meal matched via normalization → carries the batch reason, not a template.
+        meal = enriched[0].activities[1]
+        assert meal.poi_name == "午餐 · 南翔馒头店"  # protected name unchanged
+        assert meal.recommendation_reason == "一笼齿颊留香的地道小笼"
+        for orig, enr in zip(day.activities, enriched[0].activities):
+            assert activity_fields_match(orig, enr)
+            assert enr.recommendation_reason
+
+    @pytest.mark.asyncio
     async def test_family_profile_produces_family_friendly_reason(self, itinerary, monkeypatch):
         """亲子 profile should influence enrichment prompt."""
         family_profile = UserProfile(

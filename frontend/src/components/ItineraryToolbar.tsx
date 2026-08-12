@@ -2,9 +2,12 @@
 
 import { useState } from "react";
 import { Loader2 } from "lucide-react";
+import type { ItineraryChange } from "@/lib/api";
 
 interface ItineraryToolbarProps {
-  onModify: (message: string) => void | Promise<void>;
+  onModify: (change: ItineraryChange) => void | Promise<void>;
+  onConfirm: () => void | Promise<void>;
+  onRegenerate: () => void | Promise<void>;
   isLoading?: boolean;
   waitingForConfirmation?: boolean;
 }
@@ -14,22 +17,19 @@ const paceOptions = ["轻松", "适中", "紧凑"];
 
 export function ItineraryToolbar({
   onModify,
+  onConfirm,
+  onRegenerate,
   isLoading = false,
   waitingForConfirmation = false,
 }: ItineraryToolbarProps) {
   const [budgetInput, setBudgetInput] = useState("");
   const [showBudgetInput, setShowBudgetInput] = useState(false);
 
-  const handleAction = async (message: string) => {
-    if (isLoading) return;
-    await onModify(message);
-  };
-
   const handleBudgetSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const amount = Number(budgetInput);
     if (!amount || isLoading) return;
-    await onModify(`预算调整到 ${amount}`);
+    await onModify({ action: "set_budget", value: amount });
     setBudgetInput("");
     setShowBudgetInput(false);
   };
@@ -42,8 +42,8 @@ export function ItineraryToolbar({
       <div className="flex flex-wrap items-center gap-2">
         {/* Confirmation */}
         <button
-          onClick={() => handleAction("确认行程")}
-          disabled={isLoading}
+          onClick={() => onConfirm()}
+          disabled={isLoading || !waitingForConfirmation}
           className={buttonBase}
           title="确认满意"
         >
@@ -57,14 +57,14 @@ export function ItineraryToolbar({
         {/* Day adjustments */}
         <div className="flex items-center gap-1 rounded-xl border border-hairline bg-canvas-soft/60 p-0.5">
           <button
-            onClick={() => handleAction("增加一天")}
+            onClick={() => onModify({ action: "change_days", delta: 1 })}
             disabled={isLoading}
             className={buttonBase}
           >
             增加一天
           </button>
           <button
-            onClick={() => handleAction("减少一天")}
+            onClick={() => onModify({ action: "change_days", delta: -1 })}
             disabled={isLoading}
             className={buttonBase}
           >
@@ -112,7 +112,7 @@ export function ItineraryToolbar({
               {budgetPresets.map((amount) => (
                 <button
                   key={amount}
-                  onClick={() => handleAction(`预算调整到 ${amount}`)}
+                  onClick={() => onModify({ action: "set_budget", value: amount })}
                   disabled={isLoading}
                   className={buttonBase}
                 >
@@ -136,7 +136,7 @@ export function ItineraryToolbar({
           {paceOptions.map((pace) => (
             <button
               key={pace}
-              onClick={() => handleAction(`节奏调整为 ${pace}`)}
+              onClick={() => onModify({ action: "set_pace", value: pace })}
               disabled={isLoading}
               className={buttonBase}
             >
@@ -147,11 +147,11 @@ export function ItineraryToolbar({
 
         {/* Cancel */}
         <button
-          onClick={() => handleAction("取消当前修改")}
+          onClick={() => onRegenerate()}
           disabled={isLoading}
           className={buttonBase}
         >
-          取消
+          重新生成
         </button>
       </div>
     </div>

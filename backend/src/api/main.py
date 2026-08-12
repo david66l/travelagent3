@@ -1,5 +1,6 @@
 """FastAPI application entry point."""
 
+import asyncio
 import logging
 import os
 import sys
@@ -8,7 +9,6 @@ from contextlib import asynccontextmanager
 logger = logging.getLogger(__name__)
 
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 
 # Ensure backend/src is on path (works regardless of project location)
 _src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -64,7 +64,15 @@ async def lifespan(app: FastAPI):
         if settings.planning_executor == "embedded":
             await start_worker()
 
+        # Preload the 1.3GB BGE embedding model in the background so the first
+        # planning request doesn't pay the ~10s cold-load cost inside RAG retrieval.
+        from data.embedding import warmup_embedder
+
+        warmup_task = asyncio.create_task(warmup_embedder())
+
         yield
+
+        warmup_task.cancel()
 
         if settings.planning_executor == "embedded":
             await stop_worker()
@@ -85,15 +93,6 @@ def create_app() -> FastAPI:
     # Request context + metrics (M5)
     app.add_middleware(MetricsMiddleware)
     app.add_middleware(RequestContextMiddleware)
-
-    # CORS
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
 
     # Global exception handlers
     setup_exception_handlers(app)

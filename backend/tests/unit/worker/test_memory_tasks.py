@@ -52,14 +52,57 @@ def test_archive_session_task_retries_on_failure():
     assert mock_archive.await_count == 4
 
 
-def test_schedule_delayed_archive_enqueues_with_countdown():
-    with patch.object(memory_tasks.archive_session, "apply_async") as mock_apply:
-        session_id = memory_tasks.schedule_delayed_archive.delay("session-1", "user-1")
-    assert session_id.get() == "session-1"
-    mock_apply.assert_called_once_with(
-        args=["session-1", "user-1"],
-        countdown=memory_tasks.DISCONNECT_ARCHIVE_DELAY_SECONDS,
-    )
+def test_schedule_delayed_archive_registers_due_timestamp():
+    # No long in-flight countdown message: just a future due-time in the ZSET.
+    with patch.object(
+        memory_tasks.redis_client, "zadd", new=AsyncMock(return_value=1)
+    ) as mock_zadd:
+        result = memory_tasks.schedule_delayed_archive.delay("session-1", "user-1")
+    assert result.get() == "session-1"
+    mock_zadd.assert_awaited_once()
+    key, mapping = mock_zadd.await_args.args
+    assert key == memory_tasks.PENDING_ARCHIVE_ZSET
+    assert mapping["session-1"] > time.time()  # scheduled in the future
+
+
+def test_sweep_due_archives_archives_due_sessions():
+    snapshot = {"user_id": "user-1", "user_role": "user"}
+    with patch.object(
+        memory_tasks.redis_client, "zrangebyscore", new=AsyncMock(return_value=["s1"])
+    ):
+        with patch.object(
+            memory_tasks.redis_client, "zremrangebyscore", new=AsyncMock(return_value=1)
+        ) as mock_zrem:
+            with patch.object(
+                memory_tasks.memory_manager, "warm_get", new=AsyncMock(return_value=snapshot)
+            ):
+                with patch.object(
+                    memory_tasks.memory_manager,
+                    "archive_to_cold",
+                    new=AsyncMock(return_value=True),
+                ) as mock_archive:
+                    result = memory_tasks.sweep_due_archives.delay()
+
+    assert result.get() == {"archived": 1, "due": 1}
+    mock_archive.assert_awaited_once_with("s1", "user-1", "user")
+    mock_zrem.assert_awaited_once()
+
+
+def test_sweep_due_archives_noop_when_nothing_due():
+    with patch.object(
+        memory_tasks.redis_client, "zrangebyscore", new=AsyncMock(return_value=[])
+    ):
+        with patch.object(
+            memory_tasks.redis_client, "zremrangebyscore", new=AsyncMock()
+        ) as mock_zrem:
+            with patch.object(
+                memory_tasks.memory_manager, "archive_to_cold", new=AsyncMock()
+            ) as mock_archive:
+                result = memory_tasks.sweep_due_archives.delay()
+
+    assert result.get() == {"archived": 0, "due": 0}
+    mock_archive.assert_not_awaited()
+    mock_zrem.assert_not_awaited()
 
 
 def test_archive_active_sessions_archives_authenticated_hot_sessions():

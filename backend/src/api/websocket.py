@@ -58,6 +58,28 @@ async def chat_websocket(websocket: WebSocket, session_id: str) -> None:
                 if job_id:
                     active_job_id = job_id
 
+            elif msg_type in ("confirm", "modify", "reject", "trip_event"):
+                # Control actions for the draft confirmation interrupt and
+                # in-trip replanning. Button-driven; may carry no free text.
+                user_id = msg.get("user_id", last_user_id or "anonymous")
+                user_role = msg.get("user_role", last_user_role)
+                last_user_id = user_id
+                last_user_role = user_role
+                if msg_type == "modify":
+                    action_payload = {"change": msg.get("change")}
+                elif msg_type == "trip_event":
+                    action_payload = msg.get("external_event") or {}
+                else:
+                    action_payload = None
+                await process_chat_message(
+                    session_id,
+                    user_id,
+                    msg.get("content", ""),
+                    user_role=user_role,
+                    action=msg_type,
+                    action_payload=action_payload,
+                )
+
             elif msg_type == "subscribe":
                 job_id = msg.get("job_id")
                 last_event_id = msg.get("last_event_id", 0)

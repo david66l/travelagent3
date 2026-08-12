@@ -49,12 +49,9 @@ class LLMClient:
     def _uses_local_llm(self, model_name: str) -> bool:
         if not settings.local_llm_enabled:
             return False
-        local_names = {
-            name
-            for name in (settings.local_llm_model, settings.small_model)
-            if name
-        }
-        return model_name in local_names
+        # Only the local Qwen model name routes to the local llama.cpp server.
+        # All other names (e.g. the DeepSeek cloud model) use the cloud client.
+        return bool(settings.local_llm_model) and model_name == settings.local_llm_model
 
     def _client_for_model(self, model_name: str) -> tuple[AsyncOpenAI, str]:
         """根据模型名返回对应的客户端和实际模型名。"""
@@ -102,6 +99,16 @@ class LLMClient:
         compressed = compress_message_history(messages)
         return model, compressed, tier
 
+    @staticmethod
+    def _thinking_extra_body(
+        model: str,
+        task_type: Optional[str],
+    ) -> Optional[dict[str, Any]]:
+        """Disable DeepSeek thinking only for short extraction/prose tasks."""
+        if model.startswith("deepseek-v4") and task_type in {"intent", "output_format"}:
+            return {"thinking": {"type": "disabled"}}
+        return None
+
     async def chat(
         self,
         messages: list[dict[str, str]],
@@ -111,12 +118,16 @@ class LLMClient:
     ) -> str:
         model, prepared_messages, tier = await self._prepare_request(messages, task_type)
         start = time.monotonic()
-        response = await self._create_completion(
+        request_kwargs: dict[str, Any] = dict(
             model=model,
             messages=prepared_messages,  # type: ignore
             temperature=temperature or settings.llm_temperature,
             max_tokens=max_tokens or settings.llm_max_tokens,
         )
+        extra_body = self._thinking_extra_body(model, task_type)
+        if extra_body:
+            request_kwargs["extra_body"] = extra_body
+        response = await self._create_completion(**request_kwargs)
         duration = time.monotonic() - start
         self._log_usage(response, model=model, tier=tier, duration_s=duration)
         return response.choices[0].message.content or ""
@@ -133,15 +144,19 @@ class LLMClient:
         temperature: float,
         max_tokens: int,
         tier: str,
+        extra_body: Optional[dict[str, Any]] = None,
     ) -> str:
         start = time.monotonic()
-        response = await self._create_completion(
+        request_kwargs: dict[str, Any] = dict(
             model=model,
             messages=messages,  # type: ignore
             response_format={"type": "json_object"},
             temperature=temperature,
             max_tokens=max_tokens,
         )
+        if extra_body:
+            request_kwargs["extra_body"] = extra_body
+        response = await self._create_completion(**request_kwargs)
         duration = time.monotonic() - start
         self._log_usage(response, model=model, tier=tier, duration_s=duration)
         return response.choices[0].message.content or "{}"
@@ -156,6 +171,10 @@ class LLMClient:
         model, prepared_messages, tier = await self._prepare_request(messages, task_type)
         temp = temperature if temperature is not None else 0.3
         max_tokens = settings.llm_max_tokens
+        # DeepSeek V4 enables thinking by default. Intent/slot extraction is a
+        # short JSON transformation, so hidden chain-of-thought only adds
+        # latency and tokens without improving the deterministic validation.
+        extra_body = self._thinking_extra_body(model, task_type)
 
         content = await self._completion_json(
             model=model,
@@ -163,6 +182,7 @@ class LLMClient:
             temperature=temp,
             max_tokens=max_tokens,
             tier=tier,
+            extra_body=extra_body,
         )
         try:
             return self._parse_structured(content, response_model)
@@ -189,6 +209,7 @@ class LLMClient:
                 temperature=0.1,
                 max_tokens=max_tokens,
                 tier=tier,
+                extra_body=extra_body,
             )
             return self._parse_structured(repaired, response_model)
 
@@ -201,13 +222,17 @@ class LLMClient:
     ) -> dict:
         model, prepared_messages, tier = await self._prepare_request(messages, task_type)
         start = time.monotonic()
-        response = await self._create_completion(
+        request_kwargs: dict[str, Any] = dict(
             model=model,
             messages=prepared_messages,  # type: ignore
             response_format={"type": "json_object"},
             temperature=temperature or settings.llm_temperature,
             max_tokens=max_tokens or settings.llm_max_tokens,
         )
+        extra_body = self._thinking_extra_body(model, task_type)
+        if extra_body:
+            request_kwargs["extra_body"] = extra_body
+        response = await self._create_completion(**request_kwargs)
         duration = time.monotonic() - start
         self._log_usage(response, model=model, tier=tier, duration_s=duration)
         content = response.choices[0].message.content or "{}"
@@ -223,7 +248,7 @@ class LLMClient:
         """Stream LLM tokens. Yields content chunks."""
         model, prepared_messages, tier = await self._prepare_request(messages, task_type)
         start = time.monotonic()
-        response = await self._create_completion(
+        request_kwargs: dict[str, Any] = dict(
             model=model,
             messages=prepared_messages,  # type: ignore
             temperature=temperature or settings.llm_temperature,
@@ -231,6 +256,10 @@ class LLMClient:
             stream=True,
             stream_options={"include_usage": True},
         )
+        extra_body = self._thinking_extra_body(model, task_type)
+        if extra_body:
+            request_kwargs["extra_body"] = extra_body
+        response = await self._create_completion(**request_kwargs)
         full_content = ""
         prompt_tokens = 0
         completion_tokens = 0

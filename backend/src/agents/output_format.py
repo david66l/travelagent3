@@ -65,18 +65,32 @@ class OutputFormatAgent:
         itinerary: list[dict[str, Any]] | None = None,
         city: str | None = None,
         session_id: str | None = None,
+        on_token: Any = None,
     ) -> dict[str, Any]:
         """Return formatted outputs and download URLs.
 
         Always returns at least `markdown`. PDF/Excel/map_url are best-effort.
+        ``on_token`` (async ``(chunk) -> None``) streams the polish token-by-token
+        to the caller (→ frontend) so the prose appears live instead of after a
+        ~2k-token blocking call.
         """
-        polished = await self.polish_markdown(proposal_text)
+        polished = await self.polish_markdown(proposal_text, on_token=on_token)
         file_id = session_id or uuid.uuid4().hex[:12]
 
-        pdf_path, pdf_url = await self.generate_pdf(polished, file_id)
-        excel_path, excel_url = await self.generate_excel(
-            polished, itinerary or [], file_id
-        )
+        # Server-side PDF/Excel is redundant with the frontend's client-side
+        # export, so it is gated off by default (saves CPU + the WeasyPrint native
+        # dependency). When disabled, the URLs are simply omitted.
+        pdf_path = pdf_url = excel_path = excel_url = None
+        if settings.server_side_export_enabled:
+            import asyncio
+
+            pdf_task = asyncio.create_task(self.generate_pdf(polished, file_id))
+            excel_task = asyncio.create_task(
+                self.generate_excel(polished, itinerary or [], file_id)
+            )
+            (pdf_path, pdf_url), (excel_path, excel_url) = await asyncio.gather(
+                pdf_task, excel_task
+            )
         map_url = self.generate_map_url(itinerary, city)
 
         return {
@@ -91,29 +105,193 @@ class OutputFormatAgent:
             },
         }
 
-    async def polish_markdown(self, proposal_text: str) -> str:
-        """Light LLM polish of the itinerary Markdown without changing facts."""
-        if not proposal_text:
+    @staticmethod
+    def _build_skeleton(
+        itinerary: list[dict[str, Any]] | None, profile: dict[str, Any] | None = None
+    ) -> str:
+        """Compact, factual text of the solved itinerary for the prose prompt."""
+        if not itinerary:
+            return ""
+        profile = profile or {}
+        dest = profile.get("destination") or "目的地"
+        days = len(itinerary)
+        lines = [f"目的地：{dest}；行程天数：{days}天"]
+        for day in itinerary:
+            lines.append(f"\n第{day.get('day_number', '?')}天：")
+            for act in day.get("activities", []) or []:
+                cost = act.get("ticket_price") or act.get("meal_cost") or 0
+                time_str = (
+                    f"{act.get('start_time', '')}-{act.get('end_time', '')}"
+                    if act.get("start_time")
+                    else ""
+                )
+                tags = "、".join(act.get("tags") or [])
+                cost_str = f"，门票¥{cost:.0f}" if cost else ""
+                lines.append(
+                    f"- {time_str} {act.get('poi_name', '')}"
+                    f"（{act.get('category', '')}{cost_str}）"
+                    + (f" 标签：{tags}" if tags else "")
+                )
+        return "\n".join(lines)
+
+    async def stream_markdown(
+        self,
+        itinerary: list[dict[str, Any]] | None,
+        profile: dict[str, Any] | None = None,
+        on_token: Any = None,
+    ) -> str:
+        """Generate the itinerary prose with a single streaming LLM call.
+
+        Writes rich Chinese Markdown directly from the *solved* itinerary, so the
+        prose streams to the client immediately (real-time) with no blocking
+        pre-pass. ``on_token`` (async ``(chunk)->None``) forwards each token to
+        the frontend. Falls back to the plain skeleton on any failure.
+        """
+        skeleton = self._build_skeleton(itinerary, profile)
+        if not skeleton:
             return ""
         try:
             from core.llm_client import llm
 
+            # Output ≈ skeleton + per-POI prose; scale the budget to the input
+            # (Chinese ≈ 1 token/char) so multi-day plans are never truncated.
+            max_tokens = min(8192, max(2048, int(len(skeleton) * 2.5)))
+            messages = [
+                {
+                    "role": "system",
+                    "content": (
+                        "你是专业的旅行行程文案撰写者。根据给定的行程数据，输出一份精美、"
+                        "流畅的中文 Markdown 行程方案。要求：\n"
+                        "1. 用 `#` 一级标题作为方案名（如“上海 5日游行程方案”）；\n"
+                        "2. 紧接着一行给出预估费用（门票合计），并注明“不含住宿与往返大交通”；\n"
+                        "3. 每天用 `##` 标题并配一个简短主题；\n"
+                        "4. 每天的地点用有序列表：**加粗地点名**，保留时间段与门票价格，"
+                        "换行后用 `_斜体_` 写一句吸引人的推荐理由；\n"
+                        "5. 推荐理由可依据标签合理发挥，但**绝不可编造或修改地点名称、"
+                        "时间、价格**；\n"
+                        "6. 必须完整输出全部天数与全部地点，只返回 Markdown 文本。"
+                    ),
+                },
+                {"role": "user", "content": skeleton},
+            ]
+            if on_token is not None:
+                full = ""
+                async for chunk in llm.stream_chat(
+                    messages, temperature=0.5, max_tokens=max_tokens, task_type="output_format"
+                ):
+                    full += chunk
+                    try:
+                        await on_token(chunk)
+                    except Exception:
+                        pass  # token push is best-effort; never break generation
+                return full.strip() or skeleton
+            polished = await llm.chat(
+                messages, temperature=0.5, max_tokens=max_tokens, task_type="output_format"
+            )
+            return polished.strip() or skeleton
+        except Exception as exc:
+            logger.warning("Streaming markdown generation failed: %s", exc)
+            return skeleton
+
+    async def build_artifacts(
+        self,
+        markdown: str,
+        itinerary: list[dict[str, Any]] | None,
+        city: str | None,
+        session_id: str | None,
+    ) -> dict[str, str | None]:
+        """Build PDF / Excel / map links from finished prose + itinerary."""
+        pdf_url = excel_url = None
+        if settings.server_side_export_enabled:
+            import asyncio
+
+            file_id = session_id or uuid.uuid4().hex[:12]
+            pdf_task = asyncio.create_task(self.generate_pdf(markdown, file_id))
+            excel_task = asyncio.create_task(
+                self.generate_excel(markdown, itinerary or [], file_id)
+            )
+            (_, pdf_url), (_, excel_url) = await asyncio.gather(pdf_task, excel_task)
+        map_url = self.generate_map_url(itinerary, city)
+        return {"pdf": pdf_url, "excel": excel_url, "map": map_url}
+
+    async def polish_markdown(self, proposal_text: str, on_token: Any = None) -> str:
+        """Return the itinerary Markdown, optionally LLM-polished.
+
+        The writer (enrich) step already emits clean, fully-structured Markdown,
+        so the extra LLM polish is disabled by default (``output_polish_enabled``).
+        When disabled we stream the writer's prose directly — real content, paced
+        for smooth client rendering, with no second ~2k-token generation. When
+        enabled, fall back to the historical streaming LLM polish.
+        """
+        if not proposal_text:
+            return ""
+
+        if not settings.output_polish_enabled:
+            await self._stream_existing(proposal_text, on_token)
+            return proposal_text
+
+        try:
+            from core.llm_client import llm
+
+            prompt_text = proposal_text[:12000]
+            # The polished output reproduces the whole document, so its length
+            # tracks the input. A fixed 2048-token cap truncated multi-day trips
+            # mid-sentence; scale the budget to the prose length (Chinese ≈ 1
+            # token/char) with headroom, capped at the model's 8K output limit.
+            max_tokens = min(8192, max(2048, int(len(prompt_text) * 1.6)))
             messages = [
                 {
                     "role": "system",
                     "content": (
                         "你是一位行程文档排版助手。请对以下 Markdown 行程进行排版和"
                         "润色（修正标题层级、统一列表符号、优化过渡语句），但**不要"
-                        "修改任何景点名称、时间、价格、路线等事实信息**。只返回 Markdown 文本。"
+                        "修改任何景点名称、时间、价格、路线等事实信息**。必须完整输出"
+                        "全部天数与景点，只返回 Markdown 文本。"
                     ),
                 },
-                {"role": "user", "content": proposal_text[:6000]},
+                {"role": "user", "content": prompt_text},
             ]
-            polished = await llm.chat(messages, temperature=0.3, max_tokens=2048, task_type="output_format")
+            if on_token is not None:
+                full = ""
+                async for chunk in llm.stream_chat(
+                    messages, temperature=0.3, max_tokens=max_tokens, task_type="output_format"
+                ):
+                    full += chunk
+                    try:
+                        await on_token(chunk)
+                    except Exception:
+                        pass  # token push is best-effort; never break polishing
+                return full.strip() or proposal_text
+            polished = await llm.chat(
+                messages, temperature=0.3, max_tokens=max_tokens, task_type="output_format"
+            )
             return polished.strip() or proposal_text
         except Exception as exc:
             logger.warning("Markdown polish failed, using original: %s", exc)
             return proposal_text
+
+    @staticmethod
+    async def _stream_existing(text: str, on_token: Any) -> None:
+        """Stream already-computed prose to the client in line-sized chunks.
+
+        Gives a smooth, real progressive render without a second LLM call. Yields
+        control between chunks so each is flushed to the SSE queue promptly; token
+        pushes are best-effort and never raise.
+        """
+        if on_token is None:
+            return
+        import asyncio
+
+        # Emit per line (keeping the newline) so Markdown structure renders
+        # incrementally instead of arriving as one block.
+        for line in text.splitlines(keepends=True):
+            if not line:
+                continue
+            try:
+                await on_token(line)
+            except Exception:
+                break  # client gone / queue full — stop, never break formatting
+            await asyncio.sleep(0)  # flush this chunk before the next
 
     @staticmethod
     def _ensure_weasyprint_lib_path() -> None:
@@ -225,40 +403,14 @@ ul {{ margin-left: 1em; }}
     def generate_map_url(
         self, itinerary: list[dict[str, Any]] | None, city: str | None
     ) -> str | None:
-        """Build an AMap static map URL with day markers."""
-        if not settings.amap_key:
-            return None
-        if not itinerary:
-            return None
+        """Do not expose provider credentials in a client-visible URL.
 
-        markers: list[str] = []
-        seen: set[str] = set()
-        for day_idx, day in enumerate(itinerary[:3], start=1):
-            activities = day.get("activities") or day.get("items") or []
-            for act in activities[:6]:
-                name = act.get("name") or act.get("poi_name") or ""
-                if not name or name in seen:
-                    continue
-                seen.add(name)
-                # Use a deterministic pseudo-location for the label.
-                lat, lng = self._pseudo_coords(name)
-                markers.append(f"{lng},{lat},{day_idx}")
-        if not markers:
-            return None
-
-        markers_param = "|".join(markers)
-        return (
-            "https://restapi.amap.com/v3/staticmap"
-            f"?key={settings.amap_key}"
-            f"&markers=mid,0xFF0000:{markers_param}"
-            f"&size=800x600"
-            f"&zoom=12"
-        )
-
-    @staticmethod
-    def _pseudo_coords(name: str) -> tuple[float, float]:
-        h = hash(name) % 10000
-        return 30.0 + (h % 100) / 100.0, 110.0 + (h // 100) / 100.0
+        The frontend already renders ``TripMap`` from the real coordinates in
+        the itinerary. Returning an AMap static URL previously leaked AMAP_KEY
+        and plotted hash-derived fake coordinates, so no external artifact is
+        produced here.
+        """
+        return None
 
 
 # Singleton agent for the application.

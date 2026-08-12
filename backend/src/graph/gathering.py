@@ -88,7 +88,13 @@ async def _gathering_turn_traced(state: dict[str, Any]) -> dict[str, Any]:
     profile_ready = is_profile_ready(merged_flat)
 
     if result.intent in _PLANNING_INTENTS:
-        next_action = "plan" if profile_ready else "clarify"
+        if not profile_ready:
+            next_action = "clarify"
+        elif (result.feasibility_report or {}).get("issues"):
+            # Hard feasibility conflicts → gate before planning.
+            next_action = "infeasible"
+        else:
+            next_action = "plan"
     else:
         next_action = "respond"
 

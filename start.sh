@@ -194,7 +194,43 @@ fi
 # ===== 6. 创建日志目录 =====
 mkdir -p "$PROJECT_ROOT/logs"
 
-# ===== 7. 启动后端 =====
+# ===== 7. 启动 VRP 求解服务 (port 8001) =====
+# 路线求解跑在独立服务里，主后端通过 VRP_SOLVER_URL 调它。必须随后端一起启动，
+# 且带 --reload —— 否则改了 solver 代码这个服务不会热加载，会出现「后端是新代码、
+# 求解服务还是旧代码」的半新半旧状态（改 .env 仍需手动重启，--reload 不重载环境变量）。
+log_step "启动 VRP 求解服务 (port 8001)..."
+
+if lsof -ti:8001 >/dev/null 2>&1; then
+    log_warn "端口 8001 已被占用，尝试释放..."
+    kill $(lsof -ti:8001) 2>/dev/null || true
+    sleep 1
+fi
+
+export PYTHONPATH="$PROJECT_ROOT/backend/src"
+cd "$PROJECT_ROOT/backend/src"
+
+python3 -m uvicorn vrp_solver_service.main:app \
+    --host 0.0.0.0 \
+    --port 8001 \
+    --reload \
+    --timeout-graceful-shutdown 10 \
+    > "$PROJECT_ROOT/logs/vrp_solver.log" 2>&1 &
+
+VRP_PID=$!
+
+log_step "等待 VRP 求解服务启动..."
+for i in $(seq 1 20); do
+    if curl -s http://127.0.0.1:8001/health >/dev/null 2>&1; then
+        log_info "VRP 求解服务启动成功 (PID: $VRP_PID)"
+        break
+    fi
+    if [ $i -eq 20 ]; then
+        log_warn "VRP 求解服务启动较慢，请查看 logs/vrp_solver.log"
+    fi
+    sleep 1
+done
+
+# ===== 8. 启动后端 =====
 log_step "启动后端服务 (port 8000)..."
 
 # 如果已有后端在运行，先停止
@@ -208,10 +244,14 @@ export PYTHONPATH="$PROJECT_ROOT/backend/src"
 cd "$PROJECT_ROOT/backend/src"
 
 # 使用 python3 直接启动 uvicorn，捕获 PID
+# --timeout-graceful-shutdown 10: 前端的 WebSocket 长连接会让 --reload 卡在
+# "Waiting for connections to close" 永不重启（改代码热加载就把后端挂死）。限时
+# 10s 后强制断连，热加载就不会再被 WS 卡住。
 python3 -m uvicorn api.main:app \
     --host 0.0.0.0 \
     --port 8000 \
     --reload \
+    --timeout-graceful-shutdown 10 \
     > "$PROJECT_ROOT/logs/backend.log" 2>&1 &
 
 BACKEND_PID=$!
@@ -229,13 +269,51 @@ for i in $(seq 1 20); do
     sleep 1
 done
 
-# ===== 8. 启动 Celery Worker / Beat =====
+# ===== 9. 启动 Go 网关 (port 8080) =====
+# 边缘鉴权/限流/熔断 + SSE 流式透传；前端通过它访问后端。两点关键：
+#  • 子 shell 里加载 .env，拿到与后端一致的 JWT_SECRET，否则网关会拒掉所有 token；
+#  • WriteTimeout=0，否则默认 30s 会掐断 SSE 长连接（流式输出中途断流）。
+if [ -x "$PROJECT_ROOT/gateway/bin/gateway" ]; then
+    log_step "启动 Go 网关 (port 8080)..."
+    if lsof -ti:8080 >/dev/null 2>&1; then
+        kill $(lsof -ti:8080) 2>/dev/null || true
+        sleep 1
+    fi
+    (
+        set -a
+        [ -f "$PROJECT_ROOT/.env" ] && . "$PROJECT_ROOT/.env"
+        set +a
+        export GATEWAY_PORT=8080 GATEWAY_WRITE_TIMEOUT=0s
+        export BACKEND_URL="http://localhost:8000" FRONTEND_URL="http://localhost:3000"
+        exec "$PROJECT_ROOT/gateway/bin/gateway"
+    ) > "$PROJECT_ROOT/logs/gateway.log" 2>&1 &
+    GATEWAY_PID=$!
+    for i in $(seq 1 15); do
+        if curl -s http://127.0.0.1:8080/health >/dev/null 2>&1; then
+            log_info "网关启动成功 (PID: $GATEWAY_PID)"
+            break
+        fi
+        if [ $i -eq 15 ]; then
+            log_warn "网关启动较慢，请查看 logs/gateway.log"
+        fi
+        sleep 1
+    done
+else
+    GATEWAY_PID=""
+    log_warn "未找到 gateway/bin/gateway，跳过网关（cd gateway && make build 构建）"
+fi
+
+# ===== 10. 启动 Celery Worker / Beat =====
 log_step "启动 Celery worker + beat..."
 
 cd "$PROJECT_ROOT/backend/src"
 
+# --concurrency=2: 默认 prefork 会按 CPU 核数(8) 起满 worker，叠加 Postgres+Redis+
+# 两个 uvicorn+llama(mlock 4.4G)+Next.js，16GB 必然 swap，反过来拖慢所有推理。
+# 规划是低频任务，2 个并发足够，省下的内存直接喂给 LLM/求解。
 python3 -m celery -A core.celery_app worker \
     -Q default,memory,planning -l info \
+    --concurrency=2 \
     > "$PROJECT_ROOT/logs/celery_worker.log" 2>&1 &
 CELERY_WORKER_PID=$!
 
@@ -247,7 +325,7 @@ CELERY_BEAT_PID=$!
 log_info "Celery worker 启动成功 (PID: $CELERY_WORKER_PID)"
 log_info "Celery beat 启动成功 (PID: $CELERY_BEAT_PID)"
 
-# ===== 9. 启动前端 =====
+# ===== 11. 启动前端 =====
 log_step "启动前端服务 (port 3000)..."
 
 if lsof -ti:3000 >/dev/null 2>&1; then
@@ -262,13 +340,15 @@ FRONTEND_PID=$!
 
 log_info "前端启动成功 (PID: $FRONTEND_PID)"
 
-# ===== 10. 保存 PID 文件 =====
+# ===== 12. 保存 PID 文件 =====
+[ -n "$GATEWAY_PID" ] && echo "$GATEWAY_PID" > "$PROJECT_ROOT/logs/gateway.pid"
+echo "$VRP_PID" > "$PROJECT_ROOT/logs/vrp_solver.pid"
 echo "$BACKEND_PID" > "$PROJECT_ROOT/logs/backend.pid"
 echo "$FRONTEND_PID" > "$PROJECT_ROOT/logs/frontend.pid"
 echo "$CELERY_WORKER_PID" > "$PROJECT_ROOT/logs/celery_worker.pid"
 echo "$CELERY_BEAT_PID" > "$PROJECT_ROOT/logs/celery_beat.pid"
 
-# ===== 10. 输出访问信息 =====
+# ===== 13. 输出访问信息 =====
 sleep 2
 clear || true
 
@@ -279,7 +359,9 @@ cat <<'EOF'
 EOF
 
 echo -e "║  ${GREEN}前端页面${NC}   http://localhost:3000                            ║"
+echo -e "║  ${GREEN}API 网关${NC}   http://localhost:8080  (前端经此访问后端)        ║"
 echo -e "║  ${GREEN}后端 API${NC}   http://localhost:8000                            ║"
+echo -e "║  ${GREEN}求解服务${NC}   http://localhost:8001                            ║"
 echo -e "║  ${GREEN}API 文档${NC}   http://localhost:8000/docs                       ║"
 echo -e "║  ${GREEN}WebSocket${NC}  ws://localhost:8000/ws/chat/{session_id}         ║"
 echo    "╠════════════════════════════════════════════════════════════╣"
@@ -293,12 +375,14 @@ echo -e "║    查看前端日志  ${YELLOW}tail -f logs/frontend.log${NC}     
 echo -e "║    停止所有服务  ${YELLOW}./stop.sh${NC}                                 ║"
 echo    "╚════════════════════════════════════════════════════════════╝"
 
-# ===== 11. 优雅关闭 =====
+# ===== 14. 优雅关闭 =====
 cleanup() {
     echo ""
     log_step "正在停止服务..."
     kill $FRONTEND_PID 2>/dev/null || true
     kill $BACKEND_PID 2>/dev/null || true
+    [ -n "$GATEWAY_PID" ] && kill $GATEWAY_PID 2>/dev/null || true
+    kill $VRP_PID 2>/dev/null || true
     kill $CELERY_WORKER_PID 2>/dev/null || true
     kill $CELERY_BEAT_PID 2>/dev/null || true
     wait 2>/dev/null || true

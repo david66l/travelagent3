@@ -351,7 +351,24 @@ class ToolExecutor:
         return 30.0 + (h % 100) / 100.0, 110.0 + (h // 100) / 100.0
 
 
-# Singleton executor for the application.
-tool_executor = ToolExecutor()
+# Lazy singleton — avoid import-time init (circular import with skills.poi_search).
+_executor: ToolExecutor | None = None
 
-__all__ = ["ToolExecutor", "tool_executor"]
+
+def get_tool_executor() -> ToolExecutor:
+    global _executor
+    if _executor is None:
+        _executor = ToolExecutor()
+    return _executor
+
+
+class _ToolExecutorProxy:
+    """Backward-compatible lazy proxy for ``tool_executor.execute(...)``."""
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(get_tool_executor(), name)
+
+
+tool_executor = _ToolExecutorProxy()
+
+__all__ = ["ToolExecutor", "tool_executor", "get_tool_executor"]

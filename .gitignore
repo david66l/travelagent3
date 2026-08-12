@@ -4,6 +4,7 @@ __pycache__/
 .pytest_cache/
 *.tsbuildinfo
 .env
+.env.local
 models/
 celerybeat-*
 *.db-shm
@@ -25,3 +26,7 @@ backend/outputs/
 htmlcov/
 .DS_Store
 .claude/
+
+# Local research/rendering artifacts (keep source notes and citation indexes)
+tmp/
+docs/research/**/*.pdf

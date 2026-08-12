@@ -130,7 +130,7 @@ class PlanningWorker:
             except asyncio.CancelledError:
                 pass
 
-        if status == "completed":
+        if status in ("completed", "awaiting_confirm"):
             async with async_session_maker() as db:
                 repo = PlanningJobRepository(db)
                 await repo.release(job.id, self.worker_id, "completed")
@@ -211,6 +211,7 @@ class PlanningWorker:
                 user_input=user_input,
                 messages=messages,
                 conversation_state=feedback if isinstance(feedback, dict) else None,
+                job_id=str(job.id),  # lets the output node stream polish tokens
             ):
                 if cancel_event.is_set():
                     await self.record_stage(job, "cancelled", {"stage": "cancelled"})
@@ -233,6 +234,10 @@ class PlanningWorker:
                 elif event_type == "final":
                     final_payload = dict(payload)
                     break
+                elif event_type == "awaiting_confirm":
+                    final_payload = dict(payload)
+                    await self.record_stage(job, "awaiting_confirm", final_payload)
+                    return "awaiting_confirm"
                 elif event_type == "error":
                     raise RuntimeError(payload.get("error", "graph error"))
                 else:

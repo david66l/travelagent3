@@ -46,7 +46,11 @@ func Load() Config {
 	return Config{
 		Port:                     env("GATEWAY_PORT", "8080"),
 		ReadTimeout:              envDuration("GATEWAY_READ_TIMEOUT", 10*time.Second),
-		WriteTimeout:             envDuration("GATEWAY_WRITE_TIMEOUT", 30*time.Second),
+		// A planning SSE response commonly lasts 30-90 seconds. Go's server-level
+		// WriteTimeout covers the entire streamed response, so a finite default
+		// truncates a healthy stream mid-plan. Per-request upstream timeouts and
+		// SSE keepalives still protect the service.
+		WriteTimeout:             envDuration("GATEWAY_WRITE_TIMEOUT", 0),
 		JWTSecret:                env("JWT_SECRET", "dev-secret-change-me"),
 		JWTAlgorithm:             env("JWT_ALGORITHM", "HS256"),
 		AccessTokenExpireMinutes: envInt("ACCESS_TOKEN_EXPIRE_MINUTES", 30),
@@ -55,8 +59,8 @@ func Load() Config {
 		BackendURL:               env("BACKEND_URL", "http://localhost:8000"),
 		FrontendURL:              env("FRONTEND_URL", "http://localhost:3000"),
 		RateLimitIP:              envInt("RATE_LIMIT_IP_PER_MINUTE", 60),
-		RateLimitUser:            envInt("RATE_LIMIT_USER_PER_MINUTE", 30),
-		RateLimitGuest:           envInt("RATE_LIMIT_GUEST_PER_MINUTE", 10),
+		RateLimitUser:            envInt("RATE_LIMIT_USER_PER_MINUTE", 60),
+		RateLimitGuest:           envInt("RATE_LIMIT_GUEST_PER_MINUTE", 30),
 		MaxConcurrentSSE:         envInt("RATE_LIMIT_MAX_CONCURRENT_SSE", 3),
 		BreakerFailThreshold:     envInt("GATEWAY_BREAKER_FAIL_THRESHOLD", 20),
 		BreakerWindowSec:         envInt("GATEWAY_BREAKER_WINDOW_SEC", 10),

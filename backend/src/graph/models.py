@@ -2,7 +2,32 @@
 
 from __future__ import annotations
 
-from typing import Any, NotRequired, TypedDict
+import operator
+from typing import Annotated, Any, NotRequired, TypedDict
+
+
+def _reduce_last_str(left: str | None, right: str | None) -> str:
+    """Last-wins merge for keys that parallel nodes may both touch (e.g. stage)."""
+    if right is not None and str(right).strip():
+        return str(right)
+    if left is not None:
+        return str(left)
+    return ""
+
+
+def _reduce_last_list(
+    left: list[dict[str, Any]] | None, right: list[dict[str, Any]] | None
+) -> list[dict[str, Any]]:
+    """Last-wins merge for list channels (e.g. itinerary).
+
+    Defensive guard: if two writes ever land in the same superstep, keep the
+    latest non-empty value instead of raising INVALID_CONCURRENT_GRAPH_UPDATE.
+    """
+    if right:
+        return right
+    if left:
+        return left
+    return []
 
 
 class AgentState(TypedDict):
@@ -42,8 +67,16 @@ class AgentState(TypedDict):
     retrieval_empty: NotRequired[bool]
     retrieval_stats: NotRequired[dict[str, Any]]
 
+    # Weather (fetched before planning)
+    weather: NotRequired[list[dict[str, Any]]]
+    weather_fetched: NotRequired[bool]
+    weather_start: NotRequired[str]
+    weather_end: NotRequired[str]
+
     # Planner output
-    itinerary: NotRequired[list[dict[str, Any]]]
+    # Last-wins reducer: defends against concurrent writes from parallel branches
+    # (see _reduce_last_list). Annotated must be top-level for LangGraph to detect it.
+    itinerary: Annotated[list[dict[str, Any]], _reduce_last_list]
     budget_breakdown: NotRequired[dict[str, Any]]
     solve_status: NotRequired[str]
     solve_time_ms: NotRequired[int]
@@ -52,7 +85,10 @@ class AgentState(TypedDict):
 
     # FactCheck output
     factcheck_passed: NotRequired[bool]
-    warnings: NotRequired[list[str]]
+    # Accumulator: nodes return only their *new* warnings; the reducer concatenates.
+    # NOTE: Annotated must be top-level (not wrapped in NotRequired) for LangGraph
+    # to detect the reducer; the channel still defaults to [] when unset.
+    warnings: Annotated[list[str], operator.add]
     retry_count: NotRequired[int]
 
     # Tool call layer
@@ -71,6 +107,21 @@ class AgentState(TypedDict):
 
     # Booking tool
     booking_options: NotRequired[dict[str, Any]]
+    booking_results: NotRequired[dict[str, Any]]
+
+    # Confirmation gate (draft → confirm/modify/reject interrupt)
+    # (external_event for in-trip replanning is declared in the perception layer)
+    confirm_decision: NotRequired[str | None]
+    pending_change: NotRequired[dict[str, Any] | None]
+
+    # Session / routing context
+    session_id: NotRequired[str]
+    # Planning-job id (async worker path). Lets the output node stream polish
+    # tokens to the Redis channel token:{job_id} that the SSE layer forwards.
+    job_id: NotRequired[str]
+    user_role: NotRequired[str]
+    phase: NotRequired[str]
+    attachments_meta: NotRequired[list[dict[str, Any]]]
 
     # Control flow
     next_node: NotRequired[str]
@@ -81,8 +132,10 @@ class AgentState(TypedDict):
     execution_trace: NotRequired[list[str]]
     error_node: NotRequired[str]
     error_message: NotRequired[str]
-    fallback_used: NotRequired[list[str]]
-    stage: NotRequired[str]
+    fallback_used: Annotated[list[str], operator.add]
+    # Parallel branches (profile_recall ∥ weather_check) may both emit stage hints;
+    # use a reducer so LangGraph does not raise INVALID_CONCURRENT_GRAPH_UPDATE.
+    stage: Annotated[str, _reduce_last_str]
     # Gathering subgraph — sync back to WS conversation state
     intent_ready_message: NotRequired[str]
     conversation_sync: NotRequired[dict[str, Any]]

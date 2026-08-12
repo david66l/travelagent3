@@ -34,6 +34,29 @@ function isAuthError(status: number): boolean {
   return status === 401 || status === 403;
 }
 
+function parseRetryAfterMs(res: Response, body?: unknown): number {
+  const header = res.headers.get("Retry-After");
+  if (header) {
+    const secs = parseInt(header, 10);
+    if (!Number.isNaN(secs) && secs > 0) {
+      return secs * 1000;
+    }
+  }
+  if (body && typeof body === "object" && body !== null) {
+    const err = (body as Record<string, unknown>).error;
+    if (err && typeof err === "object") {
+      const details = (err as Record<string, unknown>).details;
+      if (details && typeof details === "object") {
+        const retryAfter = (details as Record<string, unknown>).retry_after;
+        if (typeof retryAfter === "number" && retryAfter > 0) {
+          return retryAfter * 1000;
+        }
+      }
+    }
+  }
+  return 30_000;
+}
+
 function computeReconnectDelay(attempt: number): number {
   // Exponential backoff: 1s, 2s, 4s, 8s, ... capped at 30s.
   const base = Math.min(30, Math.pow(2, attempt));
@@ -83,6 +106,7 @@ export function useSSE(options: UseSSEOptions = {}) {
   const lastEventIdRef = useRef(0);
   const reconnectAttemptRef = useRef(0);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const connectingRef = useRef<string | null>(null);
   const isMountedRef = useRef(true);
 
   const disconnect = useCallback(() => {
@@ -110,9 +134,15 @@ export function useSSE(options: UseSSEOptions = {}) {
       conversationId: string,
       connectOptions?: { jobId?: string; lastEventId?: number }
     ) => {
+      if (connectingRef.current === conversationId) {
+        return;
+      }
+      connectingRef.current = conversationId;
+
       disconnect();
 
       if (!isMountedRef.current) {
+        connectingRef.current = null;
         return;
       }
 
@@ -138,6 +168,7 @@ export function useSSE(options: UseSSEOptions = {}) {
 
       const refs: ParseContext = { activeJobIdRef, lastEventIdRef };
       let authFailed = false;
+      let rateLimitedMs = 0;
 
       try {
         const res = await fetch(url, {
@@ -160,6 +191,16 @@ export function useSSE(options: UseSSEOptions = {}) {
             );
             onError?.(err);
             throw err;
+          }
+          if (res.status === 429) {
+            let body: unknown;
+            try {
+              body = await res.json();
+            } catch {
+              body = undefined;
+            }
+            rateLimitedMs = parseRetryAfterMs(res, body);
+            throw new Error(`SSE open failed: 429`);
           }
           throw new Error(`SSE open failed: ${res.status}`);
         }
@@ -202,9 +243,14 @@ export function useSSE(options: UseSSEOptions = {}) {
         store.setLoading(false);
 
         if (isMountedRef.current && !authFailed) {
-          // Retry unless this was an auth error.
-          const delay = computeReconnectDelay(reconnectAttemptRef.current);
-          reconnectAttemptRef.current += 1;
+          // Retry unless this was an auth error. Respect server Retry-After on 429.
+          const delay =
+            rateLimitedMs > 0
+              ? rateLimitedMs
+              : computeReconnectDelay(reconnectAttemptRef.current);
+          if (rateLimitedMs <= 0) {
+            reconnectAttemptRef.current += 1;
+          }
           reconnectTimerRef.current = setTimeout(() => {
             if (isMountedRef.current) {
               connect(conversationId, {
@@ -218,6 +264,9 @@ export function useSSE(options: UseSSEOptions = {}) {
         }
         return;
       } finally {
+        if (connectingRef.current === conversationId) {
+          connectingRef.current = null;
+        }
         if (abortRef.current === controller) {
           abortRef.current = null;
         }

@@ -9,27 +9,39 @@ MAX_LOOPS = 3
 
 
 def route_after_gathering(state: dict[str, Any]) -> str:
-    """After gathering subgraph: clarify, direct respond, or enter planning."""
+    """After gathering: clarify/respond/infeasible, or enter planning.
+
+    Planning starts at profile_recall, which then fans out to retrieve AND
+    weather_check in parallel. The fan-out is deliberately placed *after*
+    profile_recall so both parallel branches are the same length (one hop to
+    ``plan``); equal-length branches re-join in a single LangGraph superstep,
+    avoiding the duplicate ``plan``/``output`` execution and the resulting
+    INVALID_CONCURRENT_GRAPH_UPDATE on the ``itinerary`` channel.
+    """
     next_action = state.get("next_action", "")
     if next_action == "clarify":
         return "clarify"
     if next_action == "respond":
         return "respond"
-    return "planning"
+    if next_action == "infeasible":
+        return "infeasible"
+    return "profile_recall"
 
 
-def route_after_profile(state: dict[str, Any]) -> str:
-    """After profile recall: write-back ends the flow; otherwise retrieve."""
+def route_after_profile(state: dict[str, Any]) -> str | list[str]:
+    """After profile recall: write-back ends the flow; otherwise fan out.
+
+    The planning path fans out into retrieve (personalised RAG, depends on the
+    recalled profile) and weather_check (needs only the gathered slots). Both
+    are single hops to ``plan`` so they re-join synchronously.
+    """
     if state.get("stage") in ("memory_updated", "completed"):
         return "__end__"
-    return "retrieve"
+    return ["retrieve", "weather_check"]
 
 
 def route_after_retrieve(state: dict[str, Any]) -> str:
-    """After RAG: if empty, fallback to output; otherwise plan."""
-    if state.get("retrieval_empty") and not (state.get("poi_candidates") or []):
-        state["warnings"] = (state.get("warnings") or []) + ["未检索到合适景点，将使用兜底数据生成行程。"]
-        return "plan"
+    """After RAG: always proceed to plan (planner handles empty via fallback)."""
     return "plan"
 
 
@@ -38,16 +50,21 @@ def route_after_weather(state: dict[str, Any]) -> str:
     return "plan"
 
 
-def route_after_plan(state: dict[str, Any]) -> str:
-    """After planner: show draft to user, or proceed to deep enrichment."""
-    next_action = state.get("next_action", "")
-    if next_action == "clarify":
-        return "output"
-    if next_action == "confirm_draft":
-        return "output"       # Phase 1: show draft, wait for confirmation
-    if next_action == "enrich":
-        return "tool_call"    # Phase 2: user confirmed → deep lookup
-    return "tool_call"
+def route_after_confirm_gate(state: dict[str, Any]) -> str:
+    """After the confirm interrupt resumes: enrich, modify, or re-solve."""
+    decision = state.get("confirm_decision")
+    if decision == "modify":
+        return "apply_single_change"
+    if decision is None:
+        return "plan"         # reject → re-solve a fresh draft
+    return "tool_call"        # confirm → deep enrichment
+
+
+def route_after_apply_change(state: dict[str, Any]) -> str:
+    """Constraint changes need a fresh solve; POI edits only need validation."""
+    if state.get("next_action") == "planner":
+        return "plan"
+    return "factcheck"
 
 
 def route_after_tool_call(state: dict[str, Any]) -> str:
@@ -58,15 +75,15 @@ def route_after_tool_call(state: dict[str, Any]) -> str:
 
 
 def route_after_factcheck(state: dict[str, Any]) -> str:
-    """After fact check: loop back to plan if conflicts and loops remain."""
+    """After fact check: pure router. The node owns the loop counter + warnings.
+
+    ``next_action == "planner"`` means the factcheck node decided a replan is
+    worthwhile (conflicts found and loop budget not exhausted).
+    """
     if state.get("next_action") == "clarify":
         return "output"
     if state.get("next_action") == "planner":
-        loops = state.get("loop_count", 0)
-        if loops < MAX_LOOPS:
-            state["loop_count"] = loops + 1
-            return "plan"
-        state["warnings"] = (state.get("warnings") or []) + ["事实校验冲突未解决，仍按当前方案输出。"]
+        return "plan"
     return "hallucination"
 
 
@@ -78,15 +95,13 @@ def route_after_hallucination(state: dict[str, Any]) -> str:
 
 
 def route_after_output(state: dict[str, Any]) -> str:
-    """After output: clarify → end; draft → wait for user; final → booking."""
+    """After output: pause drafts for HITL; finalize only confirmed plans."""
     next_action = state.get("next_action", "")
-    if next_action == "clarify":
+    if next_action in ("clarify", "respond", "infeasible"):
         return "__end__"
-    if next_action == "confirm_draft":
-        return "__end__"       # Phase 1: wait for user to confirm/modify
-    if next_action == "completed":
-        return "booking"       # Phase 2: final output, now do booking
-    return "booking"
+    if state.get("confirm_decision") == "confirm":
+        return "booking"       # final output after enrichment
+    return "confirm_gate"      # initial / modified draft must be accepted first
 
 
 def route_after_booking(state: dict[str, Any]) -> str:

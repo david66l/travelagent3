@@ -17,8 +17,9 @@ location lat/lng) can never be mutated by enrichment.
 import asyncio
 import logging
 from copy import deepcopy
-from typing import Optional
+from typing import Any, Optional
 
+from core.langsmith_trace import traceable_step
 from core.llm_client import llm
 from schemas import Activity, DayPlan, UserProfile
 from planner.core.fact_guard import activity_fields_match, protected_field_differences
@@ -123,12 +124,40 @@ _REASON_TEMPLATES: dict[str, str] = {
 }
 
 
+_MEAL_LABELS = {"午餐", "晚餐", "早餐", "下午茶", "夜宵", "用餐", "早午餐"}
+
+
+def _normalize_poi_name(name: str) -> str:
+    """Normalize a POI name for batch-result matching.
+
+    The day-batch LLM is asked to echo poi_name verbatim, but in practice it
+    often drops the meal label (returns "南翔馒头店" for "午餐 · 南翔馒头店") or
+    tweaks spacing. Normalizing both sides lets the batch result map back to the
+    activity instead of triggering an expensive per-activity LLM fallback.
+    """
+    n = str(name).strip()
+    for sep in (" · ", "·", " - ", "·"):
+        if sep in n:
+            label, _, rest = n.partition(sep)
+            if label.strip() in _MEAL_LABELS and rest.strip():
+                n = rest.strip()
+                break
+    return n.replace(" ", "").replace("\u3000", "")
+
+
 def _template_reason(poi_name: str, category: str, tags: list[str] | None = None) -> str:
     """Single-activity fallback when LLM enrichment fails."""
     if poi_name in _REASON_TEMPLATES:
         return _REASON_TEMPLATES[poi_name]
     if category == "restaurant":
-        return f"在{poi_name}品味地道风味"
+        cuisine = "、".join(tags[:2]) if tags else ""
+        # poi_name may carry a concrete venue as "午餐 · 老吉士酒家".
+        if " · " in poi_name:
+            label, venue = poi_name.split(" · ", 1)
+            taste = f"{cuisine}风味" if cuisine else "地道风味"
+            return f"{label}就近选在{venue}，品尝{taste}，补充体力继续行程"
+        meal_label = poi_name if poi_name in ("午餐", "晚餐") else "用餐"
+        return f"{meal_label}时段，就近寻一家口碑餐厅，品味当地{cuisine or '特色'}美食"
     if category == "attraction":
         tag_part = "、".join(tags[:2]) if tags else "探索"
         return f"{poi_name}，适合{tag_part}的好去处"
@@ -157,6 +186,162 @@ def _template_theme(day_activities: list[Activity]) -> str:
     if "购物" in tags:
         return "购物休闲"
     return "精彩探索"
+
+
+_GENERIC_DRAFT = {"推荐游览", "值得一游", "口碑推荐", "推荐去看看", "推荐"}
+
+
+def _prefill_day(day: DayPlan) -> set[str]:
+    """Prefill template/draft reasons in place; return prefilled poi_names.
+
+    Known POIs use their curated template; a draft that already carries a
+    non-generic reason is kept. Both skip the LLM entirely.
+    """
+    prefilled: set[str] = set()
+    for act in day.activities:
+        reason = (act.recommendation_reason or "").strip()
+        if act.poi_name in _REASON_TEMPLATES:
+            act.recommendation_reason = _REASON_TEMPLATES[act.poi_name]
+            prefilled.add(act.poi_name)
+        elif reason and not any(g in reason for g in _GENERIC_DRAFT) and len(reason) >= 4:
+            prefilled.add(act.poi_name)
+    if prefilled:
+        day.has_prefilled = True
+    return prefilled
+
+
+# --------------------------------------------------------------------------- #
+# All-days single-call enrichment (primary path)
+# --------------------------------------------------------------------------- #
+
+_ALL_DAYS_TIMEOUT = 45.0  # seconds — one call covers the whole trip
+
+_BUILD_ALL_DAYS_PROMPT = """请为以下多天行程生成每天的主题和每个景点的推荐语。
+
+用户画像：{travelers_type}，兴趣是{interests}，节奏偏好{pace}
+
+行程（共{n_days}天）：
+{days_block}
+
+要求：
+1. 每天 theme：4-8个字的中文主题，概括当天行程特色
+2. 每个景点必须原样返回 poi_name，并给出 recommendation_reason（20-40字推荐语）和 tags（2-3个标签）
+3. 推荐语根据用户画像个性化——亲子游强调"适合带孩子"，情侣游强调"浪漫"，历史爱好者强调"文化底蕴"
+4. 仅输出 JSON，不要其他内容
+
+返回 JSON 格式：
+{{"days": [
+  {{"day_number": 1, "theme": "...", "activities": [
+    {{"poi_name": "...", "recommendation_reason": "...", "tags": ["...", "..."]}}
+  ]}}
+]}}"""
+
+
+@traceable_step("planning/writer_llm_all_days", run_type="llm")
+async def _llm_enrich_all_days(
+    itinerary: list[DayPlan],
+    profile: UserProfile,
+    skip_map: dict[int, set[str]],
+) -> Optional[dict]:
+    """One LLM call for the whole trip (theme + reasons for every day).
+
+    The total prose for a trip is small, so a single round-trip avoids the
+    per-day call overhead (and any cloud concurrency limits). Returns the parsed
+    JSON dict, or None on failure so the caller can fall back to per-day batches.
+    """
+    interests = "、".join(profile.interests) if profile.interests else "无特殊偏好"
+    travelers_type = profile.travelers_type or "普通游客"
+    pace = profile.pace or "适中"
+
+    day_blocks: list[str] = []
+    total = 0
+    for day in itinerary:
+        skip = skip_map.get(day.day_number, set())
+        lines: list[str] = []
+        for act in day.activities:
+            if act.poi_name in skip:
+                continue
+            time_str = (
+                f" {act.start_time}-{act.end_time}"
+                if act.start_time and act.end_time
+                else ""
+            )
+            lines.append(f"- {time_str} {act.poi_name} [{act.category}]")
+            total += 1
+        if lines:
+            day_blocks.append(f"第{day.day_number}天：\n" + "\n".join(lines))
+
+    if total == 0:
+        return None
+
+    prompt = _BUILD_ALL_DAYS_PROMPT.format(
+        travelers_type=travelers_type,
+        interests=interests,
+        pace=pace,
+        n_days=len(itinerary),
+        days_block="\n\n".join(day_blocks),
+    )
+    # Scale output budget with activity count (reasons are short, ~25 tokens each).
+    max_tokens = min(4096, 512 + 96 * total)
+
+    try:
+        result = await asyncio.wait_for(
+            llm.json_chat(
+                messages=[
+                    {"role": "system", "content": "你是一个专业旅行文案写手，只输出 JSON。"},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.7,
+                max_tokens=max_tokens,
+                task_type="output_format",
+            ),
+            timeout=_ALL_DAYS_TIMEOUT,
+        )
+        return result if isinstance(result, dict) else None
+    except asyncio.TimeoutError:
+        logger.warning("LLM all-days enrichment timeout (%d activities)", total)
+        return None
+    except Exception as exc:
+        logger.warning("LLM all-days enrichment failed: %s", exc)
+        return None
+
+
+@traceable_step("planning/writer_all_days", run_type="chain")
+async def _enrich_all_days(
+    itinerary: list[DayPlan],
+    profile: UserProfile,
+    prefill_map: dict[int, set[str]],
+) -> bool:
+    """Enrich every day from a single LLM call. Returns False to fall back."""
+    result = await _llm_enrich_all_days(itinerary, profile, prefill_map)
+    if not result:
+        return False
+
+    raw_days = result.get("days")
+    if not isinstance(raw_days, list) or not raw_days:
+        return False
+
+    by_num: dict[int, dict] = {}
+    for d in raw_days:
+        if isinstance(d, dict) and d.get("day_number") is not None:
+            try:
+                by_num[int(d["day_number"])] = d
+            except (TypeError, ValueError):
+                continue
+    if not by_num:
+        return False
+
+    # Only mutate after we know the result is usable, so a False return leaves the
+    # days untouched for a clean per-day fallback.
+    for day in itinerary:
+        d = by_num.get(day.day_number, {})
+        _apply_day_result(
+            day,
+            d.get("theme"),
+            d.get("activities", []),
+            prefill_map.get(day.day_number, set()),
+        )
+    return True
 
 
 # --------------------------------------------------------------------------- #
@@ -188,6 +373,7 @@ _BUILD_DAY_ENRICHMENT_PROMPT = """请为以下一日行程生成主题和每个�
 }}"""
 
 
+@traceable_step("planning/writer_llm_day_batch", run_type="llm")
 async def _llm_enrich_day_batch(
     day: DayPlan,
     profile: UserProfile,
@@ -229,6 +415,7 @@ async def _llm_enrich_day_batch(
                 ],
                 temperature=0.7,
                 max_tokens=1024,
+                task_type="output_format",
             ),
             timeout=_BATCH_ENRICHMENT_TIMEOUT,
         )
@@ -260,31 +447,27 @@ def _find_tags(poi_name: str, day: DayPlan) -> list[str]:
 GENERIC_PATTERNS = ["推荐游览", "值得一游", "口碑推荐", "推荐", "不错的地方"]
 
 
-async def _enrich_day_batch(
+def _apply_day_result(
     day: DayPlan,
-    profile: UserProfile,
+    theme: Any,
+    raw_items: Any,
     skip_names: Optional[set[str]] = None,
-) -> bool:
-    """Try to enrich an entire day with one LLM call.
+) -> None:
+    """Apply an LLM theme + activity items to a day in place.
 
-    On success, mutates ``day`` in place and returns True.
-    On failure, leaves ``day`` unchanged and returns False so the caller can
-    fall back to per-activity enrichment.
+    Shared by the all-days and per-day batch paths. Matching is name-normalized
+    (meal labels / spacing tolerated); uncovered activities, empty reasons and
+    Fact-Guard violations fall back to a rule-based template (never an extra LLM
+    round-trip). Protected fields are guaranteed unchanged.
     """
     skip_names = skip_names or set()
-    batch_result = await _llm_enrich_day_batch(day, profile, skip_names=skip_names)
-    if not batch_result:
-        return False
 
-    # Theme
-    theme = str(batch_result.get("theme", "")).strip()
-    if theme and 2 <= len(theme) <= 12:
-        day.theme = theme
+    theme_str = str(theme or "").strip()
+    if theme_str and 2 <= len(theme_str) <= 12:
+        day.theme = theme_str
 
-    # Map results by poi_name so LLM reordering does not break matching
-    raw_items = batch_result.get("activities", [])
     if not isinstance(raw_items, list):
-        return False
+        raw_items = []
 
     # P3: quality guard — replace generic LLM output with template fallback
     for item in raw_items:
@@ -299,57 +482,85 @@ async def _enrich_day_batch(
                 _find_tags(poi_name, day),
             )
 
+    # Index results by exact and normalized name so meal labels / spacing tweaks
+    # from the LLM still resolve to the right activity.
     result_by_name: dict[str, dict] = {}
     for item in raw_items:
         if isinstance(item, dict) and item.get("poi_name"):
-            result_by_name[str(item["poi_name"]).strip()] = item
+            raw_name = str(item["poi_name"]).strip()
+            result_by_name[raw_name] = item
+            result_by_name.setdefault(_normalize_poi_name(raw_name), item)
+
+    def _lookup(name: str) -> Optional[dict]:
+        return result_by_name.get(name) or result_by_name.get(_normalize_poi_name(name))
 
     new_activities: list[Activity] = []
-    batch_valid = True
 
     for activity in day.activities:
         if activity.poi_name in skip_names:
             new_activities.append(activity)
             continue
 
-        item = result_by_name.get(activity.poi_name)
-        if not item:
-            batch_valid = False
-            # Missing enrichment for this POI — fall back to per-activity
-            new_activities.append(await _enrich_activity_with_retry(activity, profile))
-            continue
-
-        reason = str(item.get("recommendation_reason", "")).strip()
-        raw_tags = item.get("tags", [])
+        item = _lookup(activity.poi_name)
+        reason = str(item.get("recommendation_reason", "")).strip() if item else ""
+        raw_tags = item.get("tags", []) if item else []
         tags = list(raw_tags) if isinstance(raw_tags, list) else []
 
-        if not reason:
-            batch_valid = False
-            new_activities.append(await _enrich_activity_with_retry(activity, profile))
-            continue
-
         candidate = deepcopy(activity)
-        candidate.recommendation_reason = reason
-        candidate.tags = list(set((activity.tags or []) + tags))
-
-        # Fact Guard: LLM must not mutate protected fields
-        if not activity_fields_match(activity, candidate):
-            changed_fields = protected_field_differences(activity, candidate)
-            logger.warning(
-                "Day-batch Fact Guard failed for %s fields=%s",
-                activity.poi_name,
-                ",".join(changed_fields) or "unknown",
+        if reason:
+            candidate.recommendation_reason = reason
+            candidate.tags = list(set((activity.tags or []) + tags))
+            # Fact Guard: LLM must not mutate protected fields. On violation, fall
+            # back to a rule-based template rather than another LLM round-trip.
+            if not activity_fields_match(activity, candidate):
+                changed_fields = protected_field_differences(activity, candidate)
+                logger.warning(
+                    "Batch Fact Guard failed for %s fields=%s — using template",
+                    activity.poi_name,
+                    ",".join(changed_fields) or "unknown",
+                )
+                candidate = deepcopy(activity)
+                candidate.recommendation_reason = _template_reason(
+                    activity.poi_name, activity.category, activity.tags
+                )
+        else:
+            # Not covered by the batch (or empty reason) → template, no extra LLM.
+            candidate.recommendation_reason = _template_reason(
+                activity.poi_name, activity.category, activity.tags
             )
-            batch_valid = False
-            new_activities.append(await _enrich_activity_with_retry(activity, profile))
-            continue
 
         new_activities.append(candidate)
 
     if new_activities:
         day.activities = new_activities
 
-    return batch_valid
+
+@traceable_step("planning/writer_day_batch", run_type="chain")
+async def _enrich_day_batch(
+    day: DayPlan,
+    profile: UserProfile,
+    skip_names: Optional[set[str]] = None,
+) -> bool:
+    """Try to enrich an entire day with one LLM call.
+
+    On success, mutates ``day`` in place and returns True.
+    On failure (the batch LLM call itself failed), leaves ``day`` unchanged and
+    returns False so the caller can fall back to per-activity enrichment.
+    """
+    skip_names = skip_names or set()
+    batch_result = await _llm_enrich_day_batch(day, profile, skip_names=skip_names)
+    if not batch_result:
+        return False
+
+    _apply_day_result(
+        day,
+        batch_result.get("theme"),
+        batch_result.get("activities", []),
+        skip_names,
+    )
+    # The batch call (+ template fallback for stragglers) fully handled the day;
+    # returning True prevents a redundant second per-activity LLM pass.
+    return True
 
 
 # --------------------------------------------------------------------------- #
@@ -399,6 +610,7 @@ async def _llm_enrich_activity(
                 ],
                 temperature=0.7,
                 max_tokens=256,
+                task_type="output_format",
             ),
             timeout=_ENRICHMENT_TIMEOUT,
         )
@@ -415,6 +627,7 @@ async def _llm_enrich_activity(
         return None
 
 
+@traceable_step("planning/writer_activity_enrich", run_type="chain")
 async def _enrich_activity_with_retry(
     activity: Activity,
     profile: UserProfile,
@@ -466,6 +679,7 @@ async def _enrich_activity_with_retry(
 # --------------------------------------------------------------------------- #
 
 
+@traceable_step("planning/writer_enrich", run_type="chain")
 async def enrich(
     itinerary: list[DayPlan],
     profile: UserProfile,
@@ -487,39 +701,29 @@ async def enrich(
     """
     try:
         enriched = deepcopy(itinerary)
+        if not enriched:
+            return enriched, _build_proposal(enriched, profile)
 
-        for day in enriched:
-            # P0: prefill — 保护已有好描述的 POI，不送 LLM
-            prefilled: set[str] = set()
-            GENERIC = {"推荐游览", "值得一游", "口碑推荐", "推荐去看看", "推荐"}
-            for act in day.activities:
-                reason = (act.recommendation_reason or "").strip()
-                # 1. 模板里的直接用模板
-                if act.poi_name in _REASON_TEMPLATES:
-                    act.recommendation_reason = _REASON_TEMPLATES[act.poi_name]
-                    prefilled.add(act.poi_name)
-                # 2. 草稿已有非通用好描述 → 保留，不送 LLM
-                elif reason and not any(g in reason for g in GENERIC) and len(reason) >= 4:
-                    prefilled.add(act.poi_name)
-            if prefilled:
-                day.has_prefilled = True
+        # P0: prefill known/draft POIs (no LLM) and record what each day still needs.
+        prefill_map = {day.day_number: _prefill_day(day) for day in enriched}
+        pending = [
+            d
+            for d in enriched
+            if len(prefill_map.get(d.day_number, set())) < len(d.activities)
+        ]
 
-            # If every activity is prefilled, just generate a rule-based theme.
-            if len(prefilled) == len(day.activities):
-                if not day.theme:
-                    day.theme = _template_theme(day.activities)
-                continue
+        if pending:
+            # Primary: ONE LLM call for the whole trip. The prose is small, so a
+            # single round-trip beats N per-day calls (and dodges cloud
+            # concurrency limits). Fall back to per-day batches only if it fails.
+            all_ok = await _enrich_all_days(pending, profile, prefill_map)
+            if not all_ok:
+                await asyncio.gather(*(_enrich_one_day(day, profile) for day in pending))
 
-            # Primary path: one LLM call per day (only for non-prefilled activities)
-            batch_ok = await _enrich_day_batch(day, profile, skip_names=prefilled)
-
-            if not batch_ok:
-                # Fallback path: per-activity LLM + rule-based theme
-                if not day.theme:
-                    day.theme = _template_theme(day.activities)
-                for i, activity in enumerate(day.activities):
-                    if activity.poi_name not in prefilled:
-                        day.activities[i] = await _enrich_activity_with_retry(activity, profile)
+        # Fully-prefilled days still need a rule-based theme.
+        for d in enriched:
+            if not d.theme:
+                d.theme = _template_theme(d.activities)
 
         proposal = _build_proposal(enriched, profile)
         return enriched, proposal
@@ -527,6 +731,34 @@ async def enrich(
     except Exception:
         logger.exception("Enrichment failed — returning original itinerary")
         return itinerary, _fallback_proposal(itinerary, profile)
+
+
+@traceable_step("planning/writer_enrich_day", run_type="chain")
+async def _enrich_one_day(day: DayPlan, profile: UserProfile) -> None:
+    """Enrich a single day in place (per-day fallback when the all-days call fails)."""
+    prefilled = _prefill_day(day)
+
+    # If every activity is prefilled, just generate a rule-based theme.
+    if len(prefilled) == len(day.activities):
+        if not day.theme:
+            day.theme = _template_theme(day.activities)
+        return
+
+    # One LLM call per day (only for non-prefilled activities).
+    batch_ok = await _enrich_day_batch(day, profile, skip_names=prefilled)
+
+    if not batch_ok:
+        # Fallback path: per-activity LLM (parallel) + rule-based theme
+        if not day.theme:
+            day.theme = _template_theme(day.activities)
+        todo = [
+            i for i, a in enumerate(day.activities) if a.poi_name not in prefilled
+        ]
+        results = await asyncio.gather(
+            *(_enrich_activity_with_retry(day.activities[i], profile) for i in todo)
+        )
+        for i, enriched_act in zip(todo, results):
+            day.activities[i] = enriched_act
 
 
 # --------------------------------------------------------------------------- #
@@ -551,9 +783,11 @@ def _build_proposal(itinerary: list[DayPlan], profile: UserProfile) -> str:
         lines.append(f"**兴趣偏好**: {'、'.join(profile.interests)}")
     lines.append("")
 
-    # Budget
+    # Budget — total_cost per day already includes tickets + food + city transit.
+    # Label the scope so the figure is not mistaken for an all-in trip cost.
     total_cost = sum(day.total_cost for day in itinerary)
-    lines.append(f"**预估总费用**: ¥{total_cost:.0f}")
+    lines.append(f"**预估费用（门票+餐饮+市内交通）**: ¥{total_cost:.0f}")
+    lines.append("> 不含住宿与往返大交通，为模拟参考价")
     if profile.budget_range:
         ratio = total_cost / profile.budget_range
         if ratio <= 1.0:
@@ -603,7 +837,7 @@ def _fallback_proposal(itinerary: list[DayPlan], profile: UserProfile) -> str:
     days = profile.travel_days or len(itinerary)
     lines = [
         f"# {dest} {days}日游行程方案\n",
-        f"**预估总费用**: ¥{sum(d.total_cost for d in itinerary):.0f}\n",
+        f"**预估费用（门票+餐饮+市内交通）**: ¥{sum(d.total_cost for d in itinerary):.0f}\n",
     ]
     for day in itinerary:
         lines.append(f"## 第{day.day_number}天")

@@ -97,7 +97,10 @@ class MapServiceRouter:
             "destination": f"{dest_lng},{dest_lat}",
             "type": mode_map.get(mode, "0"),
         }
+        from core.amap_rate import amap_rate_gate
+
         async with httpx.AsyncClient(timeout=5.0) as client:
+            await amap_rate_gate()
             resp = await client.get(url, params=params)
             resp.raise_for_status()
             data = resp.json()

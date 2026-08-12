@@ -54,6 +54,23 @@ class RedisClient:
         client = self._ensure_client()
         return await client.get(key)
 
+    async def mget(self, keys: list[str]) -> list[Optional[str]]:
+        """Batch-get multiple keys (preserves order; missing keys → None)."""
+        if not keys:
+            return []
+        client = self._ensure_client()
+        return list(await client.mget(keys))
+
+    async def mset_ttl(self, mapping: dict[str, str], ttl: int) -> None:
+        """Set multiple key/value pairs with the same TTL via a pipeline."""
+        if not mapping:
+            return
+        client = self._ensure_client()
+        pipe = client.pipeline()
+        for k, v in mapping.items():
+            pipe.set(k, v, ex=ttl)
+        await pipe.execute()
+
     async def set(self, key: str, value: str, ttl: Optional[int] = None) -> None:
         """Set string value with optional TTL (seconds)."""
         client = self._ensure_client()

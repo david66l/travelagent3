@@ -28,6 +28,10 @@ class POIInput(BaseModel):
     best_visit_period: str | None = None
     must_visit: bool = False
     is_peak: bool = False
+    # Weekdays the venue is closed (0=Mon … 6=Sun, Python date.weekday()). Museums
+    # typically close Monday. Applied only when the trip's real dates are known
+    # (ConstraintsInput.day_weekdays); empty = open every day.
+    closed_weekdays: list[int] = Field(default_factory=list)
 
 
 class ReservationInput(BaseModel):
@@ -53,8 +57,15 @@ class ConstraintsInput(BaseModel):
     """User constraints and preferences."""
 
     travel_days: int = 1
+    # Real weekday of each travel day (0=Mon … 6=Sun), length == travel_days.
+    # Derived from the trip start date by the caller. Empty = dates unknown, so
+    # weekday-closure constraints are skipped (we never guess which day is Monday).
+    day_weekdays: list[int] = Field(default_factory=list)
     day_start_min: int = 8 * 60
-    day_end_min: int = 18 * 60
+    # End the active day late enough that the dinner window (default 17:30-20:00)
+    # is actually usable; an 18:00 cutoff makes evening dining impossible and
+    # forces meals into mid-afternoon gaps.
+    day_end_min: int = 21 * 60
     max_transit_minutes: int = 120
     max_walk_km: int = 8
     total_budget: float = 0.0  # 0 means unlimited
@@ -74,12 +85,40 @@ class ConstraintsInput(BaseModel):
     travelers_type: Literal["solo", "couple", "family_kid", "family_elder", "friends", "adult", "young"] = "adult"
     fatigue_recovery_rate: float | None = None
 
+    # Slack added to every selected inter-POI commute (queueing/photos/rest/transit
+    # delay) so the schedule is not packed minute-to-minute. is_peak POIs get an
+    # extra queue pad on top (see solver). 0 disables.
+    transition_buffer_min: int = 15
+    peak_queue_pad_min: int = 20
+    # Two attractions whose road-network time exceeds this cannot share a day, so a
+    # far-suburb POI (e.g. 松江辰山) is isolated instead of bundled with a downtown
+    # cluster (e.g. 陆家嘴), which otherwise causes 3h+ same-day folding. 60min ⇒ any
+    # >1h one-way hop forces its own day (a round trip would burn 2h+ of the day).
+    remote_pair_min: int = 60
+    # Geographic suburb isolation. Driving time underestimates the suburb pain
+    # (tourists ride transit ~1.5x-2x slower), so a 松江/惠南/川沙 attraction can sit
+    # just under remote_pair_min in driving minutes and still get bundled with a
+    # downtown POI. We therefore also isolate by straight-line distance from the
+    # itinerary's centroid: a POI beyond suburb_radius_km shares its day only with
+    # attractions within suburb_nearby_min driving (i.e. genuinely adjacent), so a
+    # far-suburb landmark gets its own day. 0 disables.
+    suburb_radius_km: float = 20.0
+    suburb_nearby_min: int = 25
+    # Tags whose POIs are functionally interchangeable (观景台 etc.); selecting more
+    # than one across the whole trip is penalised so duplicate high-cost landmarks
+    # (东方明珠/环球/上海中心) collapse to one.
+    redundant_tags: list[str] = Field(default_factory=lambda: ["观景"])
+
     max_walk_minutes: int | None = None  # deprecated, converted to max_walk_km
 
     @model_validator(mode="after")
     def _derive_walk_km(self):
         if self.max_walk_minutes is not None:
             self.max_walk_km = max(1, int(self.max_walk_minutes / 60 * 4.5))
+        # When dinner is part of the plan, the active day must extend at least to
+        # the end of the dinner window, otherwise the meal can never be placed.
+        if self.include_restaurant and self.meals_per_day >= 2:
+            self.day_end_min = max(self.day_end_min, self.dinner_window[1])
         return self
 
 
@@ -127,6 +166,9 @@ class SolverRequest(BaseModel):
     strategy: str = "auto"  # "auto" | "cpsat" | "greedy"
     dist_matrix: list[list[int]] | None = None
     tc_matrix: list[list[float]] | None = None
+    # Coord-keyed real driving times ("lat,lng|lat,lng" -> minutes) from AMap;
+    # applied while building the matrix, with haversine fallback per missing edge.
+    amap_minutes: dict[str, int] | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 

@@ -30,6 +30,9 @@ const PLANNING_STAGES = new Set([
   "draft_ready",
   "itinerary_final",
   "writing",
+  "output",
+  "apply_single_change",
+  "replan_local",
   "awaiting_booking",
 ]);
 
@@ -61,7 +64,10 @@ export function labelForStage(stage: string): string | null {
     factcheck: "正在校验行程…",
     fact_check_done: "正在校验行程…",
     hallucination: "正在检查行程质量…",
+    apply_single_change: "正在调整行程…",
+    replan_local: "正在局部重排…",
     draft_ready: "行程草稿已生成",
+    output: "正在生成行程方案…",
     writing: "正在润色文案…",
     itinerary_final: "行程已优化",
     data_collection: "正在收集信息…",

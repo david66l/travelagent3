@@ -60,6 +60,35 @@ type EventRefs = {
   lastEventIdRef: { current: number };
 };
 
+/** Commit assistant prose once — skip if the latest bubble already matches. */
+function commitAssistantProse(content: string) {
+  const text = content.trim();
+  if (!text) return;
+  const store = useChatStore.getState();
+  const last = store.messages[store.messages.length - 1];
+  if (last?.role === "assistant" && last.content.trim() === text) {
+    return;
+  }
+  store.addMessage({
+    role: "assistant",
+    content: text,
+    timestamp: Date.now(),
+  });
+}
+
+function finalizeStreamingToMessage() {
+  const store = useChatStore.getState();
+  if (!store.isStreaming && !store.streamingContent.trim()) {
+    return;
+  }
+  const text = store.streamingContent.trim();
+  if (text) {
+    commitAssistantProse(text);
+  }
+  store.stopStreaming();
+  store.setStreamingContent("");
+}
+
 export function handleChatEvent(
   data: Record<string, unknown>,
   refs: EventRefs
@@ -126,18 +155,99 @@ export function handleChatEvent(
     store.setCurrentStage("完成");
     store.setActivityPhase("idle");
     store.setNeedsClarification(false);
+    store.setWaitingForConfirmation(false);
+    applyProfileFromServer(data.profile);
     if (itinerary) {
       store.setItinerary(itinerary);
     }
-    store.setOutputUrls(outputUrls);
-    if (content) {
-      store.addMessage({
-        role: "assistant",
-        content,
-        timestamp: Date.now(),
+    const rawBudget = data.budget_breakdown as Record<string, unknown> | undefined;
+    if (rawBudget && typeof rawBudget.total === "number") {
+      const totalBudget =
+        useChatStore.getState().confirmedInfo?.budget_range ?? undefined;
+      const spent = rawBudget.total;
+      const breakdown = Object.fromEntries(
+        Object.entries(rawBudget).filter(
+          ([key, value]) =>
+            typeof value === "number" &&
+            !["total", "travelers_count"].includes(key)
+        )
+      ) as Record<string, number>;
+      store.setBudgetPanel({
+        total_budget: totalBudget,
+        spent,
+        remaining: totalBudget === undefined ? undefined : totalBudget - spent,
+        breakdown,
+        status:
+          totalBudget === undefined
+            ? "estimate"
+            : spent <= totalBudget
+              ? "within_budget"
+              : "over_budget",
       });
     }
+    store.setOutputUrls(outputUrls);
+    finalizeStreamingToMessage();
+    if (content) {
+      commitAssistantProse(content);
+    }
     store.saveChatSnapshot();
+    return;
+  }
+
+  if (type === "awaiting_confirm") {
+    const itinerary = data.itinerary as Parameters<typeof store.setItinerary>[0] | undefined;
+    store.setLoading(false);
+    store.setCurrentStage("待确认");
+    store.setActivityPhase("idle");
+    store.setNeedsClarification(false);
+    if (itinerary) {
+      store.setItinerary(itinerary);
+    }
+    // Ensure streamed / partial prose is persisted before we drop the buffer.
+    finalizeStreamingToMessage();
+    store.setWaitingForConfirmation(true);
+    store.saveChatSnapshot();
+    return;
+  }
+
+  if (type === "partial") {
+    const payload = data.payload as Record<string, unknown> | undefined;
+    const content = (payload?.content as string) || "";
+    const itinerary = payload?.itinerary as Parameters<typeof store.setItinerary>[0] | undefined;
+    if (itinerary) {
+      store.setItinerary(itinerary);
+    }
+    if (content) {
+      // A full `content` payload supersedes the live token buffer. Drop the
+      // buffer (without committing it) and commit the consolidated prose once
+      // so the itinerary text is never appended twice.
+      const streamed = useChatStore.getState().streamingContent.trim();
+      const finalContent = streamed.length > content.length ? streamed : content;
+      store.stopStreaming();
+      store.setStreamingContent("");
+      commitAssistantProse(finalContent);
+    } else if (store.isStreaming) {
+      finalizeStreamingToMessage();
+    }
+    const outputUrls = {
+      pdf: (payload?.output_pdf_url as string) || undefined,
+      excel: (payload?.output_excel_url as string) || undefined,
+      map: (payload?.output_map_url as string) || undefined,
+    };
+    if (outputUrls.pdf || outputUrls.excel || outputUrls.map) {
+      store.setOutputUrls(outputUrls);
+    }
+    return;
+  }
+
+  if (type === "token") {
+    const chunk = (data.chunk as string) || "";
+    if (chunk) {
+      if (!store.isStreaming) {
+        store.startStreaming();
+      }
+      store.appendStreamingContent(chunk);
+    }
     return;
   }
 
@@ -153,16 +263,14 @@ export function handleChatEvent(
     store.setLoading(false);
     store.setCurrentStage("完成");
     store.setActivityPhase("idle");
+    store.setWaitingForConfirmation(false);
     if (itinerary) {
       store.setItinerary(itinerary);
     }
     store.setOutputUrls(outputUrls);
+    finalizeStreamingToMessage();
     if (content) {
-      store.addMessage({
-        role: "assistant",
-        content,
-        timestamp: Date.now(),
-      });
+      commitAssistantProse(content);
     }
     store.saveChatSnapshot();
     return;
@@ -194,12 +302,14 @@ export function handleChatEvent(
       store.setCurrentStage(stageLabel);
     }
 
-    if (stage === "draft_ready") {
+    if (stage === "draft_ready" || stage === "planned") {
       const payload = data.payload as Record<string, unknown> | undefined;
-      if (payload?.itinerary_draft) {
-        store.setItinerary(
-          payload.itinerary_draft as Parameters<typeof store.setItinerary>[0]
-        );
+      // The plan node emits the solved itinerary under `itinerary` (not
+      // `itinerary_draft`); render it immediately so the user sees the plan as
+      // soon as solving finishes, instead of waiting out the prose polish.
+      const draft = payload?.itinerary_draft ?? payload?.itinerary;
+      if (draft) {
+        store.setItinerary(draft as Parameters<typeof store.setItinerary>[0]);
       }
     } else if (stage === "itinerary_final") {
       if (!stageLabel) {
@@ -213,8 +323,11 @@ export function handleChatEvent(
       }
     } else if (stage === "writing") {
       if (!stageLabel) {
-        store.setCurrentStage("正在润色文案...");
+        store.setCurrentStage("正在生成行程方案…");
       }
+      // Do NOT start streaming here: starting the caret before any token
+      // arrives shows an empty blinking cursor while the model warms up. The
+      // `token` handler starts streaming on the first real chunk instead.
     } else if (stage === "completed") {
       refs.activeJobIdRef.current = null;
       refs.lastEventIdRef.current = 0;
@@ -225,17 +338,11 @@ export function handleChatEvent(
       const payload = data.payload as Record<string, unknown> | undefined;
       // Prefer the finalized proposal text when available; fall back to the
       // streaming buffer for cases where the backend did not send a proposal.
-      const finalText = (payload?.proposal_text as string) || store.streamingContent;
+      const finalText =
+        (payload?.proposal_text as string) || store.streamingContent;
+      finalizeStreamingToMessage();
       if (finalText) {
-        store.addMessage({
-          role: "assistant",
-          content: finalText,
-          timestamp: Date.now(),
-        });
-      }
-      if (store.isStreaming) {
-        store.stopStreaming();
-        store.setStreamingContent("");
+        commitAssistantProse(finalText);
       }
       if (payload?.itinerary || payload?.itinerary_final) {
         store.setItinerary(
@@ -269,17 +376,6 @@ export function handleChatEvent(
           timestamp: Date.now(),
         });
       }
-    }
-    return;
-  }
-
-  if (type === "token") {
-    const chunk = (data.chunk as string) || "";
-    if (chunk) {
-      if (!store.isStreaming) {
-        store.startStreaming();
-      }
-      store.appendStreamingContent(chunk);
     }
     return;
   }

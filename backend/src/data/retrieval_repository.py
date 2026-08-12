@@ -81,7 +81,7 @@ class RetrievalRepository:
     ) -> list[POI]:
         """Semantic search over attraction description vectors via pgvector."""
         embedder = await get_embedder()
-        embedding = embedder.encode_single(query_text)
+        embedding = await embedder.aencode_single(query_text)
 
         # asyncpg expects the vector literal as a string.
         embedding_str = str(embedding)
@@ -128,8 +128,13 @@ class RetrievalRepository:
         *,
         limit: int = 50,
     ) -> list[POI]:
-        """Full-text search over attraction search_vector via PostgreSQL tsvector."""
-        # Use plainto_tsquery for safe tokenization
+        """Portable lexical search that works for Chinese without zhparser.
+
+        PostgreSQL's built-in parsers treat a contiguous Chinese phrase as one
+        token, so tsvector matching misses names such as ``成都大熊猫基地`` for
+        the query ``成都 熊猫``. Match the safely bound whitespace-separated
+        terms against the searchable text and use the match count as rank.
+        """
         sql = """
             SELECT id, name, city, lat, lng, address,
                    ticket_price, open_time, close_time,
@@ -139,9 +144,23 @@ class RetrievalRepository:
                    tags, description, suitable_for,
                    accessibility, wheelchair_accessible,
                    spot_tags, season_restriction, temp_closure_dates,
-                   ts_rank_cd(search_vector, plainto_tsquery('chinese', :query)) AS rank
+                   (
+                       SELECT count(*)::float
+                       FROM unnest(regexp_split_to_array(trim(:query), E'\\s+')) AS term
+                       WHERE concat_ws(
+                           ' ', name, description, array_to_string(tags, ' '),
+                           array_to_string(spot_tags, ' ')
+                       ) ILIKE '%' || term || '%'
+                   ) AS rank
             FROM attractions
-            WHERE search_vector @@ plainto_tsquery('chinese', :query)
+            WHERE EXISTS (
+                SELECT 1
+                FROM unnest(regexp_split_to_array(trim(:query), E'\\s+')) AS term
+                WHERE concat_ws(
+                    ' ', name, description, array_to_string(tags, ' '),
+                    array_to_string(spot_tags, ' ')
+                ) ILIKE '%' || term || '%'
+            )
               AND status != 'deprecated'
         """
         params: dict[str, Any] = {"query": query_text}

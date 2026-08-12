@@ -13,6 +13,8 @@ from typing import Optional
 
 import httpx
 
+from core.amap_rate import amap_rate_gate
+
 logger = logging.getLogger(__name__)
 
 # 高德 POI 类型映射
@@ -97,6 +99,7 @@ class AmapCollector:
             }
 
             try:
+                await amap_rate_gate()
                 resp = await self._client.get(
                     f"{self.BASE_URL}/place/text", params=params
                 )

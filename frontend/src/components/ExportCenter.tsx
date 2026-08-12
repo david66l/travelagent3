@@ -29,7 +29,7 @@ export function ExportCenter() {
     try {
       switch (selectedFormat) {
         case "pdf":
-          exportPDF(itinerary);
+          await exportPDF(itinerary);
           break;
         case "excel":
           exportExcel(itinerary);
@@ -94,37 +94,83 @@ export function ExportCenter() {
 
 /* ── 导出函数 ── */
 
-function exportPDF(itinerary: any[]) {
+async function exportPDF(itinerary: any[]) {
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-  let y = 20;
+  // jsPDF's built-in fonts do not contain Chinese glyphs. Render each page
+  // through the browser canvas first, which uses the user's installed CJK font,
+  // then place the rendered page into the PDF.
+  const pageWidth = 1240;
+  const pageHeight = 1754;
+  const margin = 96;
+  const pages: HTMLCanvasElement[] = [];
+  let canvas!: HTMLCanvasElement;
+  let ctx!: CanvasRenderingContext2D;
+  let y = 0;
 
-  doc.setFontSize(18);
-  doc.text("TravelAgent 行程单", 20, y);
-  y += 12;
+  const newPage = () => {
+    canvas = document.createElement("canvas");
+    canvas.width = pageWidth;
+    canvas.height = pageHeight;
+    ctx = canvas.getContext("2d")!;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, pageWidth, pageHeight);
+    ctx.textBaseline = "top";
+    pages.push(canvas);
+    y = margin;
+  };
 
-  for (const day of itinerary) {
-    if (y > 260) { doc.addPage(); y = 20; }
-    doc.setFontSize(14);
-    doc.text(`Day ${day.day_number} — ${day.theme || "行程"}`, 20, y);
-    y += 8;
-
-    for (const act of day.activities || []) {
-      if (y > 270) { doc.addPage(); y = 20; }
-      const time = act.start_time ? `${act.start_time}-${act.end_time}` : "";
-      const cost = act.ticket_price ? ` ¥${act.ticket_price}` : "";
-      doc.setFontSize(10);
-      doc.text(`${time}  ${act.poi_name}${cost}`, 25, y);
-      y += 6;
-      if (act.recommendation_reason) {
-        doc.setFontSize(8);
-        doc.setTextColor(100);
-        doc.text(`  ${act.recommendation_reason}`, 25, y);
-        doc.setTextColor(0);
-        y += 5;
+  const writeWrapped = (text: string, font: string, color: string, indent = 0) => {
+    ctx.font = font;
+    ctx.fillStyle = color;
+    const maxWidth = pageWidth - margin * 2 - indent;
+    const chars = Array.from(text);
+    const lines: string[] = [];
+    let line = "";
+    for (const char of chars) {
+      if (ctx.measureText(line + char).width > maxWidth && line) {
+        lines.push(line);
+        line = char;
+      } else {
+        line += char;
       }
     }
-    y += 6;
+    if (line) lines.push(line);
+    const lineHeight = font.includes("44px") ? 58 : font.includes("34px") ? 48 : 36;
+    if (y + lines.length * lineHeight > pageHeight - margin) newPage();
+    for (const value of lines) {
+      ctx.fillText(value, margin + indent, y);
+      y += lineHeight;
+    }
+  };
+
+  newPage();
+  writeWrapped("TravelAgent 行程单", "600 44px sans-serif", "#18212b");
+  y += 24;
+
+  for (const day of itinerary) {
+    if (y > pageHeight - margin - 120) newPage();
+    writeWrapped(
+      `第 ${day.day_number} 天${day.date ? ` · ${day.date}` : ""} · ${day.theme || "行程"}`,
+      "600 34px sans-serif",
+      "#1f2937",
+    );
+    y += 12;
+    for (const act of day.activities || []) {
+      const time = act.start_time ? `${act.start_time}-${act.end_time || ""}` : "";
+      const cost = act.ticket_price ? ` · ¥${act.ticket_price}` : "";
+      writeWrapped(`${time}  ${act.poi_name}${cost}`, "500 25px sans-serif", "#111827", 20);
+      if (act.recommendation_reason) {
+        writeWrapped(String(act.recommendation_reason), "23px sans-serif", "#6b7280", 42);
+      }
+      y += 12;
+    }
+    y += 24;
   }
+
+  pages.forEach((page, index) => {
+    if (index > 0) doc.addPage();
+    doc.addImage(page.toDataURL("image/jpeg", 0.92), "JPEG", 0, 0, 210, 297);
+  });
 
   doc.save(`trip-${Date.now()}.pdf`);
 }

@@ -6,6 +6,7 @@ import { DayCard } from "./DayCard";
 import { ItineraryToolbar } from "./ItineraryToolbar";
 import { CheckCircle2, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import type { ItineraryChange } from "@/lib/api";
 
 type StageKey =
   | "intent_ready"
@@ -130,10 +131,12 @@ function StageProgress({ currentStage }: { currentStage: string | null }) {
 }
 
 interface ItineraryPanelProps {
-  onModify?: (message: string) => void | Promise<void>;
+  onModify?: (change: ItineraryChange) => void | Promise<void>;
+  onConfirm?: () => void | Promise<void>;
+  onRegenerate?: () => void | Promise<void>;
 }
 
-export function ItineraryPanel({ onModify }: ItineraryPanelProps) {
+export function ItineraryPanel({ onModify, onConfirm, onRegenerate }: ItineraryPanelProps) {
   const store = useChatStore();
   const { itinerary, currentTrip, jobStatus, isLoading, waitingForConfirmation, activityPhase } = store;
   const [activeDay, setActiveDay] = useState(0);
@@ -157,12 +160,20 @@ export function ItineraryPanel({ onModify }: ItineraryPanelProps) {
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold text-ink">{tripTitle}</h2>
         {itinerary && (
-          <button
-            onClick={() => store.setActiveView("export")}
-            className="btn-primary-dark px-3 py-1.5 text-xs"
-          >
-            导出
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => store.setActiveView("booking")}
+              className="rounded-xl border border-hairline px-3 py-1.5 text-xs text-mute transition-colors hover:text-ink"
+            >
+              预订
+            </button>
+            <button
+              onClick={() => store.setActiveView("export")}
+              className="btn-primary-dark px-3 py-1.5 text-xs"
+            >
+              导出
+            </button>
+          </div>
         )}
       </div>
 
@@ -172,9 +183,11 @@ export function ItineraryPanel({ onModify }: ItineraryPanelProps) {
       )}
 
       {/* HITL toolbar */}
-      {itinerary && itinerary.length > 0 && (
+      {itinerary && itinerary.length > 0 && waitingForConfirmation && (
         <ItineraryToolbar
           onModify={onModify ?? (() => {})}
+          onConfirm={onConfirm ?? (() => {})}
+          onRegenerate={onRegenerate ?? (() => {})}
           isLoading={isLoading}
           waitingForConfirmation={waitingForConfirmation}
         />

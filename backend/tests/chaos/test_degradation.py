@@ -26,15 +26,19 @@ async def test_cost_circuit_degrades_to_small_model(mock_redis, monkeypatch):
     mock_redis.incrby = AsyncMock(side_effect=_incrby)
     mock_redis.expire = AsyncMock()
 
+    monkeypatch.setattr(settings, "local_llm_enabled", True, raising=False)
     await record_daily_tokens(100)
     active = await is_cost_circuit_active()
     model = select_model(role="premium", task_type="planning", cost_circuit_active=active)
     assert active is True
-    assert model == settings.small_model
+    # Cost circuit forces the free local model regardless of task.
+    assert model == settings.local_llm_model
 
 
 @pytest.mark.chaos
 @pytest.mark.asyncio
-async def test_model_router_guest_always_small():
+async def test_model_router_non_intent_uses_cloud(monkeypatch):
+    monkeypatch.setattr(settings, "deepseek_api_key", "sk-test", raising=False)
     model = select_model(role="guest", task_type="planning")
-    assert model == settings.small_model
+    # Non-intent tasks route to the DeepSeek cloud model.
+    assert model == settings.llm_model

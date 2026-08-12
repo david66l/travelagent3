@@ -18,6 +18,28 @@ log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 stopped=0
 
 # 从 PID 文件停止
+if [ -f "$PID_DIR/gateway.pid" ]; then
+    pid=$(cat "$PID_DIR/gateway.pid")
+    if kill "$pid" 2>/dev/null; then
+        log_info "已停止 Go 网关 (PID: $pid)"
+        stopped=1
+    else
+        log_warn "网关进程 $pid 未运行"
+    fi
+    rm -f "$PID_DIR/gateway.pid"
+fi
+
+if [ -f "$PID_DIR/vrp_solver.pid" ]; then
+    pid=$(cat "$PID_DIR/vrp_solver.pid")
+    if kill "$pid" 2>/dev/null; then
+        log_info "已停止 VRP 求解服务 (PID: $pid)"
+        stopped=1
+    else
+        log_warn "VRP 求解服务进程 $pid 未运行"
+    fi
+    rm -f "$PID_DIR/vrp_solver.pid"
+fi
+
 if [ -f "$PID_DIR/backend.pid" ]; then
     pid=$(cat "$PID_DIR/backend.pid")
     if kill "$pid" 2>/dev/null; then
@@ -63,6 +85,18 @@ if [ -f "$PID_DIR/celery_beat.pid" ]; then
 fi
 
 # 兜底：按端口停止
+if lsof -ti:8080 >/dev/null 2>&1; then
+    kill $(lsof -ti:8080) 2>/dev/null || true
+    log_info "已释放端口 8080"
+    stopped=1
+fi
+
+if lsof -ti:8001 >/dev/null 2>&1; then
+    kill $(lsof -ti:8001) 2>/dev/null || true
+    log_info "已释放端口 8001"
+    stopped=1
+fi
+
 if lsof -ti:8000 >/dev/null 2>&1; then
     kill $(lsof -ti:8000) 2>/dev/null || true
     log_info "已释放端口 8000"

@@ -66,6 +66,17 @@ class Settings(BaseSettings):
     app_port: int = 8000
     public_app_url: str | None = None  # external URL for generated download links
     debug: bool = False
+    # Output formatting — when True, a streaming LLM pass writes the final itinerary
+    # Markdown token-by-token (true real-time streaming: the model emits, the page
+    # renders live). When False, the writer's pre-built Markdown is streamed back as
+    # a fast replay (lower latency, no second LLM call). Default True for the live
+    # streaming experience; set OUTPUT_POLISH_ENABLED=false to prioritise speed.
+    output_polish_enabled: bool = True
+    # Server-side PDF/Excel export. The frontend already exports client-side
+    # (ExportCenter via jsPDF / write-excel-file), so the WeasyPrint/openpyxl
+    # generation here is redundant and burns CPU + needs native libs. Off by
+    # default; set SERVER_SIDE_EXPORT_ENABLED=true only if a client needs the URLs.
+    server_side_export_enabled: bool = False
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
 
     # Crawler
@@ -78,6 +89,11 @@ class Settings(BaseSettings):
     seed_cities: str = (
         "北京,上海,广州,深圳,成都,杭州,西安,重庆,苏州,南京,厦门,青岛,大理,丽江,三亚,长沙,武汉,昆明,桂林,拉萨"
     )
+
+    # Vector embeddings are optional. The structured + lexical RAG path works
+    # without a local model; enable "local" only in an image/environment that
+    # installs the ``local-embedding`` dependency group and preloads BGE.
+    embedding_provider: Literal["disabled", "local"] = "disabled"
 
     # Authentication
     # If JWT_SECRET is not provided, a one-time random secret is generated at
@@ -151,6 +167,10 @@ class Settings(BaseSettings):
     celery_memory_queue: str = "memory"
     celery_dead_letter_queue: str = "planning_dead_letter"
     celery_worker_prefetch_multiplier: int = 1
+    # Redis broker re-delivers a message if not acked within this window. Must
+    # comfortably exceed the longest task / countdown (now ~30s) so a long task
+    # is never duplicated. Kept high since no countdown approaches it anymore.
+    celery_visibility_timeout_seconds: int = 7200
     # celery: dispatch to Celery worker queue; embedded: in-process PlanningWorker poll loop
     planning_executor: str = "celery"
 

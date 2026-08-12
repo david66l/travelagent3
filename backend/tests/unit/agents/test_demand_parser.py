@@ -209,3 +209,11 @@ async def test_parse_chitchat_no_required_missing(parser):
     assert result.intent == "chitchat"
     assert result.missing_slots == []
     assert result.clarifying_question is None
+
+
+def test_resolve_chinese_absolute_date_range_to_iso():
+    assert demand_parser.DemandParserAgent._resolve_date("2026年10月1日") == "2026-10-01"
+    assert (
+        demand_parser.DemandParserAgent._resolve_date("2026年10月1日至10月5日")
+        == "2026-10-01|2026-10-05"
+    )

@@ -88,9 +88,13 @@ class AttachmentItem(BaseModel):
 
 class ChatMessageRequest(BaseModel):
     conversation_id: UUID
-    content: str = Field(..., min_length=1, max_length=8000)
+    # Empty allowed for button-driven control actions (confirm/modify/reject/trip_event).
+    content: str = Field(default="", max_length=8000)
     stream: bool = True
     attachments: Optional[list[AttachmentItem]] = Field(default=None, max_length=5)
+    action: str = "chat"
+    change: Optional[dict] = None
+    external_event: Optional[dict] = None
 
 
 class PlanningJobResponse(BaseModel):
