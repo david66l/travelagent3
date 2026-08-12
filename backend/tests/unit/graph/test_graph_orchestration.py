@@ -229,6 +229,79 @@ async def test_constraint_change_updates_profile_and_requires_fresh_plan():
     assert result["confirm_decision"] is None
 
 
+@pytest.mark.asyncio
+async def test_remove_activity_recomputes_day_cost_and_invalidates_booking_budget():
+    from graph.nodes import apply_single_change_node
+
+    state = {
+        "itinerary": [
+            {
+                "day_number": 1,
+                # 100 fixed meal allowance + 50 ticket + 9 transport.
+                "total_cost": 159,
+                "transport_cost": 9,
+                "activities": [
+                    {
+                        "poi_name": "大雁塔",
+                        "ticket_price": 50,
+                        "transport_cost": 0,
+                    },
+                    {
+                        "poi_name": "陕西历史博物馆",
+                        "ticket_price": 0,
+                        "transport_cost": 9,
+                    },
+                ],
+            }
+        ],
+        "budget_breakdown": {"total": 999},
+        "pending_change": {
+            "action": "remove",
+            "day_number": 1,
+            "poi_id": "大雁塔",
+        },
+    }
+
+    result = await apply_single_change_node(state)
+
+    assert [a["poi_name"] for a in result["itinerary"][0]["activities"]] == [
+        "陕西历史博物馆"
+    ]
+    assert result["itinerary"][0]["total_cost"] == 109
+    assert result["itinerary"][0]["transport_cost"] == 9
+    assert result["budget_breakdown"] is None
+    # Local edits must not mutate the checkpoint value passed into the node.
+    assert state["itinerary"][0]["total_cost"] == 159
+
+
+@pytest.mark.asyncio
+async def test_replace_activity_recomputes_explicit_cost_delta():
+    from graph.nodes import apply_single_change_node
+
+    result = await apply_single_change_node(
+        {
+            "itinerary": [
+                {
+                    "day_number": 1,
+                    "total_cost": 170,
+                    "activities": [
+                        {"poi_name": "旧景点", "ticket_price": 70},
+                    ],
+                }
+            ],
+            "pending_change": {
+                "action": "replace",
+                "day_number": 1,
+                "poi_id": "旧景点",
+                "new_poi": {"poi_name": "新景点", "ticket_price": 20},
+            },
+        }
+    )
+
+    assert result["itinerary"][0]["activities"][0]["poi_name"] == "新景点"
+    assert result["itinerary"][0]["total_cost"] == 120
+
+
 def test_replan_closure_replaces_the_closed_poi_in_same_slot():
     from graph.nodes import _trace_replan_local
 

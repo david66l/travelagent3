@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import json
 import time
+import copy
 from typing import Any
 
 from core.langsmith_trace import traceable_step
@@ -439,7 +440,7 @@ def _trace_apply_single_change(
     day_number = change.get("day_number")
     poi_id = change.get("poi_id")
 
-    new_itinerary = [dict(d) for d in itinerary]
+    new_itinerary = copy.deepcopy(itinerary)
     for day in new_itinerary:
         if day_number and day.get("day_number") != day_number:
             continue
@@ -455,7 +456,43 @@ def _trace_apply_single_change(
         elif action == "reorder" and change.get("order"):
             order = {name: i for i, name in enumerate(change["order"])}
             day["activities"] = sorted(acts, key=lambda a: order.get(a.get("poi_name"), len(order)))
+        _refresh_day_costs(day, previous_activities=acts)
     return new_itinerary
+
+
+def _activity_cost(activity: dict[str, Any]) -> float:
+    """Return the explicit cost carried by one scheduled activity."""
+    return sum(
+        float(activity.get(field) or 0)
+        for field in ("ticket_price", "meal_cost", "transport_cost")
+    )
+
+
+def _refresh_day_costs(
+    day: dict[str, Any],
+    *,
+    previous_activities: list[dict[str, Any]],
+) -> None:
+    """Recompute derived cost fields after an in-place local itinerary edit.
+
+    Solver day totals contain explicit activity costs plus fixed daily costs
+    (currently the meal allowance).  Preserve that fixed component, while
+    recomputing every activity-derived component from the edited itinerary.
+    This keeps local edits deterministic without inventing a new route price.
+    """
+    previous_explicit = sum(_activity_cost(activity) for activity in previous_activities)
+    fixed_daily_cost = max(0.0, float(day.get("total_cost") or 0) - previous_explicit)
+    activities = [
+        activity
+        for activity in (day.get("activities") or [])
+        if isinstance(activity, dict)
+    ]
+    explicit_cost = sum(_activity_cost(activity) for activity in activities)
+    day["total_cost"] = round(fixed_daily_cost + explicit_cost, 2)
+    day["transport_cost"] = round(
+        sum(float(activity.get("transport_cost") or 0) for activity in activities),
+        2,
+    )
 
 
 @with_error_handling("apply_single_change")
@@ -508,6 +545,10 @@ async def apply_single_change_node(state: dict[str, Any]) -> dict[str, Any]:
     # Clear the consumed change so a later confirm does not re-apply it.
     return {
         "itinerary": new_itinerary,
+        # A completed checkpoint may carry an all-in booking projection.  It is
+        # invalid as soon as the itinerary changes; booking recomputes it after
+        # the user confirms the revised draft.
+        "budget_breakdown": None,
         "pending_change": None,
         "confirm_decision": "modify",
         "stage": "change_applied",

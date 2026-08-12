@@ -55,12 +55,14 @@ export function useChat() {
     const prev = prevSessionIdRef.current;
     const curr = store.sessionId;
     if (prev && curr && prev !== curr) {
+      activeJobIdRef.current = null;
+      lastEventIdRef.current = 0;
       openStream(curr).catch((err) =>
         console.error("SSE reconnect failed:", err)
       );
     }
     prevSessionIdRef.current = curr;
-  }, [store.sessionId, openStream]);
+  }, [store.sessionId, openStream, activeJobIdRef, lastEventIdRef]);
 
   const sendMessage = useCallback(
     async (content: string): Promise<"sent" | "queued" | "failed"> => {

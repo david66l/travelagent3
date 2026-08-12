@@ -779,23 +779,34 @@ async def push_job_status(job_id: str, session_id: str, from_event_id: int = 0) 
 
 
 async def restore_session_state(session_id: str) -> None:
-    """Push state_restored to subscribers (SSE reconnect)."""
-    async with async_session_maker() as db:
-        repo = PlanningJobRepository(db)
-        latest_jobs = await repo.get_by_session(session_id, limit=1)
-        if latest_jobs and latest_jobs[0].user_feedback:
-            state = dict(latest_jobs[0].user_feedback)
-            await redis_client.set_json(STATE_KEY.format(session_id), state, ttl=STATE_TTL)
-            await manager.send_json(
-                session_id,
-                {
-                    "type": "state_restored",
-                    "profile": state.get("profile", {}),
-                    "phase": state.get("phase", "gathering"),
-                    "revision": state.get("revision", 1),
-                    "recent_messages": state.get("recent_messages", [])[-3:],
-                },
-            )
+    """Project the unified session state back to an SSE client after reconnect."""
+    state = await manager.load_state(session_id)
+    if not manager._state_has_session_payload(state):
+        return
+
+    recent_messages = state.get("recent_messages", [])[-10:]
+    itinerary = state.get("itinerary")
+    if not itinerary:
+        for message in reversed(recent_messages):
+            if isinstance(message, dict) and message.get("itinerary"):
+                itinerary = message["itinerary"]
+                break
+
+    await manager.send_json(
+        session_id,
+        {
+            "type": "state_restored",
+            "profile": state.get("profile", {}),
+            "phase": state.get("phase", "gathering"),
+            "revision": state.get("revision", 1),
+            "recent_messages": recent_messages,
+            "itinerary": itinerary,
+            "budget_breakdown": state.get("budget_breakdown"),
+            "output_pdf_url": state.get("output_pdf_url"),
+            "output_excel_url": state.get("output_excel_url"),
+            "output_map_url": state.get("output_map_url"),
+        },
+    )
 
 
 async def delayed_cancel(job_id: str, delay: int) -> None:

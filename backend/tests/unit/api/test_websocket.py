@@ -5,7 +5,12 @@ from typing import Any
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from api.chat_runtime import ConnectionManager, delayed_cancel
+from api.chat_runtime import (
+    ConnectionManager,
+    delayed_cancel,
+    manager as chat_manager,
+    restore_session_state,
+)
 from core.conversation_state import default_conversation_state
 from core.redis_client import redis_client
 from core.memory import memory_manager
@@ -283,6 +288,30 @@ async def test_load_state_ignores_hot_set_exception_on_write_back():
             state = await manager.load_state("s1")
 
     assert state["turn"] == 1
+
+
+@pytest.mark.asyncio
+async def test_restore_session_state_projects_interactive_draft():
+    state = {
+        "phase": "awaiting_confirm",
+        "turn": 1,
+        "revision": 2,
+        "profile": {"trip": {"destination": "北京", "travel_days": 3}},
+        "itinerary": [{"day_number": 1, "activities": [{"poi_name": "故宫"}]}],
+        "recent_messages": [
+            {"role": "user", "content": "北京3天", "ts": 1000},
+            {"role": "assistant", "content": "这是草案", "ts": 1001},
+        ],
+    }
+    with patch.object(chat_manager, "load_state", new=AsyncMock(return_value=state)):
+        with patch.object(chat_manager, "send_json", new=AsyncMock()) as send:
+            await restore_session_state("draft-session")
+
+    payload = send.await_args.args[1]
+    assert payload["type"] == "state_restored"
+    assert payload["phase"] == "awaiting_confirm"
+    assert payload["itinerary"][0]["activities"][0]["poi_name"] == "故宫"
+    assert len(payload["recent_messages"]) == 2
 
 
 @pytest.mark.asyncio

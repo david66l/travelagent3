@@ -79,6 +79,7 @@ export interface PendingSuggestion {
 
 export interface TripRecord {
   id: string;
+  conversationId: string;
   title: string;
   destination: string;
   dates: string;
@@ -205,6 +206,69 @@ export function deriveBriefItinerary(
   }));
 }
 
+export function deriveItineraryBudget(
+  itinerary: DayPlan[],
+  totalBudget?: number
+): BudgetPanel {
+  const spent = itinerary.reduce(
+    (total, day) => total + (Number(day.total_cost) || 0),
+    0
+  );
+  return {
+    total_budget: totalBudget,
+    spent,
+    remaining: totalBudget === undefined ? undefined : totalBudget - spent,
+    breakdown: { itinerary: spent },
+    status:
+      totalBudget === undefined
+        ? "estimate"
+        : spent <= totalBudget
+          ? "within_budget"
+          : "over_budget",
+  };
+}
+
+function normalizeTrip(
+  trip: TripRecord,
+  snapshots: ChatSnapshot[]
+): TripRecord {
+  const totalBudget = trip.budgetPanel.total_budget ?? trip.preferencePanel.budget_range;
+  const itineraryCost = trip.itinerary.reduce(
+    (total, day) => total + (Number(day.total_cost) || 0),
+    0
+  );
+  const hasLegacyEmptyBudget =
+    trip.budgetPanel.spent === 0 &&
+    Object.keys(trip.budgetPanel.breakdown || {}).length === 0 &&
+    (itineraryCost > 0 || totalBudget !== undefined);
+  const matchedSnapshot = snapshots.find(
+    (snapshot) =>
+      snapshot.confirmedInfo?.destination === trip.destination &&
+      snapshot.confirmedInfo?.travel_dates === trip.dates
+  );
+  const normalized = {
+    ...trip,
+    conversationId: trip.conversationId || matchedSnapshot?.id || "",
+  };
+  if (!hasLegacyEmptyBudget) return normalized;
+  return {
+    ...normalized,
+    budgetPanel: {
+      total_budget: totalBudget,
+      spent: itineraryCost,
+      remaining:
+        totalBudget === undefined ? undefined : totalBudget - itineraryCost,
+      breakdown: { itinerary: itineraryCost },
+      status:
+        totalBudget === undefined
+          ? "estimate"
+          : itineraryCost <= totalBudget
+            ? "within_budget"
+            : "over_budget",
+    },
+  };
+}
+
 export const useChatStore = create<ChatState>()(
   persist(
     (set, get) => ({
@@ -277,7 +341,20 @@ export const useChatStore = create<ChatState>()(
           } else if (!v || v.length === 0) {
             newActiveBriefDay = 0;
           }
-          return { itinerary: v, activeBriefDay: newActiveBriefDay };
+          return {
+            itinerary: v,
+            activeBriefDay: newActiveBriefDay,
+            // The itinerary is the source of truth while a draft is being
+            // edited. A later completed booking event may replace this with
+            // its wider flight/hotel projection.
+            budgetPanel: v?.length
+              ? deriveItineraryBudget(
+                  v,
+                  state.confirmedInfo?.budget_range ??
+                    state.preferencePanel?.budget_range
+                )
+              : state.budgetPanel,
+          };
         }),
       setBudgetPanel: (v) => set({ budgetPanel: v }),
       setPreferencePanel: (v) => set({ preferencePanel: v }),
@@ -300,23 +377,8 @@ export const useChatStore = create<ChatState>()(
         const startDate = state.confirmedInfo?.startDate || "";
         const endDate = state.confirmedInfo?.endDate || "";
         const totalBudget = state.confirmedInfo?.budget_range;
-        const itineraryCost = state.itinerary.reduce(
-          (total, day) => total + (Number(day.total_cost) || 0),
-          0
-        );
-        const budgetPanel = state.budgetPanel || {
-          total_budget: totalBudget,
-          spent: itineraryCost,
-          remaining:
-            totalBudget === undefined ? undefined : totalBudget - itineraryCost,
-          breakdown: { itinerary: itineraryCost },
-          status:
-            totalBudget === undefined
-              ? "estimate"
-              : itineraryCost <= totalBudget
-                ? "within_budget"
-                : "over_budget",
-        };
+        const budgetPanel =
+          state.budgetPanel || deriveItineraryBudget(state.itinerary, totalBudget);
 
         // 防重：检查是否已存在相同目的地和日期的行程
         const duplicate = state.trips.find(
@@ -326,13 +388,25 @@ export const useChatStore = create<ChatState>()(
             t.endDate === endDate
         );
         if (duplicate) {
-          // 已存在则只设为当前行程，不再新建
-          set({ currentTrip: duplicate });
+          const updatedTrip: TripRecord = {
+            ...duplicate,
+            conversationId: state.sessionId || duplicate.conversationId,
+            itinerary: state.itinerary,
+            preferencePanel: state.preferencePanel || duplicate.preferencePanel,
+            budgetPanel,
+          };
+          set((current) => ({
+            trips: current.trips.map((trip) =>
+              trip.id === duplicate.id ? updatedTrip : trip
+            ),
+            currentTrip: updatedTrip,
+          }));
           return;
         }
 
         const trip: TripRecord = {
           id: `trip-${Date.now()}`,
+          conversationId: state.sessionId,
           title: destination
             ? `${destination}${state.itinerary.length}日游`
             : `行程 ${state.trips.length + 1}`,
@@ -363,6 +437,7 @@ export const useChatStore = create<ChatState>()(
         if (!trip) return;
 
         set({
+          sessionId: trip.conversationId || state.sessionId,
           currentTrip: trip,
           itinerary: trip.itinerary,
           preferencePanel: trip.preferencePanel,
@@ -374,6 +449,7 @@ export const useChatStore = create<ChatState>()(
             endDate: trip.endDate,
           },
           isLoading: false,
+          isConnected: false,
         });
       },
 
@@ -502,13 +578,39 @@ export const useChatStore = create<ChatState>()(
       name: "travel-agent-chat-storage",
       merge: (persistedState, currentState) => {
         const persisted = persistedState as Partial<ChatState> | undefined;
+        const snapshots = persisted?.chatSnapshots ?? [];
+        const sessionId = persisted?.sessionId ?? "";
+        const activeSnapshot = snapshots.find((snapshot) => snapshot.id === sessionId);
+        const trips = (persisted?.trips ?? []).map((trip) =>
+          normalizeTrip(trip, snapshots)
+        );
+        const persistedCurrentTrip = persisted?.currentTrip;
+        const currentTrip = persistedCurrentTrip
+          ? trips.find((trip) => trip.id === persistedCurrentTrip.id) ??
+            normalizeTrip(persistedCurrentTrip, snapshots)
+          : null;
         return {
           ...currentState,
-          chatSnapshots: persisted?.chatSnapshots ?? [],
-          trips: persisted?.trips ?? [],
+          sessionId,
+          messages: activeSnapshot?.messages ?? [],
+          itinerary: currentTrip?.itinerary ?? activeSnapshot?.itinerary ?? null,
+          confirmedInfo: activeSnapshot?.confirmedInfo ?? null,
+          preferencePanel:
+            currentTrip?.preferencePanel ?? activeSnapshot?.preferencePanel ?? null,
+          budgetPanel: currentTrip?.budgetPanel ?? activeSnapshot?.budgetPanel ?? null,
+          pendingSuggestions: activeSnapshot?.pendingSuggestions ?? [],
+          waitingForConfirmation: persisted?.waitingForConfirmation ?? false,
+          activeView: persisted?.activeView ?? "chat",
+          currentTrip,
+          chatSnapshots: snapshots,
+          trips,
         };
       },
       partialize: (state) => ({
+        sessionId: state.sessionId,
+        waitingForConfirmation: state.waitingForConfirmation,
+        activeView: state.activeView,
+        currentTrip: state.currentTrip,
         chatSnapshots: state.chatSnapshots,
         trips: state.trips,
       }),

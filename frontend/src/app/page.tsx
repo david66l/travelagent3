@@ -18,6 +18,10 @@ export default function Home() {
   const { sendMessage, sendAction, reconnect } = useChat();
   const store = useChatStore();
   const { activeView, activeTab, refreshTripStatuses } = store;
+  const canModifyCurrentItinerary =
+    !store.currentTrip ||
+    (!!store.currentTrip.conversationId &&
+      store.currentTrip.conversationId === store.sessionId);
 
   // 定期刷新行程状态（upcoming → active → completed）
   useEffect(() => {
@@ -80,10 +84,10 @@ export default function Home() {
             <>
               <div className="flex-1">
                 <ItineraryPanel
-                  onModify={async (change) => {
+                  onModify={canModifyCurrentItinerary ? async (change) => {
                     store.addMessage({ role: "user", content: "修改行程草案", timestamp: Date.now() });
                     await sendAction("modify", { change });
-                  }}
+                  } : undefined}
                   onConfirm={async () => { await sendAction("confirm"); }}
                   onRegenerate={async () => { await sendAction("reject"); }}
                 />
@@ -124,10 +128,10 @@ export default function Home() {
           )}
           {activeTab === "itinerary" && (
             <ItineraryPanel
-              onModify={async (change) => {
+              onModify={canModifyCurrentItinerary ? async (change) => {
                 store.addMessage({ role: "user", content: "修改行程草案", timestamp: Date.now() });
                 await sendAction("modify", { change });
-              }}
+              } : undefined}
               onConfirm={async () => { await sendAction("confirm"); }}
               onRegenerate={async () => { await sendAction("reject"); }}
             />

@@ -1,4 +1,5 @@
 import {
+  deriveItineraryBudget,
   useChatStore,
   type ConfirmedInfo,
   type PreferencePanel,
@@ -111,6 +112,33 @@ function commitConfirmedItinerary() {
   store.confirmCurrentItinerary();
 }
 
+function applyServerBudget(raw: unknown) {
+  if (!raw || typeof raw !== "object") return;
+  const budget = raw as Record<string, unknown>;
+  if (typeof budget.total !== "number") return;
+  const store = useChatStore.getState();
+  const totalBudget = store.confirmedInfo?.budget_range ?? undefined;
+  const spent = budget.total;
+  const breakdown = Object.fromEntries(
+    Object.entries(budget).filter(
+      ([key, value]) =>
+        typeof value === "number" && !["total", "travelers_count"].includes(key)
+    )
+  ) as Record<string, number>;
+  store.setBudgetPanel({
+    total_budget: totalBudget,
+    spent,
+    remaining: totalBudget === undefined ? undefined : totalBudget - spent,
+    breakdown,
+    status:
+      totalBudget === undefined
+        ? "estimate"
+        : spent <= totalBudget
+          ? "within_budget"
+          : "over_budget",
+  });
+}
+
 export function handleChatEvent(
   data: Record<string, unknown>,
   refs: EventRefs
@@ -182,31 +210,7 @@ export function handleChatEvent(
     if (itinerary) {
       store.setItinerary(itinerary);
     }
-    const rawBudget = data.budget_breakdown as Record<string, unknown> | undefined;
-    if (rawBudget && typeof rawBudget.total === "number") {
-      const totalBudget =
-        useChatStore.getState().confirmedInfo?.budget_range ?? undefined;
-      const spent = rawBudget.total;
-      const breakdown = Object.fromEntries(
-        Object.entries(rawBudget).filter(
-          ([key, value]) =>
-            typeof value === "number" &&
-            !["total", "travelers_count"].includes(key)
-        )
-      ) as Record<string, number>;
-      store.setBudgetPanel({
-        total_budget: totalBudget,
-        spent,
-        remaining: totalBudget === undefined ? undefined : totalBudget - spent,
-        breakdown,
-        status:
-          totalBudget === undefined
-            ? "estimate"
-            : spent <= totalBudget
-              ? "within_budget"
-              : "over_budget",
-      });
-    }
+    applyServerBudget(data.budget_breakdown);
     store.setOutputUrls(outputUrls);
     finalizeStreamingToMessage();
     if (content) {
@@ -300,7 +304,58 @@ export function handleChatEvent(
     return;
   }
 
-  if (type === "state_restored" || type === "revision_created") {
+  if (type === "state_restored") {
+    applyProfileFromServer(data.profile);
+    const phase = (data.phase as string) || "gathering";
+    const itinerary = data.itinerary as Parameters<typeof store.setItinerary>[0] | undefined;
+    const recentMessages = Array.isArray(data.recent_messages)
+      ? data.recent_messages
+          .filter(
+            (message): message is Record<string, unknown> =>
+              !!message &&
+              typeof message === "object" &&
+              (message.role === "user" || message.role === "assistant") &&
+              typeof message.content === "string"
+          )
+          .map((message) => ({
+            role: message.role as "user" | "assistant",
+            content: message.content as string,
+            timestamp:
+              typeof message.ts === "number" ? message.ts * 1000 : Date.now(),
+          }))
+      : [];
+    useChatStore.setState((current) => ({
+      messages: current.messages.length > 0 ? current.messages : recentMessages,
+      itinerary: itinerary?.length ? itinerary : current.itinerary,
+      waitingForConfirmation: phase === "awaiting_confirm",
+      isLoading: phase === "planning",
+      currentStage:
+        phase === "awaiting_confirm"
+          ? "待确认"
+          : phase === "completed"
+            ? "完成"
+            : current.currentStage,
+      activityPhase: phase === "planning" ? "planning" : "idle",
+    }));
+    if (data.budget_breakdown) {
+      applyServerBudget(data.budget_breakdown);
+    } else if (itinerary?.length) {
+      const current = useChatStore.getState();
+      current.setBudgetPanel(
+        deriveItineraryBudget(
+          itinerary,
+          current.confirmedInfo?.budget_range ??
+            current.preferencePanel?.budget_range
+        )
+      );
+    }
+    if (phase === "completed") {
+      commitConfirmedItinerary();
+    }
+    return;
+  }
+
+  if (type === "revision_created") {
     applyProfileFromServer(data.profile);
     return;
   }
