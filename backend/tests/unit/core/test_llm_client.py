@@ -141,5 +141,38 @@ def test_output_format_disables_deepseek_thinking_without_affecting_other_tasks(
     assert client._thinking_extra_body("deepseek-v4-flash", "output_format") == {
         "thinking": {"type": "disabled"}
     }
+    assert client._thinking_extra_body("deepseek-v4-flash", "agent_policy") == {
+        "thinking": {"type": "disabled"}
+    }
     assert client._thinking_extra_body("deepseek-v4-flash", "planning") is None
     assert client._thinking_extra_body("qwen2.5-7b-instruct", "output_format") is None
+
+
+@pytest.mark.asyncio
+async def test_native_tool_call_returns_one_parsed_function_and_usage():
+    client = LLMClient()
+    client._prepare_request = AsyncMock(
+        return_value=("policy-model", [{"role": "user", "content": "state"}], "free")
+    )
+    response = MagicMock()
+    response.choices = [MagicMock()]
+    response.choices[0].message.tool_calls = [MagicMock()]
+    response.choices[0].message.tool_calls[0].function.name = "get_weather"
+    response.choices[0].message.tool_calls[0].function.arguments = '{"date":"2026-08-12"}'
+    response.usage.total_tokens = 29
+    response.usage.prompt_tokens = 20
+    response.usage.completion_tokens = 9
+    client._create_completion = AsyncMock(return_value=response)
+
+    result = await client.tool_call(
+        [{"role": "user", "content": "state"}],
+        [{"type": "function", "function": {"name": "get_weather", "parameters": {}}}],
+        model_override="local-agent-policy",
+    )
+
+    assert result == {"action": "get_weather", "arguments": {"date": "2026-08-12"}}
+    assert client.last_token_usage == 29
+    request = client._create_completion.await_args.kwargs
+    assert request["model"] == "local-agent-policy"
+    assert request["tool_choice"] == "required"
+    assert request["parallel_tool_calls"] is False

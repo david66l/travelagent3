@@ -44,23 +44,27 @@ def load_jsonl(path: Path) -> list[dict[str, Any]]:
 
 def to_conversational_prompt_completion(
     rows: list[dict[str, Any]],
-) -> list[dict[str, list[dict[str, str]]]]:
+) -> list[dict[str, Any]]:
     """Convert audited examples to TRL completion-only conversational rows."""
-    converted: list[dict[str, list[dict[str, str]]]] = []
+    converted: list[dict[str, Any]] = []
     for index, row in enumerate(rows):
         example = SFTExample(**row)
-        messages = [item.model_dump() for item in example.messages]
+        messages = [
+            item.model_dump(exclude_none=True, exclude_defaults=True) for item in example.messages
+        ]
         if len(messages) < 2 or messages[-1]["role"] != "assistant":
             raise ValueError(f"row {index} must end with one assistant decision")
         prompt = messages[:-1]
         completion = [messages[-1]]
         if not any(item["role"] == "user" for item in prompt):
             raise ValueError(f"row {index} has no user policy context")
-        converted.append({"prompt": prompt, "completion": completion})
+        if not example.tools:
+            raise ValueError(f"row {index} has no policy action schemas")
+        converted.append({"prompt": prompt, "completion": completion, "tools": example.tools})
     return converted
 
 
-def check_training_dependencies() -> list[TrainingDependency]:
+def check_training_dependencies(*, extra_names: tuple[str, ...] = ()) -> list[TrainingDependency]:
     names = (
         "torch",
         "transformers",
@@ -69,6 +73,7 @@ def check_training_dependencies() -> list[TrainingDependency]:
         "peft",
         "bitsandbytes",
         "accelerate",
+        *extra_names,
     )
     dependencies: list[TrainingDependency] = []
     for name in names:

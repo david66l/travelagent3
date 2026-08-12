@@ -35,3 +35,5 @@ docs/research/**/*.pdf
 ml/agentic/datasets/candidates*.jsonl
 ml/agentic/datasets/build/
 ml/agentic/artifacts/
+ml/agentic/datasets/rollout-groups*.jsonl
+ml/agentic/datasets/build-grpo/

@@ -120,9 +120,63 @@ class LLMClient:
         task_type: Optional[str],
     ) -> Optional[dict[str, Any]]:
         """Disable DeepSeek thinking only for short extraction/prose tasks."""
-        if model.startswith("deepseek-v4") and task_type in {"intent", "output_format"}:
+        if model.startswith("deepseek-v4") and task_type in {
+            "agent_policy",
+            "intent",
+            "output_format",
+        }:
             return {"thinking": {"type": "disabled"}}
         return None
+
+    async def tool_call(
+        self,
+        messages: list[dict[str, str]],
+        tools: list[dict[str, Any]],
+        *,
+        temperature: float = 0.1,
+        max_tokens: int = 256,
+        task_type: str = "agent_policy",
+        model_override: str | None = None,
+    ) -> dict[str, Any]:
+        """Request exactly one native function call from an OpenAI-compatible model."""
+        if not tools:
+            raise ValueError("native tool call requires at least one tool schema")
+        self.last_token_usage = 0
+        routed_model, prepared_messages, tier = await self._prepare_request(messages, task_type)
+        model = model_override or routed_model
+        request_kwargs: dict[str, Any] = {
+            "model": model,
+            "messages": prepared_messages,
+            "tools": tools,
+            "tool_choice": "required",
+            "parallel_tool_calls": False,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+        extra_body = self._thinking_extra_body(model, task_type)
+        if extra_body:
+            request_kwargs["extra_body"] = extra_body
+        start = time.monotonic()
+        response = await self._create_completion(**request_kwargs)
+        duration = time.monotonic() - start
+        self._log_usage(response, model=model, tier=tier, duration_s=duration)
+        usage = getattr(response, "usage", None)
+        self.last_token_usage = int(getattr(usage, "total_tokens", 0) or 0)
+
+        calls = list(getattr(response.choices[0].message, "tool_calls", None) or [])
+        if len(calls) != 1:
+            raise ValueError(f"expected exactly one tool call, received {len(calls)}")
+        function = calls[0].function
+        raw_arguments = function.arguments or "{}"
+        try:
+            arguments = (
+                json.loads(raw_arguments) if isinstance(raw_arguments, str) else raw_arguments
+            )
+        except json.JSONDecodeError as exc:
+            raise ValueError("tool arguments are not valid JSON") from exc
+        if not isinstance(arguments, dict):
+            raise ValueError("tool arguments must be a JSON object")
+        return {"action": str(function.name), "arguments": arguments}
 
     async def chat(
         self,

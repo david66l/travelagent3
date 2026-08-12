@@ -1,5 +1,7 @@
 """Tests for deterministic, isolated Agentic RL rollout environments."""
 
+import json
+
 from agentic.environment import (
     EnvironmentSnapshot,
     EnvironmentTask,
@@ -8,6 +10,7 @@ from agentic.environment import (
     create_rollout_group,
 )
 from agentic.loop import PolicyAction, PolicyContext
+from agentic.trl_environment import TRLTravelEnvironment
 
 
 class FirstAllowedPolicy:
@@ -159,3 +162,60 @@ async def test_snapshot_fault_sequence_is_local_to_executor():
     assert first_record["observation"]["error"]["code"] == "UPSTREAM_TIMEOUT"
     assert second_record["observation"]["error"]["code"] == "UPSTREAM_TIMEOUT"
     assert first.call_counts == second.call_counts == {"get_weather": 1}
+
+
+async def test_trl_environment_runs_production_loop_and_six_component_reward():
+    environment = TRLTravelEnvironment()
+
+    initial = json.loads(
+        environment.reset(
+            task=_task().model_dump(mode="json"),
+            snapshot=_snapshot().model_dump(mode="json"),
+        )
+    )
+    assert initial["policy_state"]["allowed_actions"] == [
+        "capability_check",
+        "ask_user",
+        "propose_tradeoff",
+        "abort",
+    ]
+
+    await environment.capability_check()
+    await environment.get_weather()
+    await environment.search_pois()
+    await environment.get_poi_detail()
+    await environment.get_route_matrix()
+    await environment.solve_itinerary()
+    await environment.validate_itinerary()
+    await environment.compose_draft()
+    terminal = json.loads(await environment.finish())
+    reward = await environment.get_reward()
+
+    assert terminal["done"] is True
+    assert terminal["termination_reason"] == "awaiting_user"
+    assert reward > 0
+    assert environment.reward_record is not None
+    assert environment.reward_record.gate_status == "passed"
+    assert set(environment.reward_record.components.model_dump()) == {
+        "task",
+        "constraint",
+        "format",
+        "tool",
+        "grounding",
+        "efficiency",
+        "quality",
+    }
+
+
+async def test_trl_environment_rejects_out_of_state_action_without_state_write():
+    environment = TRLTravelEnvironment()
+    environment.reset(
+        task=_task().model_dump(mode="json"),
+        snapshot=_snapshot().model_dump(mode="json"),
+    )
+
+    transition = json.loads(await environment.finish())
+
+    assert transition["done"] is False
+    assert transition["last_transition"]["verification"]["error_code"] == "ACTION_NOT_ALLOWED"
+    assert "capability_check" in transition["policy_state"]["allowed_actions"]

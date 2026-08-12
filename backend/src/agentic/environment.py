@@ -224,7 +224,7 @@ class TravelAgentEnvironment:
         self.task = task.model_copy(deep=True)
         self.snapshot = snapshot.model_copy(deep=True)
         self.reward_engine = reward_engine or HierarchicalRewardEngine()
-        self.initial_state_fingerprint = _fingerprint(self.task, self.snapshot)
+        self.initial_state_fingerprint = environment_fingerprint(self.task, self.snapshot)
 
     async def rollout(
         self,
@@ -293,7 +293,7 @@ def create_rollout_group(
     return [TravelAgentEnvironment(task, snapshot) for _ in range(group_size)]
 
 
-def _fingerprint(task: EnvironmentTask, snapshot: EnvironmentSnapshot) -> str:
+def environment_fingerprint(task: EnvironmentTask, snapshot: EnvironmentSnapshot) -> str:
     payload = {
         "environment_schema_version": ENVIRONMENT_SCHEMA_VERSION,
         "task": task.model_dump(mode="json"),

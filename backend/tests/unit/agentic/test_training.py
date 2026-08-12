@@ -1,8 +1,8 @@
 """Tests for dependency-light Agent Policy training preflight."""
 
-import json
-
 from agentic.sft_dataset import DatasetManifest, SFTExample, SFTMessage
+from agentic.sft_dataset import SFTToolCall, SFTToolFunction
+from agentic.policy_actions import policy_action_schemas
 from agentic.training import preflight_sft_dataset, to_conversational_prompt_completion
 
 
@@ -21,8 +21,12 @@ def _example(split: str, index: int) -> SFTExample:
         messages=[
             SFTMessage(role="system", content="policy"),
             SFTMessage(role="user", content="context"),
-            SFTMessage(role="assistant", content='{"action":"get_weather","arguments":{}}'),
+            SFTMessage(
+                role="assistant",
+                tool_calls=[SFTToolCall(function=SFTToolFunction(name="get_weather"))],
+            ),
         ],
+        tools=policy_action_schemas(["get_weather"]),
     )
 
 
@@ -61,7 +65,8 @@ def test_conversational_rows_train_only_on_assistant_completion():
 
     assert [message["role"] for message in converted[0]["prompt"]] == ["system", "user"]
     assert converted[0]["completion"][0]["role"] == "assistant"
-    assert json.loads(converted[0]["completion"][0]["content"])["action"] == "get_weather"
+    assert converted[0]["completion"][0]["tool_calls"][0]["function"]["name"] == "get_weather"
+    assert converted[0]["tools"][0]["function"]["name"] == "get_weather"
 
 
 def test_preflight_can_validate_data_without_gpu_dependencies(tmp_path):

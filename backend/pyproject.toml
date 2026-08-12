@@ -61,9 +61,10 @@ agentic-training = [
     "transformers>=5.2.0",
     "datasets>=3.0.0",
     "accelerate>=1.2.0",
-    "trl>=0.28.0",
+    "trl>=0.29.0,<2.0.0",
     "peft>=0.18.0",
     "bitsandbytes>=0.46.0",
+    "jmespath>=1.0.1",
     "mlflow>=2.16.0",
 ]
 local-embedding = [

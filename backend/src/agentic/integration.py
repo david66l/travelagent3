@@ -7,10 +7,11 @@ from typing import Any
 
 from agentic.action_executor import TravelActionExecutor
 from agentic.loop import ActionExecutor, AgentPolicy, BoundedAgentLoop
-from agentic.policy import ApiAgentPolicy
+from agentic.policy import ApiAgentPolicy, NativeToolAgentPolicy
 from agentic.state import AgentLedgerState
 from agentic.trajectory import EpisodeRecorder
 from evaluation.validator import VALIDATOR_VERSION
+from core.settings import settings
 from vrp_solver_service.models import SolverResponse
 
 
@@ -40,7 +41,7 @@ async def run_agent_branch(
     try:
         result = await BoundedAgentLoop().run(
             ledger,
-            policy=policy or ApiAgentPolicy(),
+            policy=policy or _configured_policy(),
             executor=executor or TravelActionExecutor(),
             recorder=recorder,
         )
@@ -112,6 +113,12 @@ def _latest_artifact(ledger: AgentLedgerState, artifact_type: str):
         and artifact.plan_version == ledger.task_graph.plan_version
     ]
     return matches[-1] if matches else None
+
+
+def _configured_policy() -> AgentPolicy:
+    if settings.agentic_policy_protocol == "native_tool":
+        return NativeToolAgentPolicy()
+    return ApiAgentPolicy()
 
 
 def _fallback(

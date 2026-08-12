@@ -6,6 +6,7 @@ import hashlib
 import json
 import re
 from collections import Counter
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -13,12 +14,13 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from agentic.loop import NO_TOOL_ACTIONS
-from agentic.policy import AGENT_POLICY_SYSTEM_PROMPT
+from agentic.policy import AGENT_TOOL_POLICY_SYSTEM_PROMPT, policy_prompt_payload
+from agentic.policy_actions import policy_action_schemas, validate_policy_arguments
 from agentic.trajectory import AgentEpisode, EpisodeReplayVerifier
 from tools.tool_definitions import TOOL_NAME_TO_MODEL
 
 
-SFT_DATASET_SCHEMA_VERSION = "agent-policy-sft.v1"
+SFT_DATASET_SCHEMA_VERSION = "agent-policy-sft.v2"
 _PHONE = re.compile(r"(?<!\d)(?:\+?86[- ]?)?1[3-9]\d{9}(?!\d)")
 _EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 _ID_CARD = re.compile(r"(?<!\d)\d{17}[\dXx](?!\d)")
@@ -48,9 +50,20 @@ class EpisodeCandidate(BaseModel):
     contains_production_data: bool = False
 
 
+class SFTToolFunction(BaseModel):
+    name: str
+    arguments: dict[str, Any] = Field(default_factory=dict)
+
+
+class SFTToolCall(BaseModel):
+    type: Literal["function"] = "function"
+    function: SFTToolFunction
+
+
 class SFTMessage(BaseModel):
-    role: Literal["system", "user", "assistant"]
-    content: str
+    role: Literal["system", "user", "assistant", "tool"]
+    content: str | None = None
+    tool_calls: list[SFTToolCall] = Field(default_factory=list)
 
 
 class SFTExample(BaseModel):
@@ -66,6 +79,7 @@ class SFTExample(BaseModel):
     policy_name: str
     policy_version: str
     messages: list[SFTMessage]
+    tools: list[dict[str, Any]]
 
 
 class EpisodeReview(BaseModel):
@@ -222,22 +236,12 @@ class SFTDatasetBuilder:
     def _argument_errors(action: str, arguments: dict[str, Any]) -> list[str]:
         if set(arguments) & _PROTECTED_ARGUMENTS:
             return ["L2_POLICY_SUPPLIED_PROTECTED_ARGUMENT"]
-        model = TOOL_NAME_TO_MODEL.get(action)
-        if model is None:
-            return []
-        known = set(model.model_fields)
-        if set(arguments) - known:
-            return ["L2_UNKNOWN_ARGUMENT"]
-        schema = model.model_json_schema()
-        required = set(schema.get("required") or []) - _trusted_hydrated_fields(action)
-        if required - set(arguments):
-            return ["L2_REQUIRED_ARGUMENT_MISSING"]
-        supplied_schema = model.model_json_schema()
-        supplied_schema["required"] = sorted(required)
         try:
-            _validate_partial_arguments(arguments, supplied_schema)
+            validate_policy_arguments(action, arguments)
         except ValueError:
-            return ["L2_ARGUMENT_TYPE_INVALID"]
+            if action not in TOOL_NAME_TO_MODEL and action not in NO_TOOL_ACTIONS:
+                return ["L2_UNKNOWN_ACTION"]
+            return ["L2_POLICY_ARGUMENT_INVALID"]
         return []
 
     @staticmethod
@@ -308,16 +312,7 @@ class SFTDatasetBuilder:
         result: list[SFTExample] = []
         for step in candidate.episode.steps:
             context_json = json.dumps(
-                step.context.model_dump(mode="json"),
-                ensure_ascii=False,
-                separators=(",", ":"),
-                sort_keys=True,
-            )
-            action_json = json.dumps(
-                {
-                    "action": step.action.action,
-                    "arguments": step.action.arguments,
-                },
+                policy_prompt_payload(step.context),
                 ensure_ascii=False,
                 separators=(",", ":"),
                 sort_keys=True,
@@ -335,10 +330,21 @@ class SFTDatasetBuilder:
                     policy_name=candidate.episode.policy_name,
                     policy_version=candidate.episode.policy_version,
                     messages=[
-                        SFTMessage(role="system", content=AGENT_POLICY_SYSTEM_PROMPT),
+                        SFTMessage(role="system", content=AGENT_TOOL_POLICY_SYSTEM_PROMPT),
                         SFTMessage(role="user", content=context_json),
-                        SFTMessage(role="assistant", content=action_json),
+                        SFTMessage(
+                            role="assistant",
+                            tool_calls=[
+                                SFTToolCall(
+                                    function=SFTToolFunction(
+                                        name=step.action.action,
+                                        arguments=step.action.arguments,
+                                    )
+                                )
+                            ],
+                        ),
                     ],
+                    tools=policy_action_schemas(step.context.allowed_actions),
                 )
             )
         return result
@@ -395,7 +401,7 @@ class SFTDatasetBuilder:
         )
 
     @staticmethod
-    def _write_jsonl(path: Path, rows: list[BaseModel]) -> None:
+    def _write_jsonl(path: Path, rows: Sequence[BaseModel]) -> None:
         content = "\n".join(row.model_dump_json() for row in rows)
         path.write_text(content + ("\n" if content else ""), encoding="utf-8")
 
@@ -416,25 +422,6 @@ def _trusted_hydrated_fields(action: str) -> set[str]:
         "validate_itinerary": {"itinerary", "constraints", "facts"},
     }
     return mapping.get(action, set())
-
-
-def _validate_partial_arguments(arguments: dict[str, Any], schema: dict[str, Any]) -> None:
-    properties = schema.get("properties") or {}
-    for name, value in arguments.items():
-        expected = properties.get(name) or {}
-        expected_type = expected.get("type")
-        if expected_type == "string" and not isinstance(value, str):
-            raise ValueError(name)
-        if expected_type == "array" and not isinstance(value, list):
-            raise ValueError(name)
-        if expected_type == "object" and not isinstance(value, dict):
-            raise ValueError(name)
-        if expected_type == "number" and not isinstance(value, (int, float)):
-            raise ValueError(name)
-        if expected_type == "integer" and not isinstance(value, int):
-            raise ValueError(name)
-        if expected_type == "boolean" and not isinstance(value, bool):
-            raise ValueError(name)
 
 
 def _arguments_grounded(action: str, arguments: dict[str, Any], context: dict[str, Any]) -> bool:

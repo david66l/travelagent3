@@ -1,6 +1,5 @@
 """Tests for replay-gated policy SFT dataset construction."""
 
-import json
 from datetime import UTC, datetime
 
 from agentic.loop import PolicyAction, PolicyContext
@@ -114,10 +113,14 @@ def test_valid_episode_exports_one_policy_example_per_real_decision():
     example = result.examples[0]
     assert example.quality_label == "validated_plan"
     assert [message.role for message in example.messages] == ["system", "user", "assistant"]
-    assert json.loads(example.messages[-1].content) == {
-        "action": "solve_itinerary",
-        "arguments": {},
-    }
+    tool_call = example.messages[-1].tool_calls[0]
+    assert tool_call.function.name == "solve_itinerary"
+    assert tool_call.function.arguments == {}
+    assert example.messages[-1].content is None
+    assert [tool["function"]["name"] for tool in example.tools] == ["solve_itinerary"]
+    parameters = example.tools[0]["function"]["parameters"]
+    assert "pois" not in parameters["properties"]
+    assert "constraints" not in parameters["properties"]
 
 
 def test_pii_and_policy_supplied_trusted_payload_are_rejected():
