@@ -185,5 +185,18 @@ TOOLS: list[dict[str, Any]] = [
 
 # Map name -> schema for quick lookup.
 TOOL_NAME_TO_SCHEMA: dict[str, dict[str, Any]] = {tool["function"]["name"]: tool for tool in TOOLS}
+TOOL_NAME_TO_MODEL: dict[str, type[BaseModel]] = {
+    "get_weather": WeatherParams,
+    "check_reservation": ReservationParams,
+    "get_route": RouteParams,
+    "find_restaurants": RestaurantParams,
+    "find_hotels": HotelParams,
+    "get_queue_time": QueueTimeParams,
+    "get_ticket_link": TicketLinkParams,
+    "get_local_events": LocalEventsParams,
+    "get_emergency_services": EmergencyServicesParams,
+    "get_poi_detail": POIDetailParams,
+    "update_user_profile": UpdateProfileParams,
+}
 
-__all__ = ["TOOLS", "TOOL_NAME_TO_SCHEMA"]
+__all__ = ["TOOLS", "TOOL_NAME_TO_MODEL", "TOOL_NAME_TO_SCHEMA"]

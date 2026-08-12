@@ -16,6 +16,8 @@ from typing import Any, Awaitable, Callable
 
 from planner.transport_router import HaversineFallback, MapServiceRouter
 from agentic.observations import ObservationEnvelope
+from agentic.guard import GuardContext, GuardDecision, ToolGuard
+from core.settings import settings
 from schemas import ToolResult
 from tools.tool_definitions import TOOL_NAME_TO_SCHEMA
 
@@ -51,21 +53,53 @@ class ToolExecutor:
         self._weather = WeatherQuerySkill()
         self._poi = POISearchSkill()
         self._router = MapServiceRouter()
+        self._guard = ToolGuard(
+            mode=settings.agentic_guard_mode,
+            max_calls=settings.agentic_tool_call_budget,
+        )
 
     @property
     def available_tools(self) -> list[dict[str, Any]]:
         """Return OpenAI-compatible function schemas."""
         return list(TOOL_NAME_TO_SCHEMA.values())
 
-    async def execute(self, tool_calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    async def execute(
+        self,
+        tool_calls: list[dict[str, Any]],
+        guard_context: GuardContext | dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
         """Execute each tool call and return results keyed by tool_call_id."""
         results: list[dict[str, Any]] = []
-        for call in tool_calls:
+        decisions = self._guard.evaluate_batch(tool_calls, guard_context)
+        for call, guard_decision in zip(tool_calls, decisions):
             started = time.monotonic()
             tool_call_id = call.get("id", "")
             function = call.get("function", {}) or {}
             name = function.get("name", "")
             raw_args = function.get("arguments", "{}")
+
+            if not guard_decision.allowed:
+                first = guard_decision.violations[0]
+                result = ToolResult(
+                    data=None,
+                    data_source="unavailable",
+                    fallback_reason=first.message,
+                )
+                observation = ObservationEnvelope.failure(
+                    tool=name,
+                    code=first.code,
+                    message=first.message,
+                    retryable=False,
+                    tool_call_id=tool_call_id,
+                    details={
+                        "guard_mode": guard_decision.mode,
+                        "violations": [v.model_dump() for v in guard_decision.violations],
+                    },
+                )
+                results.append(
+                    self._result_record(tool_call_id, name, result, observation, guard_decision)
+                )
+                continue
             try:
                 args = json.loads(raw_args) if isinstance(raw_args, str) else dict(raw_args)
             except json.JSONDecodeError as exc:
@@ -83,7 +117,9 @@ class ToolExecutor:
                     tool_call_id=tool_call_id,
                     details={"error_type": type(exc).__name__},
                 )
-                results.append(self._result_record(tool_call_id, name, result, observation))
+                results.append(
+                    self._result_record(tool_call_id, name, result, observation, guard_decision)
+                )
                 continue
 
             handler = self._handlers.get(name)
@@ -129,7 +165,9 @@ class ToolExecutor:
                         details={"error_type": type(exc).__name__},
                     )
 
-            results.append(self._result_record(tool_call_id, name, result, observation))
+            results.append(
+                self._result_record(tool_call_id, name, result, observation, guard_decision)
+            )
         return results
 
     @staticmethod
@@ -138,6 +176,7 @@ class ToolExecutor:
         name: str,
         result: ToolResult,
         observation: ObservationEnvelope,
+        guard_decision: GuardDecision,
     ) -> dict[str, Any]:
         """Keep the legacy result during migration and add the shared contract."""
         return {
@@ -145,6 +184,7 @@ class ToolExecutor:
             "name": name,
             "result": result.model_dump(),
             "observation": observation.model_dump(),
+            "guard": guard_decision.model_dump(),
         }
 
     async def _handle_get_weather(self, args: dict[str, Any]) -> ToolResult:

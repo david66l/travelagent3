@@ -133,10 +133,13 @@ async def hallucination_check_node(state: dict[str, Any]) -> dict[str, Any]:
 
 
 @traceable_step("planning/tool_call", run_type="chain")
-async def _trace_execute_tools(tool_calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+async def _trace_execute_tools(
+    tool_calls: list[dict[str, Any]],
+    guard_context: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
     from tools.tool_executor import tool_executor
 
-    return await tool_executor.execute(tool_calls)
+    return await tool_executor.execute(tool_calls, guard_context=guard_context)
 
 
 @with_error_handling("tool_call")
@@ -146,7 +149,19 @@ async def tool_call_node(state: dict[str, Any]) -> dict[str, Any]:
     if not tool_calls:
         return {"tool_results": [], "stage": "tools_executed"}
 
-    results = await _trace_execute_tools(tool_calls)
+    from core.conversation_state import flatten_profile
+
+    profile = flatten_profile(state.get("profile") or {})
+    grounded_values: dict[str, set[str]] = {}
+    if profile.get("destination"):
+        grounded_values["city"] = {str(profile["destination"])}
+    results = await _trace_execute_tools(
+        tool_calls,
+        guard_context={
+            "allowed_tools": state.get("allowed_tools"),
+            "grounded_values": grounded_values,
+        },
+    )
     for tr in results:
         result_obj = tr.get("result") or {}
         if result_obj.get("is_fallback"):

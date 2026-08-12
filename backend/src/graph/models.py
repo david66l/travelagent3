@@ -95,6 +95,7 @@ class AgentState(TypedDict):
     # Tool call layer
     pending_tool_calls: NotRequired[list[dict[str, Any]]]
     tool_results: NotRequired[list[dict[str, Any]]]
+    allowed_tools: NotRequired[set[str]]
 
     # Safety / hallucination layer
     hallucination_result: NotRequired[dict[str, Any]]

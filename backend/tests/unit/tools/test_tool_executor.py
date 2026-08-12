@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from schemas import ToolResult
+from agentic.guard import ToolGuard
 from tools.tool_executor import ToolExecutor
 
 
@@ -114,3 +115,39 @@ async def test_handler_exception_is_isolated(executor):
     assert results[0]["result"]["is_fallback"] is True
     assert "boom" in results[0]["result"]["fallback_reason"]
     assert results[0]["observation"]["error"]["code"] == "TOOL_EXECUTION_ERROR"
+
+
+@pytest.mark.asyncio
+async def test_shadow_guard_keeps_execution_compatible(executor):
+    results = await executor.execute(
+        [
+            {
+                "id": "t1",
+                "function": {"name": "get_weather", "arguments": "{}"},
+            }
+        ]
+    )
+
+    assert results[0]["guard"]["allowed"] is True
+    assert results[0]["guard"]["would_block"] is True
+
+
+@pytest.mark.asyncio
+async def test_enforce_guard_returns_structured_rejection(executor):
+    executor._guard = ToolGuard(mode="enforce")
+    results = await executor.execute(
+        [
+            {
+                "id": "t1",
+                "function": {
+                    "name": "get_weather",
+                    "arguments": '{"city":"北京"}',
+                },
+            }
+        ],
+        guard_context={"allowed_tools": {"get_route"}},
+    )
+
+    assert results[0]["guard"]["allowed"] is False
+    assert results[0]["observation"]["ok"] is False
+    assert results[0]["observation"]["error"]["code"] == "TOOL_NOT_ALLOWED"
