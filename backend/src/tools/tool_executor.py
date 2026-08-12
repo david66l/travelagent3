@@ -10,10 +10,12 @@ from __future__ import annotations
 import json
 import logging
 import random
+import time
 from datetime import datetime, timedelta
 from typing import Any, Awaitable, Callable
 
 from planner.transport_router import HaversineFallback, MapServiceRouter
+from agentic.observations import ObservationEnvelope
 from schemas import ToolResult
 from tools.tool_definitions import TOOL_NAME_TO_SCHEMA
 
@@ -59,6 +61,7 @@ class ToolExecutor:
         """Execute each tool call and return results keyed by tool_call_id."""
         results: list[dict[str, Any]] = []
         for call in tool_calls:
+            started = time.monotonic()
             tool_call_id = call.get("id", "")
             function = call.get("function", {}) or {}
             name = function.get("name", "")
@@ -66,8 +69,22 @@ class ToolExecutor:
             try:
                 args = json.loads(raw_args) if isinstance(raw_args, str) else dict(raw_args)
             except json.JSONDecodeError as exc:
-                args = {}
                 logger.warning("Invalid tool arguments for %s: %s", name, exc)
+                result = ToolResult(
+                    data=None,
+                    data_source="unavailable",
+                    fallback_reason="tool arguments are not valid JSON",
+                )
+                observation = ObservationEnvelope.failure(
+                    tool=name,
+                    code="INVALID_ARGUMENTS",
+                    message="tool arguments are not valid JSON",
+                    retryable=False,
+                    tool_call_id=tool_call_id,
+                    details={"error_type": type(exc).__name__},
+                )
+                results.append(self._result_record(tool_call_id, name, result, observation))
+                continue
 
             handler = self._handlers.get(name)
             if handler is None:
@@ -77,9 +94,23 @@ class ToolExecutor:
                     is_fallback=True,
                     fallback_reason=f"unknown tool: {name}",
                 )
+                observation = ObservationEnvelope.failure(
+                    tool=name,
+                    code="UNKNOWN_TOOL",
+                    message=f"unknown tool: {name}",
+                    retryable=False,
+                    tool_call_id=tool_call_id,
+                )
             else:
                 try:
                     result = await handler(args)
+                    if result.latency_ms == 0:
+                        result.latency_ms = int((time.monotonic() - started) * 1000)
+                    observation = ObservationEnvelope.from_tool_result(
+                        tool=name,
+                        result=result,
+                        tool_call_id=tool_call_id,
+                    )
                 except Exception as exc:  # pragma: no cover - defensive
                     logger.exception("Tool %s failed: %s", name, exc)
                     result = ToolResult(
@@ -88,15 +119,33 @@ class ToolExecutor:
                         is_fallback=True,
                         fallback_reason=f"{type(exc).__name__}: {exc}",
                     )
+                    observation = ObservationEnvelope.failure(
+                        tool=name,
+                        code="TOOL_EXECUTION_ERROR",
+                        message=str(exc),
+                        retryable=True,
+                        tool_call_id=tool_call_id,
+                        latency_ms=int((time.monotonic() - started) * 1000),
+                        details={"error_type": type(exc).__name__},
+                    )
 
-            results.append(
-                {
-                    "tool_call_id": tool_call_id,
-                    "name": name,
-                    "result": result.model_dump(),
-                }
-            )
+            results.append(self._result_record(tool_call_id, name, result, observation))
         return results
+
+    @staticmethod
+    def _result_record(
+        tool_call_id: str,
+        name: str,
+        result: ToolResult,
+        observation: ObservationEnvelope,
+    ) -> dict[str, Any]:
+        """Keep the legacy result during migration and add the shared contract."""
+        return {
+            "tool_call_id": tool_call_id,
+            "name": name,
+            "result": result.model_dump(),
+            "observation": observation.model_dump(),
+        }
 
     async def _handle_get_weather(self, args: dict[str, Any]) -> ToolResult:
         city = args.get("city", "")

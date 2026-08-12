@@ -33,6 +33,8 @@ async def test_execute_unknown_tool(executor):
     assert results[0]["name"] == "unknown_tool"
     assert results[0]["result"]["is_fallback"] is True
     assert "unknown tool" in results[0]["result"]["fallback_reason"]
+    assert results[0]["observation"]["ok"] is False
+    assert results[0]["observation"]["error"]["code"] == "UNKNOWN_TOOL"
 
 
 @pytest.mark.asyncio
@@ -48,6 +50,7 @@ async def test_execute_invalid_arguments(executor):
     )
     assert len(results) == 1
     assert results[0]["name"] == "get_weather"
+    assert results[0]["observation"]["error"]["code"] == "INVALID_ARGUMENTS"
 
 
 @pytest.mark.asyncio
@@ -110,3 +113,4 @@ async def test_handler_exception_is_isolated(executor):
     )
     assert results[0]["result"]["is_fallback"] is True
     assert "boom" in results[0]["result"]["fallback_reason"]
+    assert results[0]["observation"]["error"]["code"] == "TOOL_EXECUTION_ERROR"

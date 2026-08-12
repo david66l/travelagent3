@@ -1112,6 +1112,28 @@ async def _fact_check_async(state: dict) -> dict:
     if not itinerary:
         return {"stage": "fact_check_done"}
 
+    # Shadow-mode deterministic validation: publish the versioned report now,
+    # but preserve the current routing until Phase 1 rollout explicitly enables
+    # the hard completion gate.
+    from core.conversation_state import flatten_profile
+    from evaluation.validator import ItineraryValidator
+
+    profile = flatten_profile(state.get("profile") or {})
+    validation_report = (
+        ItineraryValidator()
+        .validate(
+            itinerary,
+            constraints={
+                "travel_days": profile.get("travel_days"),
+                "total_budget": profile.get("budget_range"),
+                "max_transit_minutes": profile.get("max_transit_minutes"),
+                "interests": profile.get("interests") or [],
+            },
+            facts=state.get("poi_candidates") or [],
+        )
+        .model_dump()
+    )
+
     conflicts = []
     try:
         from sqlalchemy import text
@@ -1155,6 +1177,7 @@ async def _fact_check_async(state: dict) -> dict:
             # (routers must stay pure; their mutations are not persisted).
             # warnings is a reducer field → return only the delta.
             return {
+                "validation_report": validation_report,
                 "warnings": conflicts,
                 "loop_count": loops + 1,
                 "next_action": "planner",
@@ -1162,12 +1185,13 @@ async def _fact_check_async(state: dict) -> dict:
             }
         # Budget exhausted → keep current plan, surface the unresolved conflict.
         return {
+            "validation_report": validation_report,
             "warnings": conflicts + ["事实校验冲突未解决，仍按当前方案输出。"],
             "next_action": "factcheck_done",
             "stage": "fact_check_exhausted",
         }
 
-    return {"stage": "fact_check_done"}
+    return {"stage": "fact_check_done", "validation_report": validation_report}
 
 
 # ---------------------------------------------------------------------------
