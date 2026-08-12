@@ -19,7 +19,13 @@ async def profile_node(state: dict[str, Any]) -> dict[str, Any]:
     """User profile recall and memory conflict resolution."""
     from graph.node_impl import _user_memory_async
 
-    return await _user_memory_async(state)
+    result = await _user_memory_async(state)
+    from agentic.runtime import initialize_agent_ledger
+    from core.settings import settings
+
+    projected_state = {**state, **result}
+    result.update(initialize_agent_ledger(projected_state, mode=settings.agentic_policy_mode))
+    return result
 
 
 @with_error_handling("retrieve")

@@ -1,0 +1,90 @@
+"""Adapters that project the existing TravelAgent state into Agent Loop state."""
+
+from __future__ import annotations
+
+from typing import Any, Literal
+
+from agentic.planner import DefaultTaskGraphPlanner
+from agentic.state import AgentLedgerState, GoalCapability, GoalLedger, TaskGraphController
+from core.conversation_state import flatten_profile
+
+
+PolicyMode = Literal["deterministic", "shadow", "agent"]
+
+
+def initialize_agent_ledger(state: dict[str, Any], *, mode: PolicyMode) -> dict[str, Any]:
+    """Initialize authoritative state without changing the legacy output path."""
+    if mode == "deterministic":
+        return {"policy_mode": mode, "agent_status": "disabled"}
+    if state.get("agent_ledger"):
+        ledger = AgentLedgerState(**state["agent_ledger"])
+        ready = TaskGraphController.ready_tasks(ledger.task_graph)
+        return {
+            "policy_mode": mode,
+            "agent_ledger": ledger.model_dump(mode="json"),
+            "current_task_id": ready[0].task_id if ready else ledger.current_task_id,
+            "agent_status": "initialized",
+        }
+
+    flat = flatten_profile(state.get("profile") or {})
+    slots = state.get("slots") or {}
+
+    def value(key: str) -> Any:
+        slot_value = slots.get(key)
+        return slot_value if slot_value not in (None, "", []) else flat.get(key)
+
+    hard_constraints = {
+        key: item
+        for key in (
+            "destination",
+            "travel_days",
+            "start_date",
+            "end_date",
+            "budget_range",
+            "must_visit",
+            "mobility_constraints",
+        )
+        if (item := value(key)) not in (None, "", [])
+    }
+    soft_preferences = {
+        key: item
+        for key in (
+            "interests",
+            "food_preferences",
+            "transport_preference",
+            "hotel_preference",
+            "pace_preference",
+        )
+        if (item := value(key)) not in (None, "", [])
+    }
+    feasibility = state.get("feasibility_report") or {}
+    feasible = feasibility.get("feasible", True)
+    missing = list(state.get("missing_slots") or [])
+    capability = GoalCapability(
+        status="needs_user" if missing else ("solvable" if feasible else "infeasible"),
+        evidence=[str(item) for item in feasibility.get("reasons", [])],
+    )
+    goal = GoalLedger(
+        original_request=str(state.get("user_input") or "Travel planning request"),
+        success_definition=[
+            "generate an executable itinerary",
+            "pass deterministic hard-constraint validation",
+            "wait for user confirmation",
+        ],
+        hard_constraints=hard_constraints,
+        soft_preferences=soft_preferences,
+        missing_information=missing,
+        capability=capability,
+    )
+    graph = DefaultTaskGraphPlanner().plan(goal)
+    graph = TaskGraphController().refresh_ready(graph)
+    ready = TaskGraphController.ready_tasks(graph)
+    ledger = AgentLedgerState(goal=goal, task_graph=graph)
+    return {
+        "policy_mode": mode,
+        "agent_ledger": ledger.model_dump(mode="json"),
+        "current_task_id": ready[0].task_id if ready else None,
+        "agent_step": 0,
+        "subtask_step": 0,
+        "agent_status": "initialized",
+    }
