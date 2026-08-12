@@ -7,6 +7,7 @@ does not block other tools in the batch.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import random
@@ -50,6 +51,9 @@ class ToolExecutor:
             "get_emergency_services": self._handle_get_emergency_services,
             "get_poi_detail": self._handle_get_poi_detail,
             "update_user_profile": self._handle_update_user_profile,
+            "search_pois": self._handle_search_pois,
+            "get_route_matrix": self._handle_get_route_matrix,
+            "solve_itinerary": self._handle_solve_itinerary,
             "validate_itinerary": self._handle_validate_itinerary,
         }
         self._weather = WeatherQuerySkill()
@@ -438,6 +442,50 @@ class ToolExecutor:
             data={"updated": {key: value}},
             data_source="built_in",
             confidence=1.0,
+        )
+
+    async def _handle_search_pois(self, args: dict[str, Any]) -> ToolResult:
+        return await self._poi.run(
+            {
+                "city": args["city"],
+                "keywords": args.get("keywords") or [],
+                "category": args.get("category"),
+            }
+        )
+
+    async def _handle_get_route_matrix(self, args: dict[str, Any]) -> ToolResult:
+        from planner.preprocessing.transport_selector import TransportSelector
+        from vrp_solver_service.models import ConstraintsInput, POIInput
+
+        pois = [POIInput(**item) for item in args["pois"]]
+        constraints = ConstraintsInput(**(args.get("constraints") or {}))
+        dist, costs = TransportSelector().build_matrices(
+            pois, constraints, args.get("amap_minutes")
+        )
+        return ToolResult(
+            data={
+                "poi_ids": [poi.id for poi in pois],
+                "time_minutes": dist,
+                "transport_cost": costs,
+            },
+            data_source="built_in",
+            confidence=1.0,
+        )
+
+    async def _handle_solve_itinerary(self, args: dict[str, Any]) -> ToolResult:
+        from vrp_solver_service.models import SolverRequest
+        from vrp_solver_service.solver import TravelVRPSolver
+
+        request = SolverRequest(**args)
+        response = await asyncio.to_thread(TravelVRPSolver().solve, request)
+        usable = response.status not in {"infeasible", "error"} and bool(response.days)
+        return ToolResult(
+            data=response.model_dump(),
+            data_source="built_in" if usable else "unavailable",
+            confidence=1.0 if usable else 0.0,
+            is_fallback=response.status == "fallback",
+            fallback_reason=response.message if not usable else None,
+            latency_ms=response.solve_time_ms,
         )
 
     async def _handle_validate_itinerary(self, args: dict[str, Any]) -> ToolResult:

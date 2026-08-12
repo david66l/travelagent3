@@ -1,6 +1,6 @@
 """OpenAI-compatible tool schema definitions for the travel agent.
 
-Defines 11 tool schemas used by the LangGraph tool-calling layer. Each schema
+Defines the tool schemas used by the LangGraph and Agent Loop execution layers. Each schema
 follows the function-calling format expected by LLM providers and LangChain
 ToolNode:
 
@@ -16,7 +16,7 @@ ToolNode:
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -91,6 +91,27 @@ class ValidateItineraryParams(BaseModel):
     facts: list[dict[str, Any]] | dict[str, Any] = Field(
         default_factory=list, description="版本化事实快照"
     )
+
+
+class SearchPOIsParams(BaseModel):
+    city: str = Field(..., description="Destination city grounded in the goal ledger")
+    keywords: list[str] = Field(default_factory=list, description="Preference keywords")
+    category: Literal["attraction", "restaurant", "hotel", "shopping"] | None = None
+
+
+class RouteMatrixParams(BaseModel):
+    pois: list[dict[str, Any]] = Field(..., min_length=1, description="Versioned POI inputs")
+    constraints: dict[str, Any] = Field(default_factory=dict)
+    amap_minutes: dict[str, int] | None = None
+
+
+class SolveItineraryParams(BaseModel):
+    pois: list[dict[str, Any]] = Field(..., min_length=1, description="Versioned POI inputs")
+    constraints: dict[str, Any]
+    strategy: Literal["auto", "cpsat", "greedy"] = "auto"
+    dist_matrix: list[list[int]] | None = None
+    tc_matrix: list[list[float]] | None = None
+    amap_minutes: dict[str, int] | None = None
 
 
 def _schema(model: type[BaseModel]) -> dict[str, Any]:
@@ -192,6 +213,30 @@ TOOLS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "search_pois",
+            "description": "Search structured POI candidates for the grounded destination.",
+            "parameters": _schema(SearchPOIsParams),
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_route_matrix",
+            "description": "Build a deterministic travel-time and transport-cost matrix.",
+            "parameters": _schema(RouteMatrixParams),
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "solve_itinerary",
+            "description": "Run the deterministic VRP solver over versioned POIs and constraints.",
+            "parameters": _schema(SolveItineraryParams),
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "validate_itinerary",
             "description": "程序化校验行程硬约束并返回稳定违规码、软分和指标。",
             "parameters": _schema(ValidateItineraryParams),
@@ -213,6 +258,9 @@ TOOL_NAME_TO_MODEL: dict[str, type[BaseModel]] = {
     "get_emergency_services": EmergencyServicesParams,
     "get_poi_detail": POIDetailParams,
     "update_user_profile": UpdateProfileParams,
+    "search_pois": SearchPOIsParams,
+    "get_route_matrix": RouteMatrixParams,
+    "solve_itinerary": SolveItineraryParams,
     "validate_itinerary": ValidateItineraryParams,
 }
 

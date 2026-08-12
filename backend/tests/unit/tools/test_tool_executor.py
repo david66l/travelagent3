@@ -16,7 +16,7 @@ def executor():
 
 @pytest.mark.asyncio
 async def test_available_tools_count(executor):
-    assert len(executor.available_tools) == 12
+    assert len(executor.available_tools) == 15
 
 
 @pytest.mark.asyncio
@@ -122,6 +122,57 @@ async def test_validate_itinerary_handler(executor):
     assert result.data_source == "built_in"
     assert result.data["hard_pass"] is True
     assert result.data["validator_version"] == "travel-validator.v1"
+
+
+@pytest.mark.asyncio
+async def test_search_pois_handler_reuses_existing_skill(executor):
+    with patch.object(
+        executor._poi,
+        "run",
+        new=AsyncMock(return_value=ToolResult(data=[], data_source="built_in")),
+    ) as mocked:
+        result = await executor._handle_search_pois({"city": "Shanghai", "keywords": ["museum"]})
+
+    assert result.data_source == "built_in"
+    mocked.assert_awaited_once_with({"city": "Shanghai", "keywords": ["museum"], "category": None})
+
+
+@pytest.mark.asyncio
+async def test_route_matrix_handler_uses_deterministic_preprocessor(executor):
+    result = await executor._handle_get_route_matrix(
+        {
+            "pois": [
+                {"id": "a", "name": "A", "lat": 31.23, "lng": 121.47},
+                {"id": "b", "name": "B", "lat": 31.24, "lng": 121.48},
+            ]
+        }
+    )
+
+    assert result.data["poi_ids"] == ["a", "b"]
+    assert result.data["time_minutes"][0][1] > 0
+    assert result.confidence == 1.0
+
+
+@pytest.mark.asyncio
+async def test_solve_itinerary_handler_runs_existing_solver(executor):
+    result = await executor._handle_solve_itinerary(
+        {
+            "pois": [
+                {
+                    "id": "a",
+                    "name": "Museum",
+                    "lat": 31.23,
+                    "lng": 121.47,
+                    "duration_minutes": 60,
+                }
+            ],
+            "constraints": {"travel_days": 1},
+            "strategy": "greedy",
+        }
+    )
+
+    assert result.data["days"]
+    assert result.data_source == "built_in"
 
 
 @pytest.mark.asyncio
