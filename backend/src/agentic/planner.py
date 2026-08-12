@@ -67,7 +67,7 @@ class DefaultTaskGraphPlanner:
                     goal="Collect opening hours, prices and durations for selected POIs",
                     depends_on=("search_candidates",),
                     required_facts=("candidate_poi_ids",),
-                    allowed_actions=("get_poi_detail", "check_reservation"),
+                    allowed_actions=("get_poi_detail",),
                     success_criteria={"required_artifact_types": ["poi_detail_set"]},
                     invalidates_on=(
                         "destination_changed",
@@ -80,7 +80,7 @@ class DefaultTaskGraphPlanner:
                     goal="Collect travel times among selected places",
                     depends_on=("search_candidates",),
                     required_facts=("candidate_poi_ids",),
-                    allowed_actions=("get_route_matrix", "get_route"),
+                    allowed_actions=("get_route_matrix",),
                     success_criteria={"required_artifact_types": ["route_matrix"]},
                     invalidates_on=("candidate_set_changed", "transport_mode_changed"),
                 ),

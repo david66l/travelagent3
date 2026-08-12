@@ -5,7 +5,15 @@ from __future__ import annotations
 from typing import Any, Literal
 
 from agentic.planner import DefaultTaskGraphPlanner
-from agentic.state import AgentLedgerState, GoalCapability, GoalLedger, TaskGraphController
+from agentic.state import (
+    AgentLedgerState,
+    FactRecord,
+    GoalCapability,
+    GoalLedger,
+    StateTransitionError,
+    TaskGraphController,
+)
+from agentic.verifier import SubtaskVerifier
 from core.conversation_state import flatten_profile
 
 
@@ -88,3 +96,52 @@ def initialize_agent_ledger(state: dict[str, Any], *, mode: PolicyMode) -> dict[
         "subtask_step": 0,
         "agent_status": "initialized",
     }
+
+
+def resume_agent_ledger(
+    ledger: AgentLedgerState | dict[str, Any],
+    *,
+    task_id: str,
+    user_value: Any,
+    fact_key: str,
+) -> AgentLedgerState:
+    """Resume a blocked task without resetting graph versions or budgets."""
+    state = ledger if isinstance(ledger, AgentLedgerState) else AgentLedgerState(**ledger)
+    task = state.task_graph.get(task_id)
+    if task.status != "blocked":
+        raise StateTransitionError("only a blocked task can be resumed by user input")
+    observation_ref = f"user:{state.trajectory_id}:{task_id}:{task.attempts}"
+    fact = FactRecord(
+        fact_id=observation_ref,
+        key=fact_key,
+        value=user_value,
+        observation_ref=observation_ref,
+        goal_version=state.goal.goal_version,
+        plan_version=state.task_graph.plan_version,
+        source="user",
+        confidence=1.0,
+    )
+    state.facts[fact.fact_id] = fact
+    controller = TaskGraphController()
+    state.task_graph = controller.transition(
+        state.task_graph, task_id, "ready", evidence_refs=[observation_ref]
+    )
+    state.task_graph = controller.transition(state.task_graph, task_id, "running")
+    verification = SubtaskVerifier().verify(
+        state.task_graph.get(task_id), facts=state.facts, artifacts=state.artifacts
+    )
+    if verification.passed:
+        state.task_graph = controller.transition(
+            state.task_graph,
+            task_id,
+            "succeeded",
+            evidence_refs=verification.evidence_refs,
+        )
+        state.task_graph = controller.refresh_ready(state.task_graph)
+        ready = controller.ready_tasks(state.task_graph)
+        state.current_task_id = ready[0].task_id if ready else None
+    else:
+        state.task_graph = controller.transition(state.task_graph, task_id, "blocked")
+        state.current_task_id = task_id
+    state.termination_reason = None
+    return state
