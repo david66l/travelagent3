@@ -28,6 +28,14 @@ async def profile_node(state: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+@with_error_handling("agent_loop")
+async def agent_loop_node(state: dict[str, Any]) -> dict[str, Any]:
+    """Run the bounded Agent Loop only when policy_mode explicitly selects it."""
+    from agentic.integration import run_agent_branch
+
+    return await run_agent_branch(state)
+
+
 @with_error_handling("retrieve")
 async def retrieve_node(state: dict[str, Any]) -> dict[str, Any]:
     """RAG POI retrieval."""
@@ -100,7 +108,23 @@ async def confirm_gate_node(state: dict[str, Any]) -> dict[str, Any]:
         # Re-solve from scratch; treat the next plan as a fresh draft.
         return {"confirm_decision": None, "stage": "rejected"}
     # confirm → proceed to deep enrichment
-    return {"confirm_decision": "confirm", "stage": "confirmed", "next_action": "enrich"}
+    agent_patch: dict[str, Any] = {}
+    if state.get("policy_mode") == "agent" and state.get("agent_ledger"):
+        from agentic.runtime import confirm_agent_ledger
+
+        ledger, completion = confirm_agent_ledger(state["agent_ledger"])
+        agent_patch = {
+            "agent_ledger": ledger.model_dump(mode="json"),
+            "agent_status": "finished",
+            "termination_reason": "validated_finish",
+            "completion_decision": completion.model_dump(mode="json"),
+        }
+    return {
+        "confirm_decision": "confirm",
+        "stage": "confirmed",
+        "next_action": "enrich",
+        **agent_patch,
+    }
 
 
 @with_error_handling("factcheck")

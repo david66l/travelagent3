@@ -8,6 +8,7 @@ from graph.exceptions import DegradationLevel, NodeException, classify_error
 from graph.graph import build_graph
 from graph.routers import (
     route_after_apply_change,
+    route_after_agent_loop,
     route_after_confirm_gate,
     route_after_factcheck,
     route_after_gathering,
@@ -79,12 +80,54 @@ def test_router_after_profile_writeback():
     # Planning path fans out into equal-length parallel branches re-joining at plan.
     assert route_after_profile({"stage": "memory_loaded"}) == ["retrieve", "weather_check"]
     assert route_after_profile({"stage": "memory_updated"}) == "__end__"
+    assert route_after_profile({"policy_mode": "agent"}) == "agent_loop"
+
+
+def test_router_after_agent_loop_uses_draft_or_falls_back():
+    assert (
+        route_after_agent_loop({"agent_status": "awaiting_confirmation", "itinerary": [{}]})
+        == "output"
+    )
+    assert route_after_agent_loop({"agent_status": "awaiting_information"}) == "output"
+    assert route_after_agent_loop({"agent_status": "fallback"}) == [
+        "retrieve",
+        "weather_check",
+    ]
 
 
 def test_router_after_confirm_gate():
     assert route_after_confirm_gate({"confirm_decision": "confirm"}) == "tool_call"
     assert route_after_confirm_gate({"confirm_decision": "modify"}) == "apply_single_change"
     assert route_after_confirm_gate({"confirm_decision": None}) == "plan"
+
+
+@pytest.mark.asyncio
+async def test_agent_confirmation_closes_global_completion_gate():
+    from agentic.integration import run_agent_branch
+    from agentic.runtime import initialize_agent_ledger
+    from graph.nodes import confirm_gate_node
+    from tests.unit.agentic.test_integration import FirstAllowedPolicy, SuccessfulExecutor
+
+    initialized = initialize_agent_ledger(
+        {
+            "user_input": "Plan one day in Shanghai",
+            "slots": {"destination": "Shanghai", "travel_days": 1},
+        },
+        mode="agent",
+    )
+    agent_result = await run_agent_branch(
+        initialized,
+        policy=FirstAllowedPolicy(),
+        executor=SuccessfulExecutor(),
+    )
+    state = {**initialized, **agent_result}
+
+    with patch("langgraph.types.interrupt", return_value={"action": "confirm"}):
+        result = await confirm_gate_node(state)
+
+    assert result["agent_status"] == "finished"
+    assert result["termination_reason"] == "validated_finish"
+    assert result["completion_decision"]["allowed"] is True
 
 
 def test_router_after_apply_change():
@@ -159,6 +202,7 @@ def test_router_after_output():
     assert route_after_output({"next_action": "clarify"}) == "__end__"
     assert route_after_output({"next_action": "respond"}) == "__end__"
     assert route_after_output({"next_action": "infeasible"}) == "__end__"
+    assert route_after_output({"next_action": "agent_draft"}) == "confirm_gate"
     # Draft (no decision yet) / post-modify must pause for an explicit decision.
     assert route_after_output({"next_action": "fact_check"}) == "confirm_gate"
     assert route_after_output({"confirm_decision": "modify"}) == "confirm_gate"

@@ -10,6 +10,7 @@ from langgraph.graph import END, StateGraph
 from graph.gathering import build_gathering_subgraph
 from graph.models import AgentState
 from graph.nodes import (
+    agent_loop_node,
     apply_single_change_node,
     booking_node,
     confirm_gate_node,
@@ -26,6 +27,7 @@ from graph.nodes import (
     weather_check_node,
 )
 from graph.routers import (
+    route_after_agent_loop,
     route_after_booking,
     route_after_apply_change,
     route_after_confirm_gate,
@@ -53,6 +55,7 @@ def build_graph(checkpointer: Optional[Any] = None) -> StateGraph:
     gathering_subgraph = build_gathering_subgraph()
     builder.add_node("gathering", gathering_subgraph)
     builder.add_node("profile_recall", profile_node)
+    builder.add_node("agent_loop", agent_loop_node)
     builder.add_node("retrieve", retrieve_node)
     builder.add_node("weather_check", weather_check_node)
     builder.add_node("plan", plan_node)
@@ -86,7 +89,22 @@ def build_graph(checkpointer: Optional[Any] = None) -> StateGraph:
     builder.add_conditional_edges(
         "profile_recall",
         route_after_profile,
-        {"retrieve": "retrieve", "weather_check": "weather_check", "__end__": END},
+        {
+            "agent_loop": "agent_loop",
+            "retrieve": "retrieve",
+            "weather_check": "weather_check",
+            "__end__": END,
+        },
+    )
+
+    builder.add_conditional_edges(
+        "agent_loop",
+        route_after_agent_loop,
+        {
+            "retrieve": "retrieve",
+            "weather_check": "weather_check",
+            "output": "output",
+        },
     )
 
     # retrieve and weather_check are parallel branches that both re-join at plan;

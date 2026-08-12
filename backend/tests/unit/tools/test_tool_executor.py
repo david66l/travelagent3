@@ -148,8 +148,9 @@ async def test_route_matrix_handler_uses_deterministic_preprocessor(executor):
         }
     )
 
-    assert result.data["poi_ids"] == ["a", "b"]
-    assert result.data["time_minutes"][0][1] > 0
+    assert result.data["poi_ids"] == ["__hotel", "a", "b"]
+    assert len(result.data["time_minutes"]) == 3
+    assert result.data["time_minutes"][1][2] > 0
     assert result.confidence == 1.0
 
 

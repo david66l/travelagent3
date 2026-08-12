@@ -458,13 +458,28 @@ class ToolExecutor:
         from vrp_solver_service.models import ConstraintsInput, POIInput
 
         pois = [POIInput(**item) for item in args["pois"]]
+        # TravelVRPSolver injects a virtual hotel before consuming supplied
+        # matrices. Build the artifact with the same leading node so its shape
+        # and indexes remain identical at solve time.
+        matrix_pois = [
+            POIInput(
+                id="__hotel",
+                name="Hotel",
+                category="hotel",
+                duration_minutes=0,
+                open_time="00:00",
+                close_time="23:59",
+                walk_intensity=0,
+            ),
+            *pois,
+        ]
         constraints = ConstraintsInput(**(args.get("constraints") or {}))
         dist, costs = TransportSelector().build_matrices(
-            pois, constraints, args.get("amap_minutes")
+            matrix_pois, constraints, args.get("amap_minutes")
         )
         return ToolResult(
             data={
-                "poi_ids": [poi.id for poi in pois],
+                "poi_ids": [poi.id for poi in matrix_pois],
                 "time_minutes": dist,
                 "transport_cost": costs,
             },

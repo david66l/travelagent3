@@ -2,7 +2,7 @@
 
 import pytest
 
-from agentic.runtime import initialize_agent_ledger, resume_agent_ledger
+from agentic.runtime import confirm_agent_ledger, initialize_agent_ledger, resume_agent_ledger
 from agentic.state import AgentLedgerState, StateTransitionError, TaskGraphController
 
 
@@ -131,3 +131,37 @@ def test_user_response_cannot_resume_non_blocked_task():
             user_value="x",
             fact_key="x",
         )
+
+
+def test_confirmation_closes_task_graph_and_passes_global_guard():
+    from agentic.state import ArtifactRecord, GoalLedger, TaskGraph, TaskNode
+
+    ledger = AgentLedgerState(
+        goal=GoalLedger(original_request="Plan Shanghai"),
+        task_graph=TaskGraph(
+            goal_version=1,
+            tasks=(
+                TaskNode(
+                    task_id="await_confirmation",
+                    goal="confirm",
+                    status="blocked",
+                    allowed_actions=("ask_user", "finish"),
+                    success_criteria={"required_fact_keys": ["user_confirmation"]},
+                    attempts=1,
+                ),
+            ),
+        ),
+    )
+    ledger.artifacts["validation"] = ArtifactRecord(
+        artifact_id="validation",
+        artifact_type="validation_report",
+        payload={"hard_pass": True, "hard_violations": []},
+        goal_version=1,
+        plan_version=1,
+    )
+
+    confirmed, decision = confirm_agent_ledger(ledger)
+
+    assert confirmed.task_graph.get("await_confirmation").status == "succeeded"
+    assert confirmed.termination_reason == "validated_finish"
+    assert decision.allowed is True

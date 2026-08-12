@@ -91,6 +91,7 @@ class AgentState(TypedDict):
     # Long-horizon Agent Loop authoritative state (shadow mode first).
     policy_mode: NotRequired[str]
     agent_ledger: NotRequired[dict[str, Any]]
+    agent_episode: NotRequired[dict[str, Any]]
     current_task_id: NotRequired[str | None]
     agent_step: NotRequired[int]
     subtask_step: NotRequired[int]

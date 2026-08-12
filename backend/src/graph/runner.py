@@ -121,6 +121,7 @@ async def run_graph_turn(
 _PROGRESS_NODES = {
     "understand",
     "profile_recall",
+    "agent_loop",
     "retrieve",
     "weather_check",
     "plan",

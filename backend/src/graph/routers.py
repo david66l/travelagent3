@@ -37,6 +37,19 @@ def route_after_profile(state: dict[str, Any]) -> str | list[str]:
     """
     if state.get("stage") in ("memory_updated", "completed"):
         return "__end__"
+    if state.get("policy_mode") == "agent":
+        return "agent_loop"
+    return ["retrieve", "weather_check"]
+
+
+def route_after_agent_loop(state: dict[str, Any]) -> str | list[str]:
+    """Use a validated Agent draft, otherwise fail safely to the legacy path."""
+    if state.get("agent_status") == "awaiting_information":
+        return "output"
+    if state.get("agent_status") in {"awaiting_confirmation", "finished"} and state.get(
+        "itinerary"
+    ):
+        return "output"
     return ["retrieve", "weather_check"]
 
 
@@ -99,6 +112,8 @@ def route_after_output(state: dict[str, Any]) -> str:
     next_action = state.get("next_action", "")
     if next_action in ("clarify", "respond", "infeasible"):
         return "__end__"
+    if next_action == "agent_draft":
+        return "confirm_gate"
     if state.get("confirm_decision") == "confirm":
         return "booking"  # final output after enrichment
     return "confirm_gate"  # initial / modified draft must be accepted first

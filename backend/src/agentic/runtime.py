@@ -14,6 +14,7 @@ from agentic.state import (
     TaskGraphController,
 )
 from agentic.verifier import SubtaskVerifier
+from agentic.termination import CompletionDecision, CompletionGuard
 from core.conversation_state import flatten_profile
 
 
@@ -145,3 +146,30 @@ def resume_agent_ledger(
         state.current_task_id = task_id
     state.termination_reason = None
     return state
+
+
+def confirm_agent_ledger(
+    ledger: AgentLedgerState | dict[str, Any],
+) -> tuple[AgentLedgerState, CompletionDecision]:
+    """Close the confirmation task and enforce the global completion gate."""
+    state = ledger if isinstance(ledger, AgentLedgerState) else AgentLedgerState(**ledger)
+    state = resume_agent_ledger(
+        state,
+        task_id="await_confirmation",
+        user_value=True,
+        fact_key="user_confirmation",
+    )
+    reports = [
+        artifact
+        for artifact in state.artifacts.values()
+        if artifact.artifact_type == "validation_report"
+        and artifact.goal_version == state.goal.goal_version
+        and artifact.plan_version == state.task_graph.plan_version
+    ]
+    report = reports[-1].payload if reports else None
+    decision = CompletionGuard(mode="enforce").evaluate(report, ledger=state)
+    if not decision.allowed:
+        codes = ", ".join(block.code for block in decision.blocks)
+        raise StateTransitionError(f"global completion guard rejected confirmation: {codes}")
+    state.termination_reason = "validated_finish"
+    return state, decision
