@@ -2,6 +2,7 @@ import json
 import logging
 import time
 import asyncio
+from contextvars import ContextVar
 from typing import Any, Optional, TypeVar
 
 from openai import AsyncOpenAI, APIStatusError
@@ -39,6 +40,9 @@ class LLMClient:
         )
         self.model = settings.llm_model
         self._using_vllm = settings.vllm_enabled
+        self._last_token_usage: ContextVar[int] = ContextVar(
+            f"llm_token_usage_{id(self)}", default=0
+        )
 
         # 本地 llama.cpp 客户端（意图识别专用）
         self._local_client: AsyncOpenAI | None = None
@@ -55,6 +59,14 @@ class LLMClient:
         # Only the local Qwen model name routes to the local llama.cpp server.
         # All other names (e.g. the DeepSeek cloud model) use the cloud client.
         return bool(settings.local_llm_model) and model_name == settings.local_llm_model
+
+    @property
+    def last_token_usage(self) -> int:
+        return self._last_token_usage.get()
+
+    @last_token_usage.setter
+    def last_token_usage(self, value: int) -> None:
+        self._last_token_usage.set(int(value))
 
     def _client_for_model(self, model_name: str) -> tuple[AsyncOpenAI, str]:
         """根据模型名返回对应的客户端和实际模型名。"""
@@ -162,6 +174,8 @@ class LLMClient:
         response = await self._create_completion(**request_kwargs)
         duration = time.monotonic() - start
         self._log_usage(response, model=model, tier=tier, duration_s=duration)
+        usage = getattr(response, "usage", None)
+        self.last_token_usage += int(getattr(usage, "total_tokens", 0) or 0)
         return response.choices[0].message.content or "{}"
 
     async def structured_call(
@@ -171,6 +185,7 @@ class LLMClient:
         temperature: Optional[float] = None,
         task_type: Optional[str] = None,
     ) -> T:
+        self.last_token_usage = 0
         model, prepared_messages, tier = await self._prepare_request(messages, task_type)
         temp = temperature if temperature is not None else 0.3
         max_tokens = settings.llm_max_tokens

@@ -56,4 +56,8 @@ class ApiAgentPolicy:
             raise PolicyOutputError(
                 f"policy proposed {decision.action}, allowed: {context.allowed_actions}"
             )
-        return PolicyAction(action=decision.action, arguments=decision.arguments)
+        return PolicyAction(
+            action=decision.action,
+            arguments=decision.arguments,
+            token_usage=int(getattr(self.client, "last_token_usage", 0) or 0),
+        )

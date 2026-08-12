@@ -125,6 +125,7 @@ async def test_weather_observation_is_persisted_for_later_policy_steps():
 
     assert outcome.artifacts[0].artifact_type == "weather_snapshot"
     assert outcome.artifacts[0].payload["days"][0]["condition"] == "rain"
+    assert outcome.tool_calls_used == 1
 
 
 @pytest.mark.asyncio

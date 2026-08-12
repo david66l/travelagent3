@@ -32,11 +32,13 @@ async def test_api_policy_uses_bounded_structured_context():
     client.structured_call.return_value = PolicyDecision(
         action="get_weather", arguments={"city": "Shanghai"}
     )
+    client.last_token_usage = 123
 
     action = await ApiAgentPolicy(client).propose(_context())
 
     assert action.action == "get_weather"
     assert action.arguments == {"city": "Shanghai"}
+    assert action.token_usage == 123
     assert client.structured_call.await_args.kwargs["task_type"] == "agent_policy"
 
 

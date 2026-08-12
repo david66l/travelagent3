@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import Any, Literal, Protocol
 from uuid import uuid4
 
@@ -62,6 +63,7 @@ class ActionOutcome(BaseModel):
     error_code: str | None = None
     error_message: str | None = None
     retryable: bool = False
+    tool_calls_used: int = Field(default=0, ge=0)
 
 
 class AgentPolicy(Protocol):
@@ -140,6 +142,7 @@ class BoundedAgentLoop:
     ) -> AgentLoopResult:
         events: list[AgentLoopEvent] = []
         while True:
+            batch_started = time.monotonic()
             ledger.task_graph, batch = self.scheduler.select(ledger.task_graph)
             if batch is None:
                 return self._record_final(self._terminal_result(ledger, events), recorder)
@@ -185,6 +188,30 @@ class BoundedAgentLoop:
                     for task_id, action in zip(batch.task_ids, proposals, strict=True)
                 )
             )
+            try:
+                extra_tool_calls = sum(
+                    max(
+                        0,
+                        execution.outcome.tool_calls_used
+                        - (execution.action.action not in NO_TOOL_ACTIONS),
+                    )
+                    for execution in executions
+                )
+                ledger.budget = ledger.budget.consume(
+                    tool_calls=extra_tool_calls,
+                    latency_ms=int((time.monotonic() - batch_started) * 1000),
+                )
+            except BudgetExceeded as exc:
+                return self._record_final(
+                    self._finish(
+                        ledger,
+                        events,
+                        "failed",
+                        "budget_exhausted_fallback",
+                        error=str(exc),
+                    ),
+                    recorder,
+                )
             try:
                 interrupt = self._commit_batch(ledger, batch, executions, events)
             except StateTransitionError as exc:

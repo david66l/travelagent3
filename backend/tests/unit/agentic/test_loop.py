@@ -159,6 +159,53 @@ async def test_loop_stops_before_exceeding_durable_budget():
 
 
 @pytest.mark.asyncio
+async def test_loop_accounts_policy_tokens_and_actual_nested_tool_calls():
+    ledger = AgentLedgerState(
+        goal=GoalLedger(original_request="Plan a trip"),
+        task_graph=TaskGraph(
+            goal_version=1,
+            tasks=(
+                TaskNode(
+                    task_id="details",
+                    goal="details",
+                    allowed_actions=("get_poi_detail",),
+                    success_criteria={"required_artifact_types": ["poi_detail_set"]},
+                ),
+            ),
+        ),
+    )
+
+    class MeteredPolicy:
+        async def propose(self, context: PolicyContext) -> PolicyAction:
+            return PolicyAction(action="get_poi_detail", token_usage=321)
+
+    class MeteredExecutor:
+        async def execute(self, *, task, action, ledger) -> ActionOutcome:
+            return ActionOutcome(
+                tool_calls_used=3,
+                artifacts=[
+                    ArtifactRecord(
+                        artifact_id="details",
+                        artifact_type="poi_detail_set",
+                        payload={"details": [{}, {}, {}]},
+                        goal_version=1,
+                        plan_version=1,
+                    )
+                ],
+            )
+
+    result = await BoundedAgentLoop().run(
+        ledger,
+        policy=MeteredPolicy(),
+        executor=MeteredExecutor(),
+    )
+
+    assert result.ledger.budget.used_tool_calls == 3
+    assert result.ledger.budget.used_tokens == 321
+    assert result.ledger.budget.used_latency_ms >= 0
+
+
+@pytest.mark.asyncio
 async def test_loop_interrupts_for_user_without_marking_task_success():
     ledger = AgentLedgerState(
         goal=GoalLedger(original_request="Plan a trip"),

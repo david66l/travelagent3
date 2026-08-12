@@ -218,6 +218,10 @@ class BudgetLedger(BaseModel):
     def remaining_episode_steps(self) -> int:
         return self.max_episode_steps - self.used_episode_steps
 
+    @property
+    def remaining_tool_calls(self) -> int:
+        return self.max_tool_calls - self.used_tool_calls
+
 
 class AgentLedgerState(BaseModel):
     schema_version: str = AGENTIC_STATE_SCHEMA_VERSION

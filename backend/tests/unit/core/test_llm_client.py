@@ -1,5 +1,6 @@
 """Unit tests for LLM client vLLM routing."""
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -73,6 +74,65 @@ async def test_intent_structured_call_disables_deepseek_thinking_only():
     assert result.intent == "generate_itinerary"
     request = client._create_completion.await_args.kwargs
     assert request["extra_body"] == {"thinking": {"type": "disabled"}}
+
+
+@pytest.mark.asyncio
+async def test_structured_call_exposes_actual_total_token_usage():
+    client = LLMClient()
+    client._prepare_request = AsyncMock(
+        return_value=("model", [{"role": "user", "content": "parse"}], "free")
+    )
+    response = MagicMock()
+    response.choices = [MagicMock(message=MagicMock(content='{"intent":"chat"}'))]
+    response.usage.total_tokens = 37
+    response.usage.prompt_tokens = 20
+    response.usage.completion_tokens = 17
+    client._create_completion = AsyncMock(return_value=response)
+
+    await client.structured_call(
+        [{"role": "user", "content": "parse"}], _IntentOutput, task_type="agent_policy"
+    )
+
+    assert client.last_token_usage == 37
+
+
+@pytest.mark.asyncio
+async def test_concurrent_structured_calls_keep_token_usage_task_local():
+    client = LLMClient()
+    client._prepare_request = AsyncMock(
+        return_value=("model", [{"role": "user", "content": "parse"}], "free")
+    )
+    barrier = asyncio.Event()
+    calls = 0
+
+    async def completion(**kwargs):
+        nonlocal calls
+        calls += 1
+        call_number = calls
+        if call_number == 1:
+            await barrier.wait()
+        else:
+            barrier.set()
+        response = MagicMock()
+        response.choices = [MagicMock(message=MagicMock(content='{"intent":"chat"}'))]
+        response.usage.total_tokens = 10 * call_number
+        response.usage.prompt_tokens = 5 * call_number
+        response.usage.completion_tokens = 5 * call_number
+        return response
+
+    client._create_completion = AsyncMock(side_effect=completion)
+
+    async def invoke() -> int:
+        await client.structured_call(
+            [{"role": "user", "content": "parse"}],
+            _IntentOutput,
+            task_type="agent_policy",
+        )
+        return client.last_token_usage
+
+    usages = await asyncio.gather(invoke(), invoke())
+
+    assert sorted(usages) == [10, 20]
 
 
 def test_output_format_disables_deepseek_thinking_without_affecting_other_tasks():

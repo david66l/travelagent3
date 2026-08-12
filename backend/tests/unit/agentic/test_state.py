@@ -99,6 +99,7 @@ def test_budget_is_durable_and_rejects_overspend():
     budget = budget.consume(episode_steps=1, tool_calls=1, tokens=100)
 
     assert budget.remaining_episode_steps == 1
+    assert budget.remaining_tool_calls == 0
     with pytest.raises(BudgetExceeded, match="used_tool_calls"):
         budget.consume(tool_calls=1)
 

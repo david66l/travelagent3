@@ -121,6 +121,7 @@ class TravelActionExecutor:
                 error_code=error.code if error else "TOOL_FAILED",
                 error_message=error.message if error else "tool failed",
                 retryable=error.retryable if error else False,
+                tool_calls_used=1,
             )
 
         facts: list[FactRecord] = []
@@ -167,7 +168,12 @@ class TravelActionExecutor:
                     evidence_refs=[action.action_id],
                 )
             )
-        return ActionOutcome(observations=[observation], facts=facts, artifacts=artifacts)
+        return ActionOutcome(
+            observations=[observation],
+            facts=facts,
+            artifacts=artifacts,
+            tool_calls_used=1,
+        )
 
     async def _collect_poi_details(
         self,
@@ -180,6 +186,7 @@ class TravelActionExecutor:
         names = [
             str(item.get("name")) for item in items if isinstance(item, dict) and item.get("name")
         ]
+        names = names[: max(1, ledger.budget.remaining_tool_calls + 1)]
         if not names:
             return ActionOutcome(
                 status="failed",
@@ -216,6 +223,7 @@ class TravelActionExecutor:
                 error_code=error.code if error else "POI_DETAIL_SET_INCOMPLETE",
                 error_message=error.message if error else "POI detail set is incomplete",
                 retryable=error.retryable if error else True,
+                tool_calls_used=len(observations),
             )
         return ActionOutcome(
             observations=observations,
@@ -230,6 +238,7 @@ class TravelActionExecutor:
                     ],
                 )
             ],
+            tool_calls_used=len(observations),
         )
 
     def _hydrate_arguments(self, ledger: AgentLedgerState, action: PolicyAction) -> dict[str, Any]:
