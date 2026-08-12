@@ -91,6 +91,22 @@ class AgentLoopResult(BaseModel):
     events: list[AgentLoopEvent]
 
 
+class EpisodeRecorderProtocol(Protocol):
+    def record_step(
+        self,
+        *,
+        task_id: str,
+        context: PolicyContext,
+        action: PolicyAction,
+        observations: list[ObservationEnvelope],
+        verification: dict[str, Any],
+        state_before: AgentLedgerState,
+        state_after: AgentLedgerState,
+    ) -> None: ...
+
+    def finalize(self, result: AgentLoopResult) -> Any: ...
+
+
 class _TaskExecution(BaseModel):
     task_id: str
     action: PolicyAction
@@ -118,12 +134,13 @@ class BoundedAgentLoop:
         *,
         policy: AgentPolicy,
         executor: ActionExecutor,
+        recorder: EpisodeRecorderProtocol | None = None,
     ) -> AgentLoopResult:
         events: list[AgentLoopEvent] = []
         while True:
             ledger.task_graph, batch = self.scheduler.select(ledger.task_graph)
             if batch is None:
-                return self._terminal_result(ledger, events)
+                return self._record_final(self._terminal_result(ledger, events), recorder)
 
             try:
                 ledger.task_graph = self.scheduler.start(ledger.task_graph, batch)
@@ -143,10 +160,18 @@ class BoundedAgentLoop:
                     tokens=sum(proposal.token_usage for proposal in proposals),
                 )
             except BudgetExceeded as exc:
-                return self._finish(
-                    ledger, events, "failed", "budget_exhausted_fallback", error=str(exc)
+                return self._record_final(
+                    self._finish(
+                        ledger,
+                        events,
+                        "failed",
+                        "budget_exhausted_fallback",
+                        error=str(exc),
+                    ),
+                    recorder,
                 )
 
+            state_before = ledger.model_copy(deep=True)
             executions = await asyncio.gather(
                 *(
                     self._execute(
@@ -158,9 +183,38 @@ class BoundedAgentLoop:
                     for task_id, action in zip(batch.task_ids, proposals, strict=True)
                 )
             )
-            interrupt = self._commit_batch(ledger, batch, executions, events)
+            try:
+                interrupt = self._commit_batch(ledger, batch, executions, events)
+            except StateTransitionError as exc:
+                return self._record_final(
+                    self._finish(
+                        ledger,
+                        events,
+                        "failed",
+                        "stale_or_invalid_state",
+                        error=str(exc),
+                    ),
+                    recorder,
+                )
+            if recorder is not None:
+                state_after = ledger.model_copy(deep=True)
+                for context, execution in zip(contexts, executions, strict=True):
+                    recorder.record_step(
+                        task_id=execution.task_id,
+                        context=context,
+                        action=execution.action,
+                        observations=execution.outcome.observations,
+                        verification={
+                            "task_status": ledger.task_graph.get(execution.task_id).status,
+                            "error_code": execution.outcome.error_code,
+                        },
+                        state_before=state_before,
+                        state_after=state_after,
+                    )
             if interrupt:
-                return self._finish(ledger, events, "interrupted", interrupt)
+                return self._record_final(
+                    self._finish(ledger, events, "interrupted", interrupt), recorder
+                )
 
     async def _execute(
         self,
@@ -420,3 +474,11 @@ class BoundedAgentLoop:
             termination_reason=reason,
             events=events,
         )
+
+    @staticmethod
+    def _record_final(
+        result: AgentLoopResult, recorder: EpisodeRecorderProtocol | None
+    ) -> AgentLoopResult:
+        if recorder is not None:
+            recorder.finalize(result)
+        return result

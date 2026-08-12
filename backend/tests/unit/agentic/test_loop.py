@@ -13,6 +13,7 @@ from agentic.state import (
     TaskGraph,
     TaskNode,
 )
+from agentic.trajectory import EpisodeRecorder, EpisodeReplayVerifier
 
 
 class ScriptedPolicy:
@@ -183,3 +184,34 @@ async def test_loop_interrupts_for_user_without_marking_task_success():
     assert result.status == "interrupted"
     assert result.termination_reason == "awaiting_user"
     assert result.ledger.task_graph.get("ask").status == "blocked"
+
+
+@pytest.mark.asyncio
+async def test_loop_automatically_records_replayable_episode():
+    ledger = _ledger()
+    recorder = EpisodeRecorder(
+        ledger,
+        environment_version="travel-env.v1",
+        validator_version="travel-validator.v1",
+        policy_name="scripted",
+        policy_version="v1",
+    )
+    policy = ScriptedPolicy({"solve": "solve_itinerary", "validate": "validate_itinerary"})
+    executor = ArtifactExecutor(
+        {
+            "solve": ("solver_result", {}),
+            "validate": (
+                "validation_report",
+                {"hard_pass": True, "hard_violations": []},
+            ),
+        }
+    )
+
+    result = await BoundedAgentLoop().run(
+        ledger, policy=policy, executor=executor, recorder=recorder
+    )
+
+    assert result.status == "finished"
+    assert len(recorder.episode.steps) == 2
+    assert recorder.episode.status == "finished"
+    assert EpisodeReplayVerifier().verify(recorder.episode) == []
