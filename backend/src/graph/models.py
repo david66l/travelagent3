@@ -87,6 +87,15 @@ class AgentState(TypedDict):
     factcheck_passed: NotRequired[bool]
     validation_report: NotRequired[dict[str, Any]]
     completion_decision: NotRequired[dict[str, Any]]
+
+    # Long-horizon Agent Loop authoritative state (shadow mode first).
+    policy_mode: NotRequired[str]
+    agent_ledger: NotRequired[dict[str, Any]]
+    current_task_id: NotRequired[str | None]
+    agent_step: NotRequired[int]
+    subtask_step: NotRequired[int]
+    agent_status: NotRequired[str]
+    termination_reason: NotRequired[str | None]
     # Accumulator: nodes return only their *new* warnings; the reducer concatenates.
     # NOTE: Annotated must be top-level (not wrapped in NotRequired) for LangGraph
     # to detect the reducer; the channel still defaults to [] when unset.

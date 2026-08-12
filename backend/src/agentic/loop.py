@@ -1,0 +1,422 @@
+"""Bounded, evidence-gated runtime shared by API and future local policies."""
+
+from __future__ import annotations
+
+import asyncio
+from typing import Any, Literal, Protocol
+from uuid import uuid4
+
+from pydantic import BaseModel, Field
+
+from agentic.observations import ObservationEnvelope
+from agentic.scheduler import ScheduledBatch, TaskScheduler
+from agentic.state import (
+    AgentLedgerState,
+    ArtifactRecord,
+    BudgetExceeded,
+    FactRecord,
+    FailureRecord,
+    StateTransitionError,
+    TaskGraphController,
+    TaskNode,
+)
+from agentic.termination import CompletionGuard
+from agentic.verifier import SubtaskVerifier
+
+
+NO_TOOL_ACTIONS = frozenset(
+    {"abort", "ask_user", "capability_check", "compose_draft", "finish", "propose_tradeoff"}
+)
+
+
+class PolicyContext(BaseModel):
+    trajectory_id: str
+    goal_version: int
+    plan_version: int
+    original_request: str
+    current_subtask: dict[str, Any]
+    hard_constraints: dict[str, Any]
+    soft_preferences: dict[str, Any]
+    relevant_fact_refs: list[str]
+    relevant_artifact_refs: list[str]
+    failure_summary: list[dict[str, Any]]
+    remaining_tasks: int
+    remaining_steps: int
+    allowed_actions: list[str]
+
+
+class PolicyAction(BaseModel):
+    action_id: str = Field(default_factory=lambda: str(uuid4()))
+    action: str
+    arguments: dict[str, Any] = Field(default_factory=dict)
+    token_usage: int = Field(default=0, ge=0)
+
+
+class ActionOutcome(BaseModel):
+    status: Literal["completed", "failed", "awaiting_user"] = "completed"
+    observations: list[ObservationEnvelope] = Field(default_factory=list)
+    facts: list[FactRecord] = Field(default_factory=list)
+    artifacts: list[ArtifactRecord] = Field(default_factory=list)
+    error_code: str | None = None
+    error_message: str | None = None
+    retryable: bool = False
+
+
+class AgentPolicy(Protocol):
+    async def propose(self, context: PolicyContext) -> PolicyAction: ...
+
+
+class ActionExecutor(Protocol):
+    async def execute(
+        self,
+        *,
+        task: TaskNode,
+        action: PolicyAction,
+        ledger: AgentLedgerState,
+    ) -> ActionOutcome: ...
+
+
+class AgentLoopEvent(BaseModel):
+    sequence: int
+    event_type: str
+    task_id: str | None = None
+    action_id: str | None = None
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class AgentLoopResult(BaseModel):
+    ledger: AgentLedgerState
+    status: Literal["finished", "interrupted", "failed"]
+    termination_reason: str
+    events: list[AgentLoopEvent]
+
+
+class _TaskExecution(BaseModel):
+    task_id: str
+    action: PolicyAction
+    outcome: ActionOutcome
+
+
+class BoundedAgentLoop:
+    """Run tasks until verified completion, interruption or a durable limit."""
+
+    def __init__(
+        self,
+        *,
+        scheduler: TaskScheduler | None = None,
+        verifier: SubtaskVerifier | None = None,
+        completion_guard: CompletionGuard | None = None,
+    ) -> None:
+        self.scheduler = scheduler or TaskScheduler()
+        self.verifier = verifier or SubtaskVerifier()
+        self.completion_guard = completion_guard or CompletionGuard(mode="enforce")
+        self.controller = TaskGraphController()
+
+    async def run(
+        self,
+        ledger: AgentLedgerState,
+        *,
+        policy: AgentPolicy,
+        executor: ActionExecutor,
+    ) -> AgentLoopResult:
+        events: list[AgentLoopEvent] = []
+        while True:
+            ledger.task_graph, batch = self.scheduler.select(ledger.task_graph)
+            if batch is None:
+                return self._terminal_result(ledger, events)
+
+            try:
+                ledger.task_graph = self.scheduler.start(ledger.task_graph, batch)
+                contexts = [
+                    self._policy_context(ledger, ledger.task_graph.get(task_id))
+                    for task_id in batch.task_ids
+                ]
+                proposals = await asyncio.gather(*(policy.propose(context) for context in contexts))
+                ledger.budget = ledger.budget.consume(
+                    episode_steps=len(proposals),
+                    tool_calls=sum(
+                        proposal.action not in NO_TOOL_ACTIONS for proposal in proposals
+                    ),
+                    solver_calls=sum(
+                        proposal.action == "solve_itinerary" for proposal in proposals
+                    ),
+                    tokens=sum(proposal.token_usage for proposal in proposals),
+                )
+            except BudgetExceeded as exc:
+                return self._finish(
+                    ledger, events, "failed", "budget_exhausted_fallback", error=str(exc)
+                )
+
+            executions = await asyncio.gather(
+                *(
+                    self._execute(
+                        ledger=ledger,
+                        task=ledger.task_graph.get(task_id),
+                        action=action,
+                        executor=executor,
+                    )
+                    for task_id, action in zip(batch.task_ids, proposals, strict=True)
+                )
+            )
+            interrupt = self._commit_batch(ledger, batch, executions, events)
+            if interrupt:
+                return self._finish(ledger, events, "interrupted", interrupt)
+
+    async def _execute(
+        self,
+        *,
+        ledger: AgentLedgerState,
+        task: TaskNode,
+        action: PolicyAction,
+        executor: ActionExecutor,
+    ) -> _TaskExecution:
+        if action.action not in task.allowed_actions:
+            return _TaskExecution(
+                task_id=task.task_id,
+                action=action,
+                outcome=ActionOutcome(
+                    status="failed",
+                    error_code="ACTION_NOT_ALLOWED",
+                    error_message=f"{action.action} is not allowed for {task.task_id}",
+                ),
+            )
+        if action.action == "abort":
+            return _TaskExecution(
+                task_id=task.task_id,
+                action=action,
+                outcome=ActionOutcome(
+                    status="failed",
+                    error_code="POLICY_ABORT",
+                    error_message=str(action.arguments.get("reason") or "policy aborted"),
+                ),
+            )
+        try:
+            outcome = await executor.execute(task=task, action=action, ledger=ledger)
+        except Exception as exc:  # executor boundary must isolate provider failures
+            outcome = ActionOutcome(
+                status="failed",
+                observations=[
+                    ObservationEnvelope.failure(
+                        tool=action.action,
+                        code="EXECUTOR_ERROR",
+                        message=str(exc),
+                        retryable=True,
+                        tool_call_id=action.action_id,
+                    )
+                ],
+                error_code="EXECUTOR_ERROR",
+                error_message=str(exc),
+                retryable=True,
+            )
+        return _TaskExecution(task_id=task.task_id, action=action, outcome=outcome)
+
+    def _commit_batch(
+        self,
+        ledger: AgentLedgerState,
+        batch: ScheduledBatch,
+        executions: list[_TaskExecution],
+        events: list[AgentLoopEvent],
+    ) -> str | None:
+        """Join barrier: validate all outputs, then commit state serially."""
+        for execution in executions:
+            self._assert_current_versions(ledger, execution.outcome)
+
+        for execution in executions:
+            task = ledger.task_graph.get(execution.task_id)
+            outcome = execution.outcome
+            self._event(
+                events,
+                "action_completed",
+                task_id=task.task_id,
+                action_id=execution.action.action_id,
+                payload={"action": execution.action.action, "status": outcome.status},
+            )
+
+            if outcome.status == "awaiting_user":
+                ledger.task_graph = self.controller.transition(
+                    ledger.task_graph, task.task_id, "blocked"
+                )
+                return "awaiting_user"
+
+            if outcome.status == "failed":
+                self._record_failure(ledger, execution)
+                ledger.task_graph = self.controller.retry_or_fail(
+                    ledger.task_graph,
+                    task.task_id,
+                    {
+                        "code": outcome.error_code or "ACTION_FAILED",
+                        "message": outcome.error_message or "action failed",
+                    },
+                )
+                continue
+
+            for fact in outcome.facts:
+                ledger.facts[fact.fact_id] = fact
+            for artifact in outcome.artifacts:
+                ledger.artifacts[artifact.artifact_id] = artifact
+
+            verification = self.verifier.verify(
+                task,
+                facts=ledger.facts,
+                artifacts=ledger.artifacts,
+                observations=outcome.observations,
+            )
+            if verification.passed:
+                ledger.task_graph = self.controller.transition(
+                    ledger.task_graph,
+                    task.task_id,
+                    "succeeded",
+                    evidence_refs=verification.evidence_refs,
+                )
+                self._event(
+                    events,
+                    "task_verified",
+                    task_id=task.task_id,
+                    payload={"evidence_refs": verification.evidence_refs},
+                )
+            else:
+                failed = _TaskExecution(
+                    task_id=task.task_id,
+                    action=execution.action,
+                    outcome=ActionOutcome(
+                        status="failed",
+                        error_code="SUBTASK_VERIFICATION_FAILED",
+                        error_message=", ".join(verification.failure_codes),
+                        retryable=True,
+                    ),
+                )
+                self._record_failure(ledger, failed)
+                ledger.task_graph = self.controller.retry_or_fail(
+                    ledger.task_graph,
+                    task.task_id,
+                    {
+                        "code": "SUBTASK_VERIFICATION_FAILED",
+                        "failure_codes": verification.failure_codes,
+                    },
+                )
+        return None
+
+    @staticmethod
+    def _assert_current_versions(ledger: AgentLedgerState, outcome: ActionOutcome) -> None:
+        for item in [*outcome.facts, *outcome.artifacts]:
+            if item.goal_version != ledger.goal.goal_version:
+                raise StateTransitionError("outcome targets a stale goal version")
+            if item.plan_version != ledger.task_graph.plan_version:
+                raise StateTransitionError("outcome targets a stale plan version")
+
+    @staticmethod
+    def _record_failure(ledger: AgentLedgerState, execution: _TaskExecution) -> None:
+        outcome = execution.outcome
+        ledger.failures.append(
+            FailureRecord(
+                task_id=execution.task_id,
+                action_id=execution.action.action_id,
+                code=outcome.error_code or "ACTION_FAILED",
+                message=outcome.error_message or "action failed",
+                retryable=outcome.retryable,
+                evidence_refs=[
+                    item.tool_call_id
+                    for item in outcome.observations
+                    if item.tool_call_id is not None
+                ],
+                attempted_strategy=execution.action.action,
+            )
+        )
+
+    def _terminal_result(
+        self, ledger: AgentLedgerState, events: list[AgentLoopEvent]
+    ) -> AgentLoopResult:
+        report_artifacts = [
+            artifact
+            for artifact in ledger.artifacts.values()
+            if artifact.artifact_type == "validation_report"
+            and artifact.goal_version == ledger.goal.goal_version
+            and artifact.plan_version == ledger.task_graph.plan_version
+        ]
+        report = report_artifacts[-1].payload if report_artifacts else None
+        decision = self.completion_guard.evaluate(report, ledger=ledger)
+        if decision.allowed:
+            return self._finish(ledger, events, "finished", "validated_finish")
+        statuses = {task.status for task in ledger.task_graph.tasks}
+        if "blocked" in statuses:
+            return self._finish(ledger, events, "interrupted", "awaiting_user")
+        if "failed" in statuses:
+            return self._finish(ledger, events, "failed", "unsolvable_constraints")
+        return self._finish(
+            ledger,
+            events,
+            "failed",
+            "partial_finish",
+            error=", ".join(block.code for block in decision.blocks),
+        )
+
+    @staticmethod
+    def _policy_context(ledger: AgentLedgerState, task: TaskNode) -> PolicyContext:
+        relevant_facts = [
+            fact.fact_id for fact in ledger.facts.values() if fact.key in task.required_facts
+        ]
+        failures = [
+            failure.model_dump(mode="json")
+            for failure in ledger.failures[-3:]
+            if failure.task_id == task.task_id
+        ]
+        remaining = sum(
+            item.required and item.status not in {"succeeded", "skipped"}
+            for item in ledger.task_graph.tasks
+        )
+        return PolicyContext(
+            trajectory_id=ledger.trajectory_id,
+            goal_version=ledger.goal.goal_version,
+            plan_version=ledger.task_graph.plan_version,
+            original_request=ledger.goal.original_request,
+            current_subtask=task.model_dump(mode="json"),
+            hard_constraints=ledger.goal.hard_constraints,
+            soft_preferences=ledger.goal.soft_preferences,
+            relevant_fact_refs=relevant_facts,
+            relevant_artifact_refs=list(task.artifact_refs),
+            failure_summary=failures,
+            remaining_tasks=remaining,
+            remaining_steps=ledger.budget.remaining_episode_steps,
+            allowed_actions=list(task.allowed_actions),
+        )
+
+    @staticmethod
+    def _event(
+        events: list[AgentLoopEvent],
+        event_type: str,
+        *,
+        task_id: str | None = None,
+        action_id: str | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> None:
+        events.append(
+            AgentLoopEvent(
+                sequence=len(events) + 1,
+                event_type=event_type,
+                task_id=task_id,
+                action_id=action_id,
+                payload=payload or {},
+            )
+        )
+
+    def _finish(
+        self,
+        ledger: AgentLedgerState,
+        events: list[AgentLoopEvent],
+        status: Literal["finished", "interrupted", "failed"],
+        reason: str,
+        *,
+        error: str | None = None,
+    ) -> AgentLoopResult:
+        ledger.termination_reason = reason
+        self._event(
+            events,
+            "episode_terminated",
+            payload={"status": status, "reason": reason, "error": error},
+        )
+        return AgentLoopResult(
+            ledger=ledger,
+            status=status,
+            termination_reason=reason,
+            events=events,
+        )
