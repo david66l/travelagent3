@@ -40,11 +40,51 @@ def test_expected_slots_only_require_information_present_in_each_prompt_variant(
     cases = build_cases()
     by_id = {case.case.case_id: case.case for case in cases}
 
-    assert "travelers_count" not in by_id["nrhb-v1-poi-grounding-001-beijing"].expected_slots
-    assert "total_budget" not in by_id["nrhb-v1-current-information-002-shanghai"].expected_slots
-    assert by_id["nrhb-v1-accessibility-003-guangzhou"].expected_slots["travelers_count"] == 2
-    revision = by_id["nrhb-v1-revision-004-chengdu"]
-    assert revision.expected_revision_hard == {"travelers_count": 4}
+    assert "travelers_count" not in by_id["nrhb-v2-poi-grounding-001-beijing"].expected_slots
+    assert "total_budget" not in by_id["nrhb-v2-current-information-002-shanghai"].expected_slots
+    assert by_id["nrhb-v2-accessibility-003-guangzhou"].expected_slots["travelers_count"] == 2
+    revision = by_id["nrhb-v2-revision-004-chengdu"]
+    assert revision.expected_revision_soft == {"travelers_count": 4}
+
+
+def test_prompt_budget_and_expected_budget_never_drift():
+    for benchmark_case in build_cases():
+        expected = benchmark_case.case.expected_slots.get("total_budget")
+        if expected is None:
+            continue
+        assert f"{int(expected)}" in benchmark_case.case.user_input
+
+
+def test_accessibility_budgets_do_not_accidentally_trigger_feasibility_gate():
+    daily_cost = {"北京": 800, "上海": 900, "广州": 700, "成都": 600}
+    cases = [
+        row
+        for row in build_cases()
+        if row.metadata.split == "dev" and row.metadata.family == "accessibility"
+    ]
+
+    for benchmark_case in cases:
+        slots = benchmark_case.case.expected_slots
+        if "total_budget" not in slots:
+            continue
+        travelers = int(slots.get("travelers_count") or 2)
+        minimum = daily_cost[benchmark_case.metadata.city] * int(slots["travel_days"])
+        minimum *= travelers * 0.6
+        assert float(slots["total_budget"]) >= minimum
+
+
+def test_fault_cases_score_observable_recovery_not_one_intent_synonym():
+    stale_case = next(
+        row
+        for row in build_cases()
+        if row.metadata.family == "tool_recovery"
+        and row.metadata.fault_spec
+        and row.metadata.fault_spec.fault_type == "stale_data"
+    )
+
+    assert "information_needs" not in stale_case.case.expected_slots
+    assert "search_current_info" in stale_case.case.required_actions
+    assert "current_info_search" in stale_case.case.required_artifacts
 
 
 def test_duplicate_prompt_and_training_overlap_fail_the_gate():

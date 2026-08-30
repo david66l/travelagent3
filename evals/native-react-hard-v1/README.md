@@ -1,4 +1,6 @@
-# Native ReAct Hard Benchmark v1
+# Native ReAct Hard Benchmark v1（已退役）
+
+该版本在 Dev 首次真实运行时发现题面与标签合同问题，已由 `native-react-hard-v2` 替代。v1 只保留为审计记录，不得再用于模型比较或对外指标。
 
 这是 TravelAgent 新 ReAct 协议的第一版正式困难评测集，共 200 个不同任务。
 

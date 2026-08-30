@@ -31,6 +31,7 @@ celerybeat-schedule
 backend/src/celerybeat-schedule
 backend/src/logs/
 backend/outputs/
+outputs/native-react-hard/
 .coverage
 htmlcov/
 .DS_Store

@@ -14,7 +14,7 @@ from evaluation.external_benchmark import character_ngrams, jaccard_similarity, 
 from evaluation.full_agent_loop_benchmark import FullAgentLoopCase, build_frozen_cases
 
 
-SCHEMA_VERSION = "native-react-independent-hard.v1"
+SCHEMA_VERSION = "native-react-independent-hard.v2"
 FAMILIES = (
     "clarification",
     "poi_grounding",
@@ -254,7 +254,7 @@ class FaultSpec(BaseModel):
 
 class BenchmarkMetadata(BaseModel):
     benchmark_schema_version: Literal[SCHEMA_VERSION] = SCHEMA_VERSION
-    statistical_unit_id: str = Field(pattern=r"^nrhb-v1-[a-z0-9-]+$")
+    statistical_unit_id: str = Field(pattern=r"^nrhb-v2-[a-z0-9-]+$")
     split: Literal["dev", "test"]
     family: Literal[
         "clarification",
@@ -284,6 +284,10 @@ class BenchmarkMetadata(BaseModel):
 class NativeReactHardCase(BaseModel):
     metadata: BenchmarkMetadata
     case: FullAgentLoopCase
+
+    @property
+    def case_id(self) -> str:
+        return self.case.case_id
 
     @model_validator(mode="after")
     def validate_identity_and_fault(self) -> "NativeReactHardCase":
@@ -339,12 +343,18 @@ def _external(
     )
 
 
-def _base_slots(profile: CityProfile, index: int, *, days: int = 3) -> dict[str, object]:
+def _base_slots(
+    profile: CityProfile,
+    *,
+    days: int,
+    travelers: int,
+    budget: int,
+) -> dict[str, object]:
     return {
         "destination": profile.city,
         "travel_days": days,
-        "travelers_count": 1 + index % 3,
-        "total_budget": 2600 + (index % 6) * 700,
+        "travelers_count": travelers,
+        "total_budget": budget,
     }
 
 
@@ -356,8 +366,16 @@ def _build_family_case(
 ) -> tuple[FullAgentLoopCase, str, str, FaultSpec | None]:
     days = 2 + index % 4
     travelers = 1 + index % 3
-    budget = 2600 + (index % 6) * 700
-    slots = _base_slots(profile, index, days=days)
+    # Non-conflict families must not accidentally trip the deterministic
+    # feasibility gate. The benchmark should test the declared capability,
+    # not a hidden random budget conflict.
+    budget = max(2600 + (index % 6) * 700, days * travelers * 900)
+    slots = _base_slots(
+        profile,
+        days=days,
+        travelers=travelers,
+        budget=budget,
+    )
     variant = index % 4
     pattern_id = f"{family}-pattern-{variant + 1}"
 
@@ -511,11 +529,14 @@ def _build_family_case(
         )
 
     if family == "accessibility":
+        accessibility_budget = (
+            max(budget, days * 3 * 900) if variant == 3 else budget
+        )
         prompts = [
             f"带轮椅使用者去{profile.city}玩{days}天，预算{budget}元，优先无障碍景点，每天步行不超过40分钟。",
             f"带两位65岁父母去{profile.city}{days}天，共3人，少走路不要赶，{profile.must_visit}想去。",
             f"夫妻去{profile.city}玩{days}天，其中有孕妇，预算{budget}元，疲劳度要低，行程宽松。",
-            f"一家三口带8岁孩子去{profile.city}{days}天，预算{budget}元，希望亲子友好并安排{profile.must_visit}。",
+            f"一家三口带8岁孩子去{profile.city}{days}天，预算{accessibility_budget}元，希望亲子友好并安排{profile.must_visit}。",
         ]
         variants = ["wheelchair", "elderly", "pregnant", "child"]
         extras = [
@@ -546,7 +567,7 @@ def _build_family_case(
                 "destination": profile.city,
                 "travel_days": days,
                 "travelers_count": 3,
-                "total_budget": budget,
+                "total_budget": accessibility_budget,
                 "has_children": True,
             },
         ]
@@ -562,7 +583,13 @@ def _build_family_case(
         fault_actions = ["search_pois", "get_poi_detail", "get_route_matrix", "search_current_info"]
         fault_types = ["timeout", "empty_result", "rate_limit", "stale_data"]
         action = fault_actions[variant]
-        prompt = f"去{profile.city}玩{days}天，预算{budget}元，想去{profile.must_visit}并体验{profile.cuisine}；即使查询暂时失败也请给出可验证的处理结果。"
+        prompts = [
+            f"去{profile.city}玩{days}天，预算{budget}元，想去{profile.must_visit}并体验{profile.cuisine}；景点搜索即使暂时超时也请可靠恢复。",
+            f"去{profile.city}玩{days}天，预算{budget}元，{profile.must_visit}必须去；请核实候选景点详情，遇到空结果不能编造。",
+            f"去{profile.city}玩{days}天，预算{budget}元，想去{profile.must_visit}；查完景点后计算真实通勤时间，遇到限流要可靠恢复。",
+            f"去{profile.city}玩{days}天，预算{budget}元，{profile.must_visit}必须去；请先查询它的最新开放状态，过期信息不能用于排程。",
+        ]
+        prompt = prompts[variant]
         extra_actions = ["search_current_info"] if action == "search_current_info" else []
         extra_artifacts = ["current_info_search"] if action == "search_current_info" else []
         recovery_slots = {
@@ -620,7 +647,7 @@ def _build_family_case(
         elif variant == 1:
             updates.update(
                 expected_revision_hard={
-                    "total_budget": max(1200, budget - 1000),
+                    "budget_range": max(1200, budget - 1000),
                     "must_visit": [profile.must_visit],
                 }
             )
@@ -630,7 +657,7 @@ def _build_family_case(
                 expected_revision_exclusions=[profile.alternative],
             )
         else:
-            updates.update(expected_revision_hard={"travelers_count": 4})
+            updates.update(expected_revision_soft={"travelers_count": 4})
         return (
             case.model_copy(update=updates),
             ["extend-and-relax", "lower-budget", "must-and-exclude", "traveler-count-change"][
@@ -642,8 +669,8 @@ def _build_family_case(
 
     if family == "safe_termination":
         prompts = [
-            f"明天去{profile.city}，{profile.must_visit}必须参观；如果临时闭馆也不能换景点，请核实后安排。",
-            f"从{profile.origin}出发，要求一小时内到{profile.city}并马上参观{profile.must_visit}，任何条件都不能改。",
+            f"明天去{profile.city}一日游，{profile.must_visit}必须参观；如果临时闭馆也不能换景点，请核实后安排。",
+            f"从{profile.origin}出发去{profile.city}一日游，要求一小时内到达并马上参观{profile.must_visit}，任何条件都不能改。",
             f"{300 + index * 10}元要包下{profile.city}{days}天的五星酒店、往返交通和全部门票，不接受加预算。",
             f"去{profile.city}只停留半天，必须完成{profile.must_visit}和{profile.alternative}等8个地点，不允许删减。",
         ]
@@ -665,7 +692,10 @@ def _build_family_case(
             case_id,
             family,
             prompts[variant],
-            expected_slots={"destination": profile.city},
+            expected_slots={
+                "destination": profile.city,
+                **({"travel_days": 1} if variant in {0, 1} else {}),
+            },
             action=action,
             artifact=artifact,
         )
@@ -686,7 +716,7 @@ def _build_family_case(
             f"plz plan {profile.city} {days}天, budget {budget} RMB, MUST={profile.must_visit}, no {profile.alternative}，别太赶哈",
             f"{profile.city}自由行 {days}d / {travelers}ppl / ￥{budget}，想吃{profile.cuisine}，{profile.must_visit}必去，帮我排下",
             f"下个月粗发{profile.city}，玩{days}天，预算大概{budget}，想去{profile.must_visit}，不要那种特种兵行程",
-            f"Need a {days}-day trip to {profile.city} for {travelers}; total budget is CNY {budget}. Please verify {profile.must_visit} before scheduling.",
+            f"Need a {days}-day trip to {profile.city} for {travelers}; total budget is CNY {budget}. {profile.must_visit} is a must-visit, and its opening status must be verified before scheduling.",
         ]
         slots = {
             "destination": profile.city,
@@ -710,7 +740,7 @@ def build_cases() -> list[NativeReactHardCase]:
     rows: list[NativeReactHardCase] = []
     for family in FAMILIES:
         for index, profile in enumerate(CITY_PROFILES):
-            case_id = f"nrhb-v1-{family.replace('_', '-')}-{index + 1:03d}-{profile.slug}"
+            case_id = f"nrhb-v2-{family.replace('_', '-')}-{index + 1:03d}-{profile.slug}"
             case, variant, pattern_id, fault = _build_family_case(family, profile, index, case_id)
             difficulty: Literal["L2", "L3", "L4"] = (
                 "L2"
@@ -830,7 +860,7 @@ def audit_cases(
         ),
     }
     return {
-        "schema_version": "native-react-independent-hard-audit.v1",
+        "schema_version": "native-react-independent-hard-audit.v2",
         "passed": all(gates.values()),
         "gates": gates,
         "counts": {
