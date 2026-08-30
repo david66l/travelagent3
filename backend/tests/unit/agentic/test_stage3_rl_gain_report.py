@@ -47,6 +47,13 @@ def test_stage3_rl_gain_report_requires_real_paired_gain(tmp_path):
 
 def test_stage3_rl_gain_report_identifies_decision_loop_strata():
     assert (
+        _variant(
+            "opaque-verifier-task",
+            {"verifier_repair": {"target_action": "retry_solve"}},
+        )
+        == "verifier_repair/retry_solve"
+    )
+    assert (
         _variant("task-decision-loop-change-arguments-diagnostic-00578")
         == "change_arguments/diagnostic_evidence"
     )

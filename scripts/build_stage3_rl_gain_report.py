@@ -63,6 +63,9 @@ def _cluster_bootstrap(
 
 
 def _variant(task_id: str, row: dict[str, Any] | None = None) -> str:
+    verifier_repair = (row or {}).get("verifier_repair") or {}
+    if verifier_repair.get("target_action"):
+        return f"verifier_repair/{verifier_repair['target_action']}"
     metadata = (row or {}).get("decision_loop") or {}
     if metadata.get("scenario") and metadata.get("evidence_style"):
         label = f"{metadata['scenario']}/{metadata['evidence_style']}"
