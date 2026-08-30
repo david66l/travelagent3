@@ -1,4 +1,7 @@
-from ml.agentic.training.train_grpo import validate_turn_credit_totals
+from ml.agentic.training.train_grpo import (
+    latest_completed_eval_metrics,
+    validate_turn_credit_totals,
+)
 
 
 def _totals(**overrides):
@@ -34,3 +37,15 @@ def test_r1_v2_training_evidence_gate_rejects_fake_or_unsafe_learning():
     assert "EXTRA_UNMATCHED_MODEL_TURNS" in validate_turn_credit_totals(
         _totals(extra_unmatched_model_turns=1)
     )
+
+
+def test_reuses_completed_epoch_end_eval_instead_of_running_it_twice():
+    history = [
+        {"step": 5, "reward": 0.1},
+        {"step": 18, "eval_reward": 0.25, "eval_runtime": 12.0, "epoch": 1.0},
+    ]
+
+    assert latest_completed_eval_metrics(history) == {
+        "eval_reward": 0.25,
+        "eval_runtime": 12.0,
+    }

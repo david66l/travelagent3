@@ -79,6 +79,14 @@ def validate_turn_credit_totals(totals: dict | None) -> list[str]:
     return errors
 
 
+def latest_completed_eval_metrics(log_history: list[dict] | None) -> dict:
+    """Return an epoch-end evaluation already completed inside ``train()``."""
+    for item in reversed(log_history or []):
+        if item.get("eval_runtime") is not None and item.get("eval_reward") is not None:
+            return {key: value for key, value in item.items() if key.startswith("eval_")}
+    return {}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--corpus-dir", type=Path, required=True)
@@ -437,12 +445,16 @@ def main() -> int:
     # Stateful grouped evaluation has a much higher peak-memory footprint than
     # a one-step smoke update.  Smoke checkpoints are evaluated afterwards by
     # the sequential native Agent Loop audit; formal runs retain Trainer eval.
+    completed_eval_metrics = latest_completed_eval_metrics(trainer.state.log_history)
     if args.max_steps > 0:
         eval_metrics = {}
         eval_status = "skipped_for_smoke_external_agent_loop_audit"
+    elif completed_eval_metrics:
+        eval_metrics = completed_eval_metrics
+        eval_status = "completed_during_train_epoch_end"
     else:
         eval_metrics = trainer.evaluate()
-        eval_status = "completed"
+        eval_status = "completed_after_train"
     turn_credit_totals = getattr(trainer, "turn_credit_totals", None)
     turn_credit_gate_errors = (
         validate_turn_credit_totals(turn_credit_totals)

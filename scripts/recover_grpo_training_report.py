@@ -45,6 +45,13 @@ def _final_train_metrics(log_path: Path) -> dict[str, Any]:
     raise ValueError(f"completed train metrics not found in {log_path}")
 
 
+def _latest_eval_metrics(log_history: list[dict[str, Any]]) -> dict[str, Any]:
+    for item in reversed(log_history):
+        if item.get("eval_runtime") is not None and item.get("eval_reward") is not None:
+            return {key: value for key, value in item.items() if key.startswith("eval_")}
+    return {}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--corpus-dir", type=Path, required=True)
@@ -60,6 +67,12 @@ def main() -> int:
     parser.add_argument("--max-completion-length", type=int, required=True)
     parser.add_argument("--max-eval-tasks", type=int, default=0)
     parser.add_argument("--failure-log", type=Path, required=True)
+    parser.add_argument("--minimum-train-tasks", type=int, default=1000)
+    parser.add_argument("--run-scope", choices=("smoke", "formal"), default="smoke")
+    parser.add_argument("--learning-rate", type=float)
+    parser.add_argument("--lr-scheduler-type")
+    parser.add_argument("--warmup-ratio", type=float)
+    parser.add_argument("--rollout-audit-path", type=Path)
     args = parser.parse_args()
 
     checkpoints = sorted(
@@ -81,7 +94,7 @@ def main() -> int:
         raise FileNotFoundError("saved adapter is missing")
     preflight = preflight_grpo_corpus(
         args.corpus_dir,
-        minimum_train_tasks=1000,
+        minimum_train_tasks=args.minimum_train_tasks,
         require_dependencies=False,
     )
     if preflight.errors:
@@ -102,9 +115,12 @@ def main() -> int:
         tokenizer,
         build_trl_environment_factories(args.execution_mode),
     )
+    eval_metrics = _latest_eval_metrics(trainer_state.get("log_history", []))
+    if args.run_scope == "formal" and not eval_metrics:
+        raise ValueError("formal recovery requires a completed epoch-end evaluation")
     report = {
         "status": "trained",
-        "run_scope": "smoke",
+        "run_scope": args.run_scope,
         "method": "trajectory-level-agentic-grpo-b0",
         "credit_mode": args.credit_mode,
         "execution_mode": args.execution_mode,
@@ -132,6 +148,11 @@ def main() -> int:
         "num_generations": args.num_generations,
         "temperature": args.temperature,
         "beta": args.beta,
+        "optimization": {
+            "learning_rate": args.learning_rate,
+            "lr_scheduler_type": args.lr_scheduler_type,
+            "warmup_ratio": args.warmup_ratio,
+        },
         "max_tool_calling_iterations": args.max_tool_calling_iterations,
         "max_completion_length": args.max_completion_length,
         "completion_budget": completion_budget.model_dump(mode="json"),
@@ -140,9 +161,15 @@ def main() -> int:
         "snapshot_versions": preflight.snapshot_versions,
         "train_metrics": _final_train_metrics(args.output_dir / "run.log"),
         "optimization_history": trainer_state.get("log_history", []),
-        "eval_metrics": {},
-        "eval_status": "skipped_for_smoke_external_agent_loop_audit",
-        "rollout_audit_path": None,
+        "eval_metrics": eval_metrics,
+        "eval_status": (
+            "recovered_completed_during_train_epoch_end"
+            if eval_metrics
+            else "skipped_for_smoke_external_agent_loop_audit"
+        ),
+        "rollout_audit_path": (
+            str(args.rollout_audit_path) if args.rollout_audit_path else None
+        ),
         "artifact": {
             "checkpoint": str(checkpoint),
             "global_step": trainer_state["global_step"],
