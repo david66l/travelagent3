@@ -1,7 +1,7 @@
 {
   "schema_version": "native-react-independent-hard.v2",
   "scope": "frozen Native ReAct hard benchmark; excluded from all training and checkpoint selection",
-  "git_commit": "e096a34f5af4d82a408d2f4473efeec1f4a84fb1",
+  "git_commit": "f8edc8b478cd77803bebfbc36430cdc7a46dfcf3",
   "files": {
     "dev.jsonl": "ac129a7f134617b22ee9b623cefd20d5c8d4e8aee81ec47e5558559f54b44fbd",
     "test.jsonl": "a6973690e467dae4e2c19ad1807974f58f7352c78859e3e8f92d03b3cf2f441d"
