@@ -23,12 +23,12 @@
 
 | 评测 | SFT | GRPO + KL | 结果 |
 |---|---:|---:|---|
-| 决策状态冻结集 | 42/48（87.50%） | 48/48（100%） | +12.50pp |
+| 决策状态冻结集（重复采样级） | 42/48（87.50%） | 48/48（100%） | +12.50pp，诊断指标 |
 | 完整 Agent Loop | 88/92（95.65%） | 88/92（95.65%） | 0 回归 |
 | 完整 Loop 参数/格式错误 | 3/92 | 3/92 | 持平 |
 | 完整 Loop 平均延迟 | 5290.2ms | 5268.8ms | 基本持平 |
 
-专项集成对结果为 6 个改善、0 个退化，精确 McNemar p=0.03125；完整 Loop 的 92 个成对结果完全一致。该证据支持“晋升为 POI 详情决策专家”，不支持“全面替换 SFT”。
+专项集实际只有 6 个独立任务，每题重复采样 8 次。按任务聚合后为 4 题改善、0 题退化、2 题持平，双侧精确符号检验 p=0.125，未达到 0.05 显著性标准。原采样级 6 个改善、0 个退化和 McNemar p=0.03125 只能描述同题随机采样稳定性，不能证明跨任务泛化。完整 Loop 的 23 个任务、92 次重复采样结果完全一致。因此该证据只支持把 GRPO 适配器作为 POI 详情专家的 Shadow 候选继续验证，不支持生产晋升或全面替换 SFT。
 
 ## 被否决的实验
 
@@ -39,8 +39,8 @@
 ## 产物
 
 - 通用 SFT：`qwen3-1.7b-native-react-sft-decision-bridge-step3-v1`
-- 晋升的 GRPO 专家：`qwen3-1.7b-native-react-grpo-decision-kl001-lr5e7-step1-seed06-v3`
-- 晋升报告：`artifacts/native-react-posttraining/native-react-rl-promotion-v1/`
+- GRPO 专家 Shadow 候选：`qwen3-1.7b-native-react-grpo-decision-kl001-lr5e7-step1-seed06-v3`
+- 试点审计报告：`artifacts/native-react-posttraining/native-react-rl-promotion-v1/`
 - 多 LoRA 服务脚本：`scripts/serve_native_react_multi_lora.sh`
 - 部署配置：`deploy/native-react-decision-specialist.env`
 
