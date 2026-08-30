@@ -61,10 +61,21 @@ def _write(path: Path, rows: list[GRPOCorpusRow]) -> None:
 def _load_routes(report_paths: list[Path]) -> dict[str, str]:
     routes: dict[str, str] = {}
     for report_path in report_paths:
-        report = json.loads(report_path.read_text(encoding="utf-8"))
-        decisions = report.get("decisions")
+        raw = report_path.read_text(encoding="utf-8")
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError:
+            payload = [json.loads(line) for line in raw.splitlines() if line.strip()]
+        if isinstance(payload, list):
+            decisions = payload
+        elif isinstance(payload, dict) and "decisions" in payload:
+            decisions = payload.get("decisions")
+        elif isinstance(payload, dict) and {"task_id", "route"} <= payload.keys():
+            decisions = [payload]
+        else:
+            decisions = None
         if not isinstance(decisions, list) or not decisions:
-            raise ValueError("audit report contains no group decisions")
+            raise ValueError(f"audit report contains no group decisions: {report_path}")
         for decision in decisions:
             task_id = str(decision.get("task_id") or "")
             route = str(decision.get("route") or "")

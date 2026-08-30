@@ -69,3 +69,39 @@ def test_only_audited_evaluation_tasks_can_be_anti_regression_anchors(tmp_path: 
         manifest["selection_policy"]["anti_regression_support"]
         == "audited evaluation tasks only"
     )
+
+
+def test_accepts_jsonl_group_decisions_from_offline_reroute(tmp_path: Path):
+    source = tmp_path / "source"
+    SOURCE_BUILDER.build(
+        source,
+        start_index=99100,
+        train_count=32,
+        validation_count=32,
+        test_count=32,
+    )
+    update, evaluation = load_grpo_corpus(source / "train.jsonl")[:2]
+    decisions = tmp_path / "group_decisions.jsonl"
+    decisions.write_text(
+        "\n".join(
+            json.dumps(row)
+            for row in (
+                {"task_id": update.task.task_id, "route": "grpo_update"},
+                {"task_id": evaluation.task.task_id, "route": "evaluation"},
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    output = tmp_path / "routed"
+    manifest = ROUTED_BUILDER.build(
+        source,
+        decisions,
+        output,
+        support_per_variant=0,
+        anchor_count=1,
+    )
+
+    assert manifest["counts"]["train"] == 2
+    assert manifest["audit_routes"] == {"grpo_update": 1, "evaluation": 1}
