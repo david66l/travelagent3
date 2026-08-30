@@ -4,7 +4,12 @@ import json
 from pathlib import Path
 
 from agentic.environment import environment_fingerprint
-from agentic.grpo_training import load_grpo_corpus, to_trl_environment_rows
+from agentic.grpo_training import (
+    MIN_DECISION_STATE_COMPLETION_LENGTH,
+    load_grpo_corpus,
+    minimum_completion_length_floor,
+    to_trl_environment_rows,
+)
 from agentic.trl_environment import build_trl_environment_factories
 from scripts.audit_model_curriculum import rollout_action_rows
 from scripts.build_verifier_repair_grpo_corpus import _TEMPLATES, _prepare_variant
@@ -63,6 +68,10 @@ def test_verifier_repair_environment_exposes_the_production_review_action_space(
         ordinal=0,
     )
     converted = to_trl_environment_rows([row])[0]
+    assert (
+        minimum_completion_length_floor([row])
+        == MIN_DECISION_STATE_COMPLETION_LENGTH
+    )
     environment = build_trl_environment_factories("react")[converted["environment"]]()
     audit_path = tmp_path / "verifier-replay-audit.jsonl"
     monkeypatch.setenv("AGENTIC_GRPO_AUDIT_PATH", str(audit_path))

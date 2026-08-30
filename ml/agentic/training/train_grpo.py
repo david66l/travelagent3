@@ -18,9 +18,9 @@ sys.path.insert(0, str(REPO_ROOT / "backend" / "src"))
 from agentic.grpo_training import (  # noqa: E402
     DEFAULT_POLICY_DRIVEN_TOOL_ITERATIONS,
     MIN_POLICY_DRIVEN_TOOL_ITERATIONS,
-    MIN_STATEFUL_COMPLETION_LENGTH,
     estimate_stateful_completion_budget,
     load_grpo_corpus,
+    minimum_completion_length_floor,
     preflight_grpo_corpus,
     tool_result_suffix_ids,
     to_trl_environment_rows,
@@ -226,13 +226,6 @@ def main() -> int:
             f"{MIN_POLICY_DRIVEN_TOOL_ITERATIONS} tool-calling iterations for the "
             "nominal production DAG"
         )
-    if args.max_completion_length < MIN_STATEFUL_COMPLETION_LENGTH:
-        raise ValueError(
-            "stateful Agentic GRPO max-completion-length is too small: "
-            f"{args.max_completion_length}<{MIN_STATEFUL_COMPLETION_LENGTH}. "
-            "TRL counts tool-result state against this budget, so a smaller value "
-            "can silently remove retry/follow-up generations."
-        )
     effective_batch = args.batch_size * args.gradient_accumulation
     if effective_batch % args.num_generations:
         raise ValueError(
@@ -255,6 +248,28 @@ def main() -> int:
         )
     if not report.ready:
         return 2
+
+    train_corpus = load_grpo_corpus(args.corpus_dir / "train.jsonl")
+    validation_corpus = load_grpo_corpus(args.corpus_dir / "validation.jsonl")
+    if args.max_train_tasks > 0:
+        train_corpus = train_corpus[: args.max_train_tasks]
+    if args.max_eval_tasks > 0:
+        validation_corpus = validation_corpus[: args.max_eval_tasks]
+    static_completion_floor = minimum_completion_length_floor(
+        [*train_corpus, *validation_corpus]
+    )
+    if args.max_completion_length < static_completion_floor:
+        raise ValueError(
+            "Agentic GRPO max-completion-length is too small for the corpus contract: "
+            f"{args.max_completion_length}<{static_completion_floor}. "
+            "Full loops must retain tool-result state; verified one-decision replay "
+            "uses a smaller bounded generation budget."
+        )
+    if len(validation_corpus) < args.num_generations:
+        raise ValueError(
+            "validation corpus must contain at least num-generations tasks "
+            f"({len(validation_corpus)}<{args.num_generations})"
+        )
 
     import torch
     from datasets import Dataset
@@ -288,17 +303,6 @@ def main() -> int:
             "policy checkpoint must provide a native tool-capable chat_template"
         )
 
-    train_corpus = load_grpo_corpus(args.corpus_dir / "train.jsonl")
-    validation_corpus = load_grpo_corpus(args.corpus_dir / "validation.jsonl")
-    if args.max_train_tasks > 0:
-        train_corpus = train_corpus[: args.max_train_tasks]
-    if args.max_eval_tasks > 0:
-        validation_corpus = validation_corpus[: args.max_eval_tasks]
-    if len(validation_corpus) < args.num_generations:
-        raise ValueError(
-            "validation corpus must contain at least num-generations tasks "
-            f"({len(validation_corpus)}<{args.num_generations})"
-        )
     train_rows = to_trl_environment_rows(train_corpus)
     validation_rows = to_trl_environment_rows(validation_corpus)
     rollout_contracts = sorted({str(row["rollout_contract"]) for row in train_rows})

@@ -44,16 +44,18 @@ class GRPOCompletionBudgetReport(BaseModel):
     generated_action_reserve_tokens: int
     minimum_completion_length: int
     max_observed_policy_turns: int
+    rollout_contracts: list[str]
+    policy_turn_budget: int
     limiting_task_id: str | None = None
     limiting_environment: str | None = None
 
 
-# TRL counts tool-result suffixes against max_completion_length. A value suited
-# to a one-shot JSON call (for example 64 or 96) silently prevents a second
-# policy decision after a retryable failure. This conservative static floor is
-# also available to dependency-light/preflight-only invocations; the real
-# tokenizer-based bound below is stricter when training starts.
+# TRL counts tool-result suffixes against max_completion_length. Full loops need
+# enough room for every follow-up transition; verified one-decision replay does
+# not. Keep separate conservative floors so malformed one-step completions
+# cannot burn the entire multi-turn context budget.
 MIN_STATEFUL_COMPLETION_LENGTH = 8192
+MIN_DECISION_STATE_COMPLETION_LENGTH = 512
 _ACTION_TOKENS_PER_POLICY_TURN = 96
 # A nominal full production episode now contains eleven policy-visible
 # transitions: search and verifier review each have an explicit accept/repair
@@ -62,6 +64,16 @@ MIN_POLICY_DRIVEN_TOOL_ITERATIONS = 11
 DEFAULT_POLICY_DRIVEN_TOOL_ITERATIONS = 16
 FRESH_LEDGER_ROLLOUT_CONTRACT = "fresh_ledger_no_teacher_prefix.v1"
 VERIFIED_DECISION_STATE_REPLAY_CONTRACT = "verified_decision_state_replay.v1"
+
+
+def minimum_completion_length_floor(rows: list[GRPOCorpusRow]) -> int:
+    """Return the static generation floor for one homogeneous rollout contract."""
+    if rows and all(
+        isinstance(row.snapshot.hidden_test_facts.get("grpo_decision_state"), dict)
+        for row in rows
+    ):
+        return MIN_DECISION_STATE_COMPLETION_LENGTH
+    return MIN_STATEFUL_COMPLETION_LENGTH
 
 
 # Weather and live transport/current-info evidence are intent-dependent. The
@@ -241,6 +253,11 @@ def estimate_stateful_completion_budget(
     nominal nine-decision success path.
     """
     selected = _completion_budget_samples(rows, max_samples=max_samples)
+    static_floor = minimum_completion_length_floor(rows)
+    decision_state_only = static_floor == MIN_DECISION_STATE_COMPLETION_LENGTH
+    policy_turn_budget = (
+        1 if decision_state_only else DEFAULT_POLICY_DRIVEN_TOOL_ITERATIONS
+    )
     max_tokens = 0
     max_observed_policy_turns = 0
     limiting_task_id: str | None = None
@@ -258,7 +275,7 @@ def estimate_stateful_completion_budget(
             reset_succeeded = True
             rollout_tokens = 0
             observed_turns = 0
-            for _turn in range(DEFAULT_POLICY_DRIVEN_TOOL_ITERATIONS):
+            for _turn in range(policy_turn_budget):
                 policy_state = json.loads(rendered)["policy_state"]
                 tool_name, arguments = _budget_probe_action(row, policy_state)
                 rendered = getattr(environment, tool_name)(**arguments)
@@ -281,14 +298,19 @@ def estimate_stateful_completion_budget(
                 # the sampled transition is intentionally retryable.
                 environment.get_reward()
 
-    generated_reserve = _ACTION_TOKENS_PER_POLICY_TURN * DEFAULT_POLICY_DRIVEN_TOOL_ITERATIONS
+    generated_reserve = _ACTION_TOKENS_PER_POLICY_TURN * policy_turn_budget
     measured_minimum = max_tokens + generated_reserve
+    rollout_contracts = sorted(
+        {str(row["rollout_contract"]) for row in to_trl_environment_rows(rows)}
+    )
     return GRPOCompletionBudgetReport(
         sampled_tasks=len(selected),
         max_tool_result_tokens=max_tokens,
         generated_action_reserve_tokens=generated_reserve,
-        minimum_completion_length=max(MIN_STATEFUL_COMPLETION_LENGTH, measured_minimum),
+        minimum_completion_length=max(static_floor, measured_minimum),
         max_observed_policy_turns=max_observed_policy_turns,
+        rollout_contracts=rollout_contracts,
+        policy_turn_budget=policy_turn_budget,
         limiting_task_id=limiting_task_id,
         limiting_environment=limiting_environment,
     )
@@ -607,10 +629,12 @@ __all__ = [
     "GRPOCorpusRow",
     "GRPOPreflightReport",
     "MIN_POLICY_DRIVEN_TOOL_ITERATIONS",
+    "MIN_DECISION_STATE_COMPLETION_LENGTH",
     "MIN_STATEFUL_COMPLETION_LENGTH",
     "estimate_stateful_completion_budget",
     "episode_to_grpo_corpus_row",
     "load_grpo_corpus",
+    "minimum_completion_length_floor",
     "preflight_grpo_corpus",
     "tool_result_suffix_ids",
     "to_trl_environment_rows",

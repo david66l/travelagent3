@@ -8,6 +8,7 @@ from agentic.grpo_training import (
     GRPOCorpusRow,
     MIN_STATEFUL_COMPLETION_LENGTH,
     estimate_stateful_completion_budget,
+    minimum_completion_length_floor,
     episode_to_grpo_corpus_row,
     load_grpo_corpus,
     preflight_grpo_corpus,
@@ -314,6 +315,8 @@ def test_completion_budget_measures_real_stateful_tool_suffix():
     assert report.max_observed_policy_turns == 11
     assert report.limiting_task_id == row.task.task_id
     assert report.limiting_environment == "search"
+    assert report.policy_turn_budget == 16
+    assert minimum_completion_length_floor([row]) == MIN_STATEFUL_COMPLETION_LENGTH
 
 
 def test_tool_suffix_uses_full_assistant_boundary_when_prefix_render_changes():
