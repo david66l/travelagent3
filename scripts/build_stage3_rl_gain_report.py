@@ -29,9 +29,12 @@ def _load_rollouts(report_dirs: list[Path]) -> dict[tuple[str, int, int], dict[s
 
 
 def _success(row: dict[str, Any]) -> bool:
-    return row.get("gate_status") == "passed" and bool(
-        (row.get("audit_metrics") or {}).get("hard_pass")
-    )
+    metrics = row.get("audit_metrics") or {}
+    if metrics.get("decision_state_training") is True:
+        verified = metrics.get("decision_step_valid") is True
+    else:
+        verified = metrics.get("hard_pass") is True
+    return row.get("gate_status") == "passed" and verified
 
 
 def _exact_mcnemar_p(candidate_only: int, baseline_only: int) -> float:

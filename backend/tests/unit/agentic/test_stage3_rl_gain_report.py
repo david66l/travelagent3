@@ -1,6 +1,6 @@
 import json
 
-from scripts.build_stage3_rl_gain_report import _variant, build_report
+from scripts.build_stage3_rl_gain_report import _success, _variant, build_report
 
 
 def _write_report(path, outcomes, seed=7):
@@ -73,4 +73,17 @@ def test_stage3_rl_gain_report_identifies_decision_loop_strata():
             },
         )
         == "change_arguments/diagnostic_evidence/position-1"
+    )
+
+
+def test_decision_state_success_uses_the_declared_decision_gate():
+    assert _success(
+        {
+            "gate_status": "passed",
+            "audit_metrics": {
+                "decision_state_training": True,
+                "decision_step_valid": True,
+                "hard_pass": False,
+            },
+        }
     )
