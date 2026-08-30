@@ -1,0 +1,80 @@
+"""Verifier-repair GRPO rows must replay production review states safely."""
+
+import json
+from pathlib import Path
+
+from agentic.environment import environment_fingerprint
+from agentic.grpo_training import load_grpo_corpus, to_trl_environment_rows
+from agentic.trl_environment import build_trl_environment_factories
+from scripts.build_verifier_repair_grpo_corpus import _TEMPLATES, _prepare_variant
+
+
+def _source():
+    return load_grpo_corpus(
+        Path("ml/agentic/datasets/native-react-grpo-v1/train.jsonl")
+    )[0]
+
+
+def test_verifier_repair_variants_are_unique_and_prompt_target_is_hidden():
+    source = _source()
+    rows = [
+        _prepare_variant(
+            source,
+            split="validation",
+            template=template,
+            ordinal=index,
+        )
+        for index, template in enumerate(_TEMPLATES["validation"])
+    ]
+
+    assert len({row.task.task_id for row in rows}) == 3
+    assert len({environment_fingerprint(row.task, row.snapshot) for row in rows}) == 3
+    assert {
+        row.snapshot.hidden_test_facts["grpo_decision_state"]["target_action"]
+        for row in rows
+    } == {"retry_solve", "propose_tradeoff", "abort"}
+    for row in rows:
+        state = row.snapshot.hidden_test_facts["grpo_decision_state"]
+        prompt = state["prompt_messages"]
+        assert [message["role"] for message in prompt] == [
+            "system",
+            "user",
+            "assistant",
+            "tool",
+            "assistant",
+            "tool",
+            "assistant",
+            "tool",
+        ]
+        assert "target_action" not in json.dumps(prompt, ensure_ascii=False)
+        assert state["source_task_id"] == source.task.task_id
+
+
+def test_each_verifier_repair_target_passes_only_with_grounded_arguments():
+    source = _source()
+    rows = [
+        _prepare_variant(
+            source,
+            split="validation",
+            template=template,
+            ordinal=index,
+        )
+        for index, template in enumerate(_TEMPLATES["validation"])
+    ]
+    factories = build_trl_environment_factories("react")
+    for row in rows:
+        converted = to_trl_environment_rows([row])[0]
+        environment = factories[converted["environment"]](audit_enabled=False)
+        environment.reset(**converted)
+        contract = row.snapshot.hidden_test_facts["grpo_decision_state"]
+        target = contract["target_action"]
+        reason = contract["grounding_phrases"][0]
+        if target == "retry_solve":
+            environment.retry_solve(strategy="greedy", reason=reason)
+        elif target == "propose_tradeoff":
+            environment.propose_tradeoff(reason=reason, options=["调整一个冲突约束"])
+        else:
+            environment.abort(reason=reason)
+
+        assert environment.get_reward() == 1.0
+        assert environment.rollout_record.reward.audit_metrics["decision_target_action"] == target

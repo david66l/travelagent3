@@ -300,6 +300,28 @@ def _budget_probe_action(
     allowed = list(policy_state.get("allowed_actions") or [])
     if not allowed:
         raise RuntimeError(f"budget probe has no allowed action for {row.task.task_id}")
+    decision_state = row.snapshot.hidden_test_facts.get("grpo_decision_state")
+    if isinstance(decision_state, dict):
+        target = str(decision_state.get("target_action") or "")
+        grounding = [
+            str(item)
+            for item in decision_state.get("grounding_phrases") or []
+            if str(item).strip()
+        ]
+        reason = grounding[0] if grounding else "当前校验结果需要有界修复"
+        if target == "retry_solve":
+            return target, {
+                "strategy": str(
+                    (decision_state.get("expected_arguments") or {}).get(
+                        "strategy", "greedy"
+                    )
+                ),
+                "reason": reason,
+            }
+        if target == "propose_tradeoff":
+            return target, {"reason": reason, "options": ["调整一个冲突约束"]}
+        if target == "abort":
+            return target, {"reason": reason}
     preferred = next(
         (
             action
@@ -451,6 +473,8 @@ def _environment_route(
         target_action = str(decision_state.get("target_action") or "")
         if target_action == "get_poi_detail":
             return "decision_get_poi_detail"
+        if target_action in {"retry_solve", "propose_tradeoff", "abort"}:
+            return "decision_verifier_repair"
         raise ValueError(f"unsupported GRPO decision-state target: {target_action or 'missing'}")
     if task.missing_slots:
         return "clarification"

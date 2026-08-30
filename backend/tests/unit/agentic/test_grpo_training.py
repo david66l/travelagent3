@@ -2,12 +2,14 @@
 
 import json
 import inspect
+from pathlib import Path
 
 from agentic.grpo_training import (
     GRPOCorpusRow,
     MIN_STATEFUL_COMPLETION_LENGTH,
     estimate_stateful_completion_budget,
     episode_to_grpo_corpus_row,
+    load_grpo_corpus,
     preflight_grpo_corpus,
     tool_result_suffix_ids,
     to_trl_environment_rows,
@@ -84,6 +86,9 @@ def test_react_environment_matches_production_hybrid_decision_boundary():
 
     assert environment.execution_mode == "react"
     assert callable(environment.retrieve_city_knowledge)
+    assert callable(environment.retry_solve)
+    assert callable(environment.propose_tradeoff)
+    assert callable(environment.abort)
     assert not hasattr(environment, "search_current_info")
     assert not hasattr(environment, "search_transport")
     assert not hasattr(environment, "finalize_research")
@@ -105,6 +110,93 @@ def test_react_environment_matches_production_hybrid_decision_boundary():
     current = factories["search_current"]()
     assert callable(current.search_current_info)
     assert not hasattr(current, "search_transport")
+
+
+def test_react_verifier_repair_state_replays_to_review_and_scores_grounded_choice():
+    row = load_grpo_corpus(
+        Path("ml/agentic/datasets/native-react-grpo-v1/train.jsonl")
+    )[0]
+    snapshot = row.snapshot.model_copy(deep=True)
+    report = snapshot.tool_responses["validate_itinerary"][0].data
+    report["hard_pass"] = False
+    report["hard_violations"] = [
+        {
+            "code": "BUDGET_EXCEEDED",
+            "message": "预算超出300元，当前排程不能通过硬约束校验",
+        }
+    ]
+    snapshot.hidden_test_facts["grpo_decision_state"] = {
+        "schema_version": "react-verifier-repair-decision.v1",
+        "target_action": "propose_tradeoff",
+        "expected_arguments": {},
+        "grounding_phrases": ["预算超出300元"],
+        "require_options": True,
+        "prefix_actions": [
+            {"action": "retrieve_city_knowledge", "arguments": {}},
+            {
+                "action": "search_pois",
+                "arguments": {"keywords": row.task.profile.get("interests") or []},
+            },
+            {"action": "get_poi_detail", "arguments": {}},
+        ],
+    }
+    converted = to_trl_environment_rows([GRPOCorpusRow(task=row.task, snapshot=snapshot)])[0]
+
+    assert converted["environment"] == "decision_verifier_repair"
+    environment = build_trl_environment_factories("react")[converted["environment"]]()
+    initial = json.loads(environment.reset(**converted))
+    assert initial["policy_state"]["current_subtask"]["task_id"] == "review_itinerary"
+    assert "propose_tradeoff" in initial["policy_state"]["allowed_actions"]
+    terminal = json.loads(
+        environment.propose_tradeoff(
+            reason="预算超出300元，建议调整预算或减少一个景点",
+            options=["提高预算300元", "减少一个景点"],
+        )
+    )
+
+    assert terminal["done"] is True
+    assert terminal["decision_complete"] is True
+    assert environment.get_reward() == 1.0
+    assert environment.rollout_record.reward.gate_status == "passed"
+
+
+def test_react_verifier_repair_state_rejects_ungrounded_arguments():
+    row = load_grpo_corpus(
+        Path("ml/agentic/datasets/native-react-grpo-v1/train.jsonl")
+    )[0]
+    snapshot = row.snapshot.model_copy(deep=True)
+    report = snapshot.tool_responses["validate_itinerary"][0].data
+    report["hard_pass"] = False
+    report["hard_violations"] = [
+        {
+            "code": "BUDGET_EXCEEDED",
+            "message": "预算超出300元，当前排程不能通过硬约束校验",
+        }
+    ]
+    snapshot.hidden_test_facts["grpo_decision_state"] = {
+        "schema_version": "react-verifier-repair-decision.v1",
+        "target_action": "propose_tradeoff",
+        "grounding_phrases": ["预算超出300元"],
+        "require_options": True,
+        "prefix_actions": [
+            {"action": "retrieve_city_knowledge", "arguments": {}},
+            {
+                "action": "search_pois",
+                "arguments": {"keywords": row.task.profile.get("interests") or []},
+            },
+            {"action": "get_poi_detail", "arguments": {}},
+        ],
+    }
+    converted = to_trl_environment_rows([GRPOCorpusRow(task=row.task, snapshot=snapshot)])[0]
+    environment = build_trl_environment_factories("react")[converted["environment"]]()
+    environment.reset(**converted)
+    environment.propose_tradeoff(
+        reason="我觉得换个方案更好",
+        options=["随便改一下"],
+    )
+
+    assert environment.get_reward() == -1.0
+    assert environment.rollout_record.reward.gate_status == "task_failed"
 
 
 def test_react_environment_normalizes_arrow_null_tool_lists():

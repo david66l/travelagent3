@@ -67,6 +67,16 @@ def decision_loop_metadata(row: GRPOCorpusRow) -> dict[str, Any]:
     return metadata if isinstance(metadata, dict) else {}
 
 
+def verifier_repair_metadata(row: GRPOCorpusRow) -> dict[str, Any]:
+    """Return a verifier-repair decision contract, when present."""
+    metadata = row.snapshot.hidden_test_facts.get("grpo_decision_state")
+    if not isinstance(metadata, dict):
+        return {}
+    if metadata.get("schema_version") != "react-verifier-repair-decision.v1":
+        return {}
+    return metadata
+
+
 def select_stratified(
     rows: list[GRPOCorpusRow],
     per_family: int,
@@ -96,6 +106,19 @@ def select_boundary_stratified(
         if stratum is not None and len(selected[stratum]) < per_cell:
             selected[stratum].append(row)
     return [row for stratum in sorted(selected) for row in selected[stratum]]
+
+
+def select_verifier_repair_stratified(
+    rows: list[GRPOCorpusRow],
+    per_target: int,
+) -> list[GRPOCorpusRow]:
+    """Select an equal number of immutable states for each target action."""
+    selected: dict[str, list[GRPOCorpusRow]] = defaultdict(list)
+    for row in rows:
+        target = verifier_repair_metadata(row).get("target_action")
+        if isinstance(target, str) and len(selected[target]) < per_target:
+            selected[target].append(row)
+    return [row for target in sorted(selected) for row in selected[target]]
 
 
 async def audit(args: argparse.Namespace) -> dict[str, Any]:
@@ -141,7 +164,19 @@ async def audit(args: argparse.Namespace) -> dict[str, Any]:
             if decision_loop_metadata(row).get("target_position")
             in requested_positions
         ]
-    if args.tasks_per_boundary_cell is not None:
+    if args.verifier_repair_targets:
+        requested_targets = set(args.verifier_repair_targets)
+        rows = [
+            row
+            for row in rows
+            if verifier_repair_metadata(row).get("target_action") in requested_targets
+        ]
+    if args.tasks_per_verifier_repair_target is not None:
+        selected = select_verifier_repair_stratified(
+            rows,
+            args.tasks_per_verifier_repair_target,
+        )
+    elif args.tasks_per_boundary_cell is not None:
         selected = select_boundary_stratified(rows, args.tasks_per_boundary_cell)
     else:
         selected = select_stratified(
@@ -192,6 +227,7 @@ async def audit(args: argparse.Namespace) -> dict[str, Any]:
                         "family": task_family(row),
                         "city": row.task.slots.get("destination"),
                         "decision_loop": decision_loop_metadata(row),
+                        "verifier_repair": verifier_repair_metadata(row),
                         "sample_index": sample_index,
                         "rollout_seed": rollout_seed,
                         "trajectory_id": rollout.episode.trajectory_id,
@@ -280,11 +316,20 @@ async def audit(args: argparse.Namespace) -> dict[str, Any]:
             "evidence_styles": list(args.decision_loop_evidence_styles or []),
             "target_positions": list(args.decision_loop_target_positions or []),
         },
+        "requested_verifier_repair_targets": list(args.verifier_repair_targets or []),
+        "verifier_repair_targets": dict(
+            Counter(
+                str(metadata["target_action"])
+                for row in selected
+                if (metadata := verifier_repair_metadata(row))
+            )
+        ),
         "routes": dict(Counter(item.route for item in decisions)),
         "decisions": [item.model_dump(mode="json") for item in decisions],
         "priorities": [item.model_dump(mode="json") for item in priorities],
         "behavior_gate": behavior_gate_metrics(rollout_rows),
         "decision_loop_breakdown": decision_loop_behavior_metrics(rollout_rows),
+        "verifier_repair_breakdown": verifier_repair_behavior_metrics(rollout_rows),
         "rollout_latency": rollout_latency_metrics(rollout_rows),
         "inference_metrics": summarize_inference_metrics(
             [
@@ -459,6 +504,11 @@ def _route_and_actions(row: GRPOCorpusRow) -> tuple[str, list[str]]:
         "search_current": ["search_pois", "search_current_info"],
         "search_transport": ["search_pois", "search_transport"],
         "decision_get_poi_detail": ["get_poi_detail"],
+        "decision_verifier_repair": [
+            "retry_solve",
+            "propose_tradeoff",
+            "abort",
+        ],
     }
     return route, initial_actions[route]
 
@@ -633,6 +683,38 @@ def rollout_latency_metrics(rollout_rows: list[dict[str, Any]]) -> dict[str, Any
     }
 
 
+def verifier_repair_behavior_metrics(
+    rollout_rows: list[dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    """Report exact success, chosen actions, and errors per repair target."""
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in rollout_rows:
+        target = (row.get("verifier_repair") or {}).get("target_action")
+        if target:
+            grouped[str(target)].append(row)
+    report: dict[str, dict[str, Any]] = {}
+    for target, rows in sorted(grouped.items()):
+        successes = sum(
+            row.get("gate_status") == "passed" and float(row.get("reward") or 0) > 0
+            for row in rows
+        )
+        report[target] = {
+            "rollouts": len(rows),
+            "successful_rollouts": successes,
+            "success_rate": successes / len(rows),
+            "chosen_actions": dict(
+                Counter(
+                    str(action.get("action"))
+                    for row in rows
+                    for action in (row.get("actions") or [])[:1]
+                )
+            ),
+            "policy_error_rate": sum(bool(row.get("policy_errors")) for row in rows)
+            / len(rows),
+        }
+    return report
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--checkpoint", required=True)
@@ -687,6 +769,17 @@ def main() -> int:
         choices=(0, 1),
         help="Optionally restrict which initial keyword position is correct.",
     )
+    parser.add_argument(
+        "--tasks-per-verifier-repair-target",
+        type=int,
+        help="Select this many decision states for each verifier-repair target action.",
+    )
+    parser.add_argument(
+        "--verifier-repair-targets",
+        nargs="+",
+        choices=("retry_solve", "propose_tradeoff", "abort"),
+        help="Optionally restrict verifier-repair target actions.",
+    )
     parser.add_argument("--group-size", type=int, default=4)
     parser.add_argument("--max-new-tokens", type=int, default=192)
     parser.add_argument("--temperature", type=float, default=0.8)
@@ -733,6 +826,11 @@ def main() -> int:
         parser.error("tasks-per-family must be positive")
     if args.tasks_per_boundary_cell is not None and args.tasks_per_boundary_cell < 1:
         parser.error("tasks-per-boundary-cell must be positive")
+    if (
+        args.tasks_per_verifier_repair_target is not None
+        and args.tasks_per_verifier_repair_target < 1
+    ):
+        parser.error("tasks-per-verifier-repair-target must be positive")
     if args.family_offset < 0:
         parser.error("family-offset must not be negative")
     if args.group_size < 4:

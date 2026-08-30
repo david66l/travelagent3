@@ -674,10 +674,22 @@ class TRLReactEnvironment(_TRLTravelEnvironmentBase):
             execution_mode="react",
         )
 
-    # Only actions owned by the production policy on the ReAct research node
-    # are exposed. Solver, verifier, composition, completion, and the
-    # finalize-research gate remain controller-owned and therefore cannot be
-    # sampled by GRPO.
+    # Only actions owned by the production policy are exposed. Solver,
+    # verifier, composition, completion, and the finalize-research gate remain
+    # controller-owned and therefore cannot be sampled by GRPO. The review
+    # actions below are intentionally included because production delegates a
+    # failed-verifier repair/trade-off choice back to the model.
+    abort = _tolerate_copied_schema_annotations(TRLPolicyDrivenEnvironment.abort)
+    accept_itinerary = _tolerate_copied_schema_annotations(
+        TRLPolicyDrivenEnvironment.accept_itinerary
+    )
+    ask_user = _tolerate_copied_schema_annotations(TRLPolicyDrivenEnvironment.ask_user)
+    propose_tradeoff = _tolerate_copied_schema_annotations(
+        TRLPolicyDrivenEnvironment.propose_tradeoff
+    )
+    retry_solve = _tolerate_copied_schema_annotations(
+        TRLPolicyDrivenEnvironment.retry_solve
+    )
     get_weather = _tolerate_copied_schema_annotations(TRLPolicyDrivenEnvironment.get_weather)
     search_pois = _tolerate_copied_schema_annotations(TRLPolicyDrivenEnvironment.search_pois)
     retrieve_city_knowledge = _tolerate_copied_schema_annotations(
@@ -855,6 +867,189 @@ class TRLReactGetPoiDetailDecisionEnvironment(_TRLTravelEnvironmentBase):
         return score
 
 
+class TRLReactVerifierRepairDecisionEnvironment(_TRLTravelEnvironmentBase):
+    """Replay a verified prefix and train one production review decision.
+
+    The hidden prefix is executed through the same ReAct controller, snapshot
+    executor, CP-SAT boundary, and verifier transition used online. Only the
+    final model-owned review decision receives GRPO credit. This avoids
+    spending most rollout tokens relearning deterministic setup actions while
+    preserving the exact production state shown to the policy.
+    """
+
+    _SUPPORTED_TARGETS = {"retry_solve", "propose_tradeoff", "abort"}
+
+    def __init__(self, *, audit_enabled: bool = True) -> None:
+        super().__init__(audit_enabled=audit_enabled, execution_mode="react")
+        self._decision_step_start = 0
+        self._decision_contract: dict[str, Any] = {}
+
+    def reset(self, **kwargs: Any) -> str:
+        rendered = super().reset(**kwargs)
+        snapshot = self._snapshot
+        if snapshot is None:
+            raise RuntimeError("decision-state snapshot was not initialized")
+        decision_state = snapshot.hidden_test_facts.get("grpo_decision_state")
+        if not isinstance(decision_state, dict):
+            raise ValueError("decision-state metadata is missing")
+        target = str(decision_state.get("target_action") or "")
+        if target not in self._SUPPORTED_TARGETS:
+            raise ValueError("verifier-repair target does not match environment")
+        for item in decision_state.get("prefix_actions") or []:
+            if not isinstance(item, dict):
+                raise ValueError("decision-state prefix action must be an object")
+            prefix_arguments = {
+                key: value
+                for key, value in dict(item.get("arguments") or {}).items()
+                if value is not None
+            }
+            rendered = self._act(str(item.get("action") or ""), prefix_arguments)
+            if json.loads(rendered).get("done") is True:
+                raise ValueError("decision-state prefix terminated before the target")
+        session = self._require_session()
+        self._decision_step_start = len(session.recorder.episode.steps)
+        self._decision_contract = decision_state
+        transition = json.loads(rendered)
+        policy_state = transition.get("policy_state") or {}
+        if (policy_state.get("current_subtask") or {}).get("task_id") != "review_itinerary":
+            raise ValueError("replayed decision state did not reach itinerary review")
+        allowed = list(policy_state.get("allowed_actions") or [])
+        if target not in allowed:
+            raise ValueError(f"replayed decision state does not allow {target}")
+        rendered = json.dumps(
+            transition,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        prompt = kwargs.get("prompt")
+        if isinstance(prompt, list) and len(prompt) > 2:
+            return ""
+        return rendered
+
+    _validate_initial_prompt = staticmethod(
+        TRLReactGetPoiDetailDecisionEnvironment._validate_initial_prompt
+    )
+
+    def _complete_decision(self, action: str, arguments: dict[str, Any]) -> str:
+        rendered = json.loads(self._act(action, arguments))
+        rendered.pop("policy_state", None)
+        rendered.update({"done": True, "decision_complete": True})
+        return json.dumps(rendered, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+    def accept_itinerary(self) -> str:
+        """Attempt to accept the current itinerary.
+
+        Returns:
+            A terminal observation for this one-decision training episode.
+        """
+        return self._complete_decision("accept_itinerary", {})
+
+    def retry_solve(self, strategy: Literal["cpsat", "greedy"], reason: str) -> str:
+        """Retry the solver when verifier evidence identifies a repairable failure.
+
+        Args:
+            strategy: The bounded alternate solver strategy.
+            reason: Verifier-grounded reason for the retry.
+        Returns:
+            A terminal observation for this one-decision training episode.
+        """
+        return self._complete_decision(
+            "retry_solve",
+            {"strategy": strategy, "reason": reason},
+        )
+
+    def propose_tradeoff(self, reason: str, options: list[str] | None = None) -> str:
+        """Offer grounded alternatives for an unrepairable hard constraint.
+
+        Args:
+            reason: Verifier-grounded conflict.
+            options: Up to three user-actionable alternatives.
+        Returns:
+            A terminal observation for this one-decision training episode.
+        """
+        return self._complete_decision(
+            "propose_tradeoff",
+            {"reason": reason, "options": options or []},
+        )
+
+    def abort(self, reason: str) -> str:
+        """Stop when verifier evidence has no safe or feasible repair.
+
+        Args:
+            reason: Verifier-grounded reason the task cannot continue.
+        Returns:
+            A terminal observation for this one-decision training episode.
+        """
+        return self._complete_decision("abort", {"reason": reason})
+
+    def get_reward(self) -> float:
+        """Score one target action plus its grounded argument contract."""
+        session = self._require_session()
+        policy_steps = [
+            step
+            for step in session.recorder.episode.steps[self._decision_step_start :]
+            if step.action.decision_source != "controller"
+        ]
+        target = str(self._decision_contract.get("target_action") or "")
+        valid = len(policy_steps) == 1 and policy_steps[0].action.action == target
+        if valid:
+            step = policy_steps[0]
+            verification_error = step.verification.get("error_code")
+            expected_abort = target == "abort" and verification_error == "POLICY_ABORT"
+            valid = (
+                all(observation.ok for observation in step.observations)
+                and (not verification_error or expected_abort)
+                and self._arguments_match_contract(step.action.arguments)
+            )
+        super().get_reward()
+        score = 1.0 if valid else -1.0
+        if self._reward is None:
+            raise RuntimeError("decision-state reward was not initialized")
+        self._reward = self._reward.model_copy(
+            update={
+                "episode_reward": score,
+                "gate_status": "passed" if valid else "task_failed",
+                "gate_reasons": [] if valid else ["VERIFIER_REPAIR_DECISION_INVALID"],
+                "audit_metrics": {
+                    **self._reward.audit_metrics,
+                    "decision_state_training": True,
+                    "decision_step_valid": valid,
+                    "decision_target_action": target,
+                },
+            }
+        )
+        self._audit("decision_reward", reward=self._reward)
+        return score
+
+    def _arguments_match_contract(self, arguments: dict[str, Any]) -> bool:
+        expected = self._decision_contract.get("expected_arguments") or {}
+        if not isinstance(expected, dict) or any(
+            arguments.get(key) != value for key, value in expected.items()
+        ):
+            return False
+        phrases = [
+            str(item)
+            for item in self._decision_contract.get("grounding_phrases") or []
+            if str(item).strip()
+        ]
+        if phrases:
+            rendered = _decision_text(arguments)
+            if not any(_decision_text(phrase) in rendered for phrase in phrases):
+                return False
+        if self._decision_contract.get("require_options") is True:
+            options = arguments.get("options")
+            if not isinstance(options, list) or not any(str(item).strip() for item in options):
+                return False
+        return True
+
+
+def _decision_text(value: Any) -> str:
+    """Normalize multilingual evidence without exposing hidden labels to the model."""
+    rendered = json.dumps(value, ensure_ascii=False) if not isinstance(value, str) else value
+    return "".join(character.casefold() for character in rendered if character.isalnum())
+
+
 def build_trl_environment_factories(
     execution_mode: GRPOExecutionMode = "policy_driven",
 ) -> dict[str, Callable[..., _TRLTravelEnvironmentBase]]:
@@ -881,6 +1076,7 @@ def build_trl_environment_factories(
             "search_current": TRLReactCurrentInfoEnvironment,
             "search_transport": TRLReactTransportEnvironment,
             "decision_get_poi_detail": TRLReactGetPoiDetailDecisionEnvironment,
+            "decision_verifier_repair": TRLReactVerifierRepairDecisionEnvironment,
             "clarification": TRLClarificationEnvironment,
             "tradeoff": TRLTradeoffEnvironment,
         }
@@ -900,6 +1096,7 @@ __all__ = [
     "TRLReactCurrentInfoEnvironment",
     "TRLReactEnvironment",
     "TRLReactGetPoiDetailDecisionEnvironment",
+    "TRLReactVerifierRepairDecisionEnvironment",
     "TRLReactTransportEnvironment",
     "TRLSearchEnvironment",
     "TRLTradeoffEnvironment",
