@@ -25,6 +25,10 @@ from agentic.policy import constrain_policy_context, controller_policy_action, p
 from agentic.policy_actions import strip_policy_schema_artifacts, validate_policy_arguments
 from agentic.reward import EpisodeReward, HierarchicalRewardEngine
 from agentic.grpo import policy_return_to_go_credit, policy_turn_credit_records
+from agentic.grpo_training import (
+    FRESH_LEDGER_ROLLOUT_CONTRACT,
+    VERIFIED_DECISION_STATE_REPLAY_CONTRACT,
+)
 from agentic.runtime import initialize_agent_ledger
 from agentic.state import AgentLedgerState
 from evaluation.validator import VALIDATOR_VERSION
@@ -32,9 +36,6 @@ from evaluation.validator import VALIDATOR_VERSION
 
 _AUDIT_LOCK = threading.Lock()
 GRPOExecutionMode = Literal["policy_driven", "controller_first", "react"]
-FRESH_LEDGER_ROLLOUT_CONTRACT = "fresh_ledger_no_teacher_prefix.v1"
-
-
 def _tolerate_copied_schema_annotations(method: Callable[..., str]) -> Callable[..., str]:
     """Accept harmless schema annotations without changing the advertised signature."""
 
@@ -74,6 +75,7 @@ class _TRLTravelEnvironmentBase:
         self._backend: SnapshotToolExecutor | None = None
         self._audit_enabled = audit_enabled
         self.execution_mode = execution_mode
+        self._rollout_contract = FRESH_LEDGER_ROLLOUT_CONTRACT
 
     def reset(
         self,
@@ -101,6 +103,11 @@ class _TRLTravelEnvironmentBase:
         }
         parsed_snapshot = EnvironmentSnapshot(**normalized_snapshot)
         self._validate_initial_prompt(prompt, user_request=parsed_task.user_request)
+        self._rollout_contract = (
+            VERIFIED_DECISION_STATE_REPLAY_CONTRACT
+            if isinstance(prompt, list) and len(prompt) > 2
+            else FRESH_LEDGER_ROLLOUT_CONTRACT
+        )
         self._task = parsed_task
         self._snapshot = parsed_snapshot
         self._task_id = parsed_task.task_id
@@ -261,7 +268,8 @@ class _TRLTravelEnvironmentBase:
             "event": event,
             "environment": type(self).__name__,
             "execution_mode": self.execution_mode,
-            "rollout_contract": FRESH_LEDGER_ROLLOUT_CONTRACT,
+            "rollout_contract": self._rollout_contract,
+            "credited_step_start": int(getattr(self, "_decision_step_start", 0)),
             "task_id": self._task_id,
             "trajectory_id": episode.trajectory_id if episode else None,
             "episode_status": episode.status if episode else None,
@@ -772,6 +780,7 @@ class TRLReactGetPoiDetailDecisionEnvironment(_TRLTravelEnvironmentBase):
             sort_keys=True,
             separators=(",", ":"),
         )
+        self._audit("decision_replay_ready", transition=self._transition)
         prompt = kwargs.get("prompt")
         # A verified replay prompt already ends with the exact transition above.
         # TRL appends reset() output to the final message, so return an empty
@@ -931,6 +940,7 @@ class TRLReactVerifierRepairDecisionEnvironment(_TRLTravelEnvironmentBase):
             sort_keys=True,
             separators=(",", ":"),
         )
+        self._audit("decision_replay_ready", transition=self._transition)
         prompt = kwargs.get("prompt")
         if isinstance(prompt, list) and len(prompt) > 2:
             return ""
@@ -1223,6 +1233,7 @@ TRL_ENVIRONMENT_FACTORIES = build_trl_environment_factories("policy_driven")
 
 __all__ = [
     "FRESH_LEDGER_ROLLOUT_CONTRACT",
+    "VERIFIED_DECISION_STATE_REPLAY_CONTRACT",
     "TRLClarificationEnvironment",
     "TRLPolicyDrivenEnvironment",
     "TRLReactCurrentInfoEnvironment",

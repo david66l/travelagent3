@@ -27,7 +27,7 @@ from agentic.grpo_training import (  # noqa: E402
 )
 from agentic.reward import RewardConfig  # noqa: E402
 from agentic.trl_environment import (  # noqa: E402
-    FRESH_LEDGER_ROLLOUT_CONTRACT,
+    VERIFIED_DECISION_STATE_REPLAY_CONTRACT,
     build_trl_environment_factories,
 )
 
@@ -301,6 +301,7 @@ def main() -> int:
         )
     train_rows = to_trl_environment_rows(train_corpus)
     validation_rows = to_trl_environment_rows(validation_corpus)
+    rollout_contracts = sorted({str(row["rollout_contract"]) for row in train_rows})
     completion_budget = estimate_stateful_completion_budget(
         [*train_corpus, *validation_corpus],
         tokenizer,
@@ -460,8 +461,17 @@ def main() -> int:
             "controller_first": "legacy_narrow_delegated_actions",
             "react": "production_research_recovery_clarification_tradeoff_actions",
         }[args.execution_mode],
-        "rollout_initialization_contract": FRESH_LEDGER_ROLLOUT_CONTRACT,
-        "teacher_trajectory_prefix": False,
+        "rollout_initialization_contract": (
+            rollout_contracts[0] if len(rollout_contracts) == 1 else "mixed"
+        ),
+        "rollout_initialization_contracts": rollout_contracts,
+        "teacher_trajectory_prefix": (
+            VERIFIED_DECISION_STATE_REPLAY_CONTRACT in rollout_contracts
+        ),
+        "teacher_prefix_optimization_targets": False,
+        "verified_replay_prefix_in_prompt": (
+            VERIFIED_DECISION_STATE_REPLAY_CONTRACT in rollout_contracts
+        ),
         "credit_assignment_claim": (
             "programmatic turn-relative research baseline"
             if args.credit_mode == "turn_r1"

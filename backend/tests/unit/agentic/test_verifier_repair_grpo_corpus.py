@@ -53,7 +53,9 @@ def test_verifier_repair_variants_are_unique_and_prompt_target_is_hidden():
         assert any(phrase in visible for phrase in state["grounding_phrases"])
 
 
-def test_verifier_repair_environment_exposes_the_production_review_action_space():
+def test_verifier_repair_environment_exposes_the_production_review_action_space(
+    tmp_path, monkeypatch
+):
     row = _prepare_variant(
         _source(),
         split="validation",
@@ -62,6 +64,8 @@ def test_verifier_repair_environment_exposes_the_production_review_action_space(
     )
     converted = to_trl_environment_rows([row])[0]
     environment = build_trl_environment_factories("react")[converted["environment"]]()
+    audit_path = tmp_path / "verifier-replay-audit.jsonl"
+    monkeypatch.setenv("AGENTIC_GRPO_AUDIT_PATH", str(audit_path))
 
     environment.reset(**converted)
 
@@ -74,6 +78,15 @@ def test_verifier_repair_environment_exposes_the_production_review_action_space(
         if callable(getattr(environment, name, None))
     }
     assert exposed == expected
+    records = [
+        json.loads(line)
+        for line in audit_path.read_text(encoding="utf-8").splitlines()
+    ]
+    assert records[0]["event"] == "reset"
+    assert records[0]["rollout_contract"] == "verified_decision_state_replay.v1"
+    ready = next(item for item in records if item["event"] == "decision_replay_ready")
+    assert ready["credited_step_start"] > 0
+    assert ready["credited_step_start"] == len(ready["steps"])
 
 
 def test_each_verifier_repair_target_passes_only_with_grounded_arguments():

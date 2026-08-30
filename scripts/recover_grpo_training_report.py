@@ -19,10 +19,11 @@ from agentic.grpo_training import (  # noqa: E402
     estimate_stateful_completion_budget,
     load_grpo_corpus,
     preflight_grpo_corpus,
+    to_trl_environment_rows,
 )
 from agentic.reward import RewardConfig  # noqa: E402
 from agentic.trl_environment import (  # noqa: E402
-    FRESH_LEDGER_ROLLOUT_CONTRACT,
+    VERIFIED_DECISION_STATE_REPLAY_CONTRACT,
     build_trl_environment_factories,
 )
 
@@ -91,6 +92,9 @@ def main() -> int:
     tokenizer = AutoTokenizer.from_pretrained(args.source_model, trust_remote_code=False)
     train_corpus = load_grpo_corpus(args.corpus_dir / "train.jsonl")
     validation_corpus = load_grpo_corpus(args.corpus_dir / "validation.jsonl")
+    rollout_contracts = sorted(
+        {str(row["rollout_contract"]) for row in to_trl_environment_rows(train_corpus)}
+    )
     if args.max_eval_tasks > 0:
         validation_corpus = validation_corpus[: args.max_eval_tasks]
     completion_budget = estimate_stateful_completion_budget(
@@ -105,8 +109,17 @@ def main() -> int:
         "credit_mode": args.credit_mode,
         "execution_mode": args.execution_mode,
         "policy_decision_scope": "all_dag_actions",
-        "rollout_initialization_contract": FRESH_LEDGER_ROLLOUT_CONTRACT,
-        "teacher_trajectory_prefix": False,
+        "rollout_initialization_contract": (
+            rollout_contracts[0] if len(rollout_contracts) == 1 else "mixed"
+        ),
+        "rollout_initialization_contracts": rollout_contracts,
+        "teacher_trajectory_prefix": (
+            VERIFIED_DECISION_STATE_REPLAY_CONTRACT in rollout_contracts
+        ),
+        "teacher_prefix_optimization_targets": False,
+        "verified_replay_prefix_in_prompt": (
+            VERIFIED_DECISION_STATE_REPLAY_CONTRACT in rollout_contracts
+        ),
         "credit_assignment_claim": "trajectory-level only",
         "turn_credit_gamma": None,
         "turn_credit_blend": None,

@@ -60,6 +60,8 @@ _ACTION_TOKENS_PER_POLICY_TURN = 96
 # decision. Keep several extra turns for bounded recovery during GRPO.
 MIN_POLICY_DRIVEN_TOOL_ITERATIONS = 11
 DEFAULT_POLICY_DRIVEN_TOOL_ITERATIONS = 16
+FRESH_LEDGER_ROLLOUT_CONTRACT = "fresh_ledger_no_teacher_prefix.v1"
+VERIFIED_DECISION_STATE_REPLAY_CONTRACT = "verified_decision_state_replay.v1"
 
 
 # Weather and live transport/current-info evidence are intent-dependent. The
@@ -215,9 +217,9 @@ def to_trl_environment_rows(rows: list[GRPOCorpusRow]) -> list[dict[str, Any]]:
             "difficulty": row.task.difficulty,
             "initial_state_fingerprint": environment_fingerprint(row.task, row.snapshot),
             "rollout_contract": (
-                "verified_decision_state_replay.v1"
+                VERIFIED_DECISION_STATE_REPLAY_CONTRACT
                 if replay_prompt
-                else "fresh_ledger_no_teacher_prefix.v1"
+                else FRESH_LEDGER_ROLLOUT_CONTRACT
             ),
         }
         )
