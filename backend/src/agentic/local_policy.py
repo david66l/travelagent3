@@ -134,6 +134,7 @@ class LocalCheckpointAgentPolicy:
         )
         self.model.eval()
         self._structured_backend: Any | None = None
+        self._structured_processor_cache: dict[tuple[str, ...], Any] = {}
         if self.structured_decoding_mode != "native":
             try:
                 from outlines import from_transformers
@@ -281,20 +282,37 @@ class LocalCheckpointAgentPolicy:
         """Compile one state-scoped JSON grammar without changing the prompt."""
         if self._structured_backend is None:
             raise RuntimeError("structured decoding is not enabled")
+        cache = getattr(self, "_structured_processor_cache", None)
+        if cache is None:
+            cache = self._structured_processor_cache = {}
+        cache_key = tuple(allowed_actions)
+        cached = cache.get(cache_key)
+        if cached is not None:
+            # Outlines processors keep one guide cursor per generation.  The
+            # compiled vocabulary index is immutable and expensive, so reuse
+            # the processor only after resetting its per-request cursor.  GPU
+            # generation is serialized by ``_generation_lock`` above.
+            reset = getattr(cached, "reset", None)
+            if callable(reset):
+                reset()
+            return cached
         schema_text = json.dumps(
             policy_tool_call_json_schema(allowed_actions),
             ensure_ascii=False,
             separators=(",", ":"),
         )
         if self.structured_decoding_mode == "json_schema":
-            return self._structured_backend.get_json_schema_logits_processor(schema_text)
-        if self.structured_decoding_mode == "qwen_tool_envelope":
+            processor = self._structured_backend.get_json_schema_logits_processor(schema_text)
+        elif self.structured_decoding_mode == "qwen_tool_envelope":
             from outlines_core.json_schema import build_regex_from_schema
 
             json_regex = build_regex_from_schema(schema_text)
             envelope_regex = r"<tool_call>\n(" + json_regex + r")\n</tool_call>"
-            return self._structured_backend.get_regex_logits_processor(envelope_regex)
-        raise RuntimeError("structured decoding is not enabled")
+            processor = self._structured_backend.get_regex_logits_processor(envelope_regex)
+        else:
+            raise RuntimeError("structured decoding is not enabled")
+        cache[cache_key] = processor
+        return processor
 
     def close(self) -> None:
         """Release one checkpoint before the next fixed-set evaluation arm."""

@@ -63,6 +63,36 @@ def test_structured_processor_can_preserve_qwen_tool_envelope(monkeypatch):
     assert regex == r"<tool_call>\n(JSON_SCHEMA_REGEX)\n</tool_call>"
 
 
+def test_structured_processor_reuses_compiled_index_and_resets_cursor():
+    class Processor:
+        def __init__(self):
+            self.reset_count = 0
+
+        def reset(self):
+            self.reset_count += 1
+
+    class Backend:
+        def __init__(self):
+            self.compile_count = 0
+
+        def get_json_schema_logits_processor(self, schema_text):
+            self.compile_count += 1
+            return Processor()
+
+    backend = Backend()
+    policy = object.__new__(LocalCheckpointAgentPolicy)
+    policy._structured_backend = backend
+    policy._structured_processor_cache = {}
+    policy.structured_decoding_mode = "json_schema"
+
+    first = policy._structured_logits_processor(["ask_user"])
+    second = policy._structured_logits_processor(["ask_user"])
+
+    assert second is first
+    assert backend.compile_count == 1
+    assert first.reset_count == 1
+
+
 def test_structured_processor_requires_enabled_backend():
     policy = object.__new__(LocalCheckpointAgentPolicy)
     policy._structured_backend = None
