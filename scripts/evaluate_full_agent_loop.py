@@ -168,6 +168,8 @@ def _action_rows(episode: dict[str, Any]) -> list[dict[str, Any]]:
             "policy_latency_ms": int(step.get("policy_latency_ms") or 0),
             "action_latency_ms": int(step.get("action_latency_ms") or 0),
             "repair_attempts": int((step.get("action") or {}).get("repair_attempts") or 0),
+            "route_trace": (step.get("action") or {}).get("route_trace"),
+            "shadow_trace": (step.get("action") or {}).get("shadow_trace"),
             "verification": step.get("verification") or {},
             "observation_errors": [
                 observation.get("error")

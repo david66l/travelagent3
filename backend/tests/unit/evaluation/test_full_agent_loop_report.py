@@ -2,10 +2,39 @@ import json
 
 from evaluation.full_agent_loop_benchmark import FullAgentLoopCase
 from scripts.evaluate_full_agent_loop import (
+    _action_rows,
     _episode_candidate,
     _write_episode_candidates,
     build_report,
 )
+
+
+def test_action_rows_preserve_policy_routing_evidence() -> None:
+    route = {
+        "requested_target": "student",
+        "executed_target": "student",
+        "family": "search",
+        "reason": "verified POI candidates are ready",
+        "fallback_used": False,
+        "fallback_error_code": None,
+    }
+    rows = _action_rows(
+        {
+            "steps": [
+                {
+                    "step_index": 1,
+                    "task_id": "research_evidence",
+                    "action": {
+                        "action": "get_poi_detail",
+                        "decision_source": "policy",
+                        "route_trace": route,
+                    },
+                }
+            ]
+        }
+    )
+
+    assert rows[0]["route_trace"] == route
 
 
 def _record(expected_outcome: str, solver_status: str | None) -> dict:

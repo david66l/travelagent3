@@ -835,7 +835,25 @@ def is_poi_detail_specialist_state(context: PolicyContext) -> bool:
     artifact_types = {
         str(artifact.get("artifact_type") or "") for artifact in context.relevant_artifacts
     }
-    return "poi_candidate_set" in artifact_types and "poi_detail_set" not in artifact_types
+    if not {"city_knowledge", "poi_candidate_set"}.issubset(artifact_types):
+        return False
+    if "poi_detail_set" in artifact_types:
+        return False
+
+    hard = context.hard_constraints
+    information_needs = set(hard.get("information_needs") or [])
+    required_before_detail: set[str] = set()
+    if "weather" in information_needs:
+        required_before_detail.add("weather_snapshot")
+    if str(hard.get("intent_kind") or "") == "event_trip" or "event" in information_needs:
+        required_before_detail.add("event_search_result")
+    if hard.get("transport_modes_requested") or "transport" in information_needs:
+        required_before_detail.add("transport_search_result")
+    if information_needs.intersection(
+        {"opening_hours", "closure", "restaurant", "seasonal_activity", "general"}
+    ):
+        required_before_detail.add("current_info_search")
+    return required_before_detail.issubset(artifact_types)
 
 
 class DecisionSpecialistRoutedAgentPolicy:
@@ -857,6 +875,13 @@ class DecisionSpecialistRoutedAgentPolicy:
     def last_route(self) -> PolicyRouteDecision | None:
         return self._last_route.get()
 
+    def set_rollout_seed(self, seed: int) -> None:
+        """Keep paired benchmark sampling identical across both routed arms."""
+        for policy in (self.generalist, self.poi_detail_specialist):
+            setter = getattr(policy, "set_rollout_seed", None)
+            if callable(setter):
+                setter(seed)
+
     async def propose(self, context: PolicyContext) -> PolicyAction:
         if not is_poi_detail_specialist_state(context):
             route = PolicyRouteDecision(
@@ -874,8 +899,15 @@ class DecisionSpecialistRoutedAgentPolicy:
             reason="verified POI candidates are ready for the GRPO detail-decision specialist",
         )
         self._last_route.set(route)
+        specialist_token_usage = 0
         try:
             action = await self.poi_detail_specialist.propose(context)
+            specialist_token_usage = int(getattr(action, "token_usage", 0) or 0)
+            if action.action != "get_poi_detail":
+                raise PolicyOutputError(
+                    f"POI decision specialist returned unsupported action: {action.action}",
+                    code="SPECIALIST_SCOPE_VIOLATION",
+                )
             return _with_route_trace(action, route, executed_target="student")
         except Exception as exc:
             error_code = str(getattr(exc, "code", type(exc).__name__))
@@ -888,7 +920,16 @@ class DecisionSpecialistRoutedAgentPolicy:
                 error_code,
             )
             action = await self.generalist.propose(context)
-            return _with_route_trace(action, fallback_route, executed_target="teacher")
+            fallback_action = _with_route_trace(
+                action,
+                fallback_route,
+                executed_target="teacher",
+            )
+            return fallback_action.model_copy(
+                update={
+                    "token_usage": fallback_action.token_usage + specialist_token_usage,
+                }
+            )
 
 
 class ShadowComparingAgentPolicy:

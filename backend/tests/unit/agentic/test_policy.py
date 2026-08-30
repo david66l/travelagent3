@@ -879,7 +879,10 @@ async def test_decision_specialist_routes_only_verified_poi_detail_state():
     specialist.propose.return_value = PolicyDecision(action="get_poi_detail")
     context = _context()
     context.allowed_actions = ["retrieve_city_knowledge", "get_poi_detail", "get_route_matrix"]
-    context.relevant_artifacts = [{"artifact_type": "poi_candidate_set"}]
+    context.relevant_artifacts = [
+        {"artifact_type": "city_knowledge"},
+        {"artifact_type": "poi_candidate_set"},
+    ]
     policy = DecisionSpecialistRoutedAgentPolicy(generalist, specialist)
 
     assert is_poi_detail_specialist_state(context) is True
@@ -900,7 +903,10 @@ async def test_decision_specialist_falls_back_and_stays_off_outside_support():
     specialist.propose.side_effect = PolicyOutputError("bad args", code="ARGUMENT_VALIDATION_FAILED")
     context = _context()
     context.allowed_actions = ["get_poi_detail"]
-    context.relevant_artifacts = [{"artifact_type": "poi_candidate_set"}]
+    context.relevant_artifacts = [
+        {"artifact_type": "city_knowledge"},
+        {"artifact_type": "poi_candidate_set"},
+    ]
     policy = DecisionSpecialistRoutedAgentPolicy(generalist, specialist)
 
     action = await policy.propose(context)
@@ -914,3 +920,51 @@ async def test_decision_specialist_falls_back_and_stays_off_outside_support():
     specialist.reset_mock()
     await policy.propose(context)
     specialist.propose.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_decision_specialist_waits_for_required_live_evidence() -> None:
+    generalist = AsyncMock()
+    generalist.propose.return_value = PolicyDecision(action="search_current_info")
+    specialist = AsyncMock()
+    context = _context()
+    context.allowed_actions = ["search_current_info", "get_poi_detail"]
+    context.hard_constraints["information_needs"] = ["opening_hours"]
+    context.relevant_artifacts = [
+        {"artifact_type": "city_knowledge"},
+        {"artifact_type": "poi_candidate_set"},
+    ]
+    policy = DecisionSpecialistRoutedAgentPolicy(generalist, specialist)
+
+    assert is_poi_detail_specialist_state(context) is False
+    action = await policy.propose(context)
+
+    assert action.action == "search_current_info"
+    specialist.propose.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_decision_specialist_falls_back_on_scope_violation() -> None:
+    generalist = AsyncMock()
+    generalist.propose.return_value = PolicyAction(action="get_poi_detail", token_usage=13)
+    specialist = AsyncMock()
+    specialist.propose.return_value = PolicyAction(
+        action="retrieve_city_knowledge",
+        token_usage=11,
+    )
+    context = _context()
+    context.allowed_actions = ["retrieve_city_knowledge", "get_poi_detail"]
+    context.relevant_artifacts = [
+        {"artifact_type": "city_knowledge"},
+        {"artifact_type": "poi_candidate_set"},
+    ]
+    policy = DecisionSpecialistRoutedAgentPolicy(generalist, specialist)
+
+    action = await policy.propose(context)
+
+    assert action.action == "get_poi_detail"
+    assert action.route_trace is not None
+    assert action.route_trace.executed_target == "teacher"
+    assert action.route_trace.fallback_used is True
+    assert action.route_trace.fallback_error_code == "SPECIALIST_SCOPE_VIOLATION"
+    assert action.token_usage == 24

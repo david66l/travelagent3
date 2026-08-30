@@ -19,7 +19,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "backend" / "src"))
 
-from agentic.policy import NativeToolAgentPolicy  # noqa: E402
+from agentic.policy import (  # noqa: E402
+    DecisionSpecialistRoutedAgentPolicy,
+    NativeToolAgentPolicy,
+)
 from core.inference_metrics import percentile  # noqa: E402
 from core.llm_client import LLMClient  # noqa: E402
 from core.redis_client import redis_client  # noqa: E402
@@ -54,6 +57,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--difficulty", action="append", dest="difficulties")
     parser.add_argument("--limit", type=int)
     parser.add_argument("--policy-model")
+    parser.add_argument(
+        "--decision-specialist-model",
+        help=(
+            "Route only verified POI-detail decision states to this model; "
+            "--policy-model remains the generalist."
+        ),
+    )
     parser.add_argument("--policy-base-url")
     parser.add_argument("--policy-api-key", default="not-needed")
     parser.add_argument("--policy-temperature", type=float, default=0.0)
@@ -73,6 +83,8 @@ def validate_args(args: argparse.Namespace) -> None:
         raise ValueError("--limit must be positive")
     if args.bootstrap_samples < 1:
         raise ValueError("--bootstrap-samples must be positive")
+    if args.decision_specialist_model and not args.policy_model:
+        raise ValueError("--policy-model is required with --decision-specialist-model")
 
 
 def rollout_seed(base_seed: int, case_id: str) -> int:
@@ -157,6 +169,12 @@ def build_report(
             "execution_mode": "react",
             "policy_protocol": "native_tool",
             "policy_model": policy_model,
+            "policy_topology": (
+                "sft-generalist-plus-decision-specialist"
+                if args.decision_specialist_model
+                else "single-model"
+            ),
+            "decision_specialist_model": args.decision_specialist_model,
             "policy_backend": policy_backend,
             "intent_model": settings.llm_model,
             "fault_protocol": "declared-one-shot-at-production-action-boundary",
@@ -282,7 +300,12 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
     validate_args(args)
     loaded = load_frozen_split(args.benchmark_dir, args.split)
     selected = select_cases(loaded.cases, args)
-    policy_model = args.policy_model or settings.agentic_policy_model or settings.llm_model
+    generalist_model = args.policy_model or settings.agentic_policy_model or settings.llm_model
+    policy_model = (
+        f"{generalist_model}+decision-specialist:{args.decision_specialist_model}"
+        if args.decision_specialist_model
+        else generalist_model
+    )
     if args.policy_base_url:
         client = LLMClient(
             base_url=args.policy_base_url,
@@ -302,12 +325,23 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         policy_backend=policy_backend,
     )
     by_id = {str(row["case_id"]): row for row in existing}
-    policy = NativeToolAgentPolicy(
+    generalist_policy = NativeToolAgentPolicy(
         client,
-        model=policy_model,
+        model=generalist_model,
         temperature=args.policy_temperature,
         max_tokens=256,
     )
+    policy = generalist_policy
+    if args.decision_specialist_model:
+        policy = DecisionSpecialistRoutedAgentPolicy(
+            generalist_policy,
+            NativeToolAgentPolicy(
+                client,
+                model=args.decision_specialist_model,
+                temperature=args.policy_temperature,
+                max_tokens=256,
+            ),
+        )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     await redis_client.connect()
     try:
