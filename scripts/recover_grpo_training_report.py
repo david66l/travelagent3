@@ -159,7 +159,7 @@ def main() -> int:
         "reward": RewardConfig().config_version,
         "environment_versions": preflight.environment_versions,
         "snapshot_versions": preflight.snapshot_versions,
-        "train_metrics": _final_train_metrics(args.output_dir / "run.log"),
+        "train_metrics": _final_train_metrics(args.failure_log),
         "optimization_history": trainer_state.get("log_history", []),
         "eval_metrics": eval_metrics,
         "eval_status": (
