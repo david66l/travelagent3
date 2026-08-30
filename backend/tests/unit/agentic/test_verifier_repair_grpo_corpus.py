@@ -6,6 +6,7 @@ from pathlib import Path
 from agentic.environment import environment_fingerprint
 from agentic.grpo_training import load_grpo_corpus, to_trl_environment_rows
 from agentic.trl_environment import build_trl_environment_factories
+from scripts.audit_model_curriculum import rollout_action_rows
 from scripts.build_verifier_repair_grpo_corpus import _TEMPLATES, _prepare_variant
 
 
@@ -102,4 +103,10 @@ def test_each_verifier_repair_target_passes_only_with_grounded_arguments():
             environment.abort(reason=reason)
 
         assert environment.get_reward() == 1.0
-        assert environment.rollout_record.reward.audit_metrics["decision_target_action"] == target
+        rollout = environment.rollout_record
+        assert rollout.reward.audit_metrics["decision_target_action"] == target
+        assert rollout.reward.components.task == 1.0
+        assert rollout.reward.components.constraint == 1.0
+        assert rollout_action_rows(rollout, policy_inference_metrics=[{}])[0][
+            "action"
+        ] == target

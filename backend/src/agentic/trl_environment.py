@@ -854,6 +854,15 @@ class TRLReactGetPoiDetailDecisionEnvironment(_TRLTravelEnvironmentBase):
         self._reward = self._reward.model_copy(
             update={
                 "episode_reward": score,
+                # The generic full-episode scorer correctly marks the replayed
+                # prefix as unfinished.  For this declared one-decision
+                # contract, however, a verified target action is the task and
+                # constraint success.  Keep these components aligned with the
+                # custom gate so curriculum routing does not send useful mixed
+                # groups back to SFT merely because the full trip is not done.
+                "components": self._reward.components.model_copy(
+                    update={"task": score, "constraint": score}
+                ),
                 "gate_status": "passed" if valid else "task_failed",
                 "gate_reasons": [] if valid else ["DECISION_ACTION_INVALID_OR_MISSING"],
                 "audit_metrics": {
@@ -1108,6 +1117,9 @@ class TRLReactVerifierRepairDecisionEnvironment(_TRLTravelEnvironmentBase):
         self._reward = self._reward.model_copy(
             update={
                 "episode_reward": score,
+                "components": self._reward.components.model_copy(
+                    update={"task": score, "constraint": score}
+                ),
                 "gate_status": "passed" if valid else "task_failed",
                 "gate_reasons": [] if valid else ["VERIFIER_REPAIR_DECISION_INVALID"],
                 "audit_metrics": {

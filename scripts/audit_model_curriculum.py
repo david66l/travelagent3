@@ -464,6 +464,15 @@ def rollout_action_rows(
         for step in rollout.episode.steps
         if step.action.decision_source != "controller"
     ]
+    # Decision-state environments replay policy-authored history without
+    # model inference.  Only the tail steps have corresponding inference
+    # metrics from this audit invocation; pairing from the beginning falsely
+    # reported the first replayed action (usually city knowledge) as the
+    # sampled review decision.
+    if policy_inference_metrics:
+        policy_steps = policy_steps[-len(policy_inference_metrics) :]
+    else:
+        policy_steps = []
     return [
         {
             "step_index": step.step_index,
