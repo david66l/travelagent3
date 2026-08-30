@@ -945,6 +945,16 @@ class TRLReactVerifierRepairDecisionEnvironment(_TRLTravelEnvironmentBase):
         """
         return self._complete_decision("accept_itinerary", {})
 
+    def ask_user(self, question: str) -> str:
+        """Ask for a user-owned choice after verifier review.
+
+        Args:
+            question: One concise grounded question in the user's language.
+        Returns:
+            A terminal observation for this one-decision training episode.
+        """
+        return self._complete_decision("ask_user", {"question": question})
+
     def retry_solve(self, strategy: Literal["cpsat", "greedy"], reason: str) -> str:
         """Retry the solver when verifier evidence identifies a repairable failure.
 
@@ -982,6 +992,95 @@ class TRLReactVerifierRepairDecisionEnvironment(_TRLTravelEnvironmentBase):
             A terminal observation for this one-decision training episode.
         """
         return self._complete_decision("abort", {"reason": reason})
+
+    def get_weather(self, date: str | None = None) -> str:
+        """Choose weather research when it is the best review repair.
+
+        Args:
+            date: Optional grounded date in YYYY-MM-DD format.
+        Returns:
+            A terminal observation for this one-decision training episode.
+        """
+        return self._complete_decision("get_weather", {"date": date} if date else {})
+
+    def search_pois(self, keywords: list[str] | None = None) -> str:
+        """Choose another POI search when candidates caused verifier failure.
+
+        Args:
+            keywords: Up to eight grounded preference keywords.
+        Returns:
+            A terminal observation for this one-decision training episode.
+        """
+        return self._complete_decision("search_pois", {"keywords": keywords or []})
+
+    def retrieve_city_knowledge(self, topic: str | None = None) -> str:
+        """Choose stable city research when review evidence is incomplete.
+
+        Args:
+            topic: Optional grounded topic to narrow the lookup.
+        Returns:
+            A terminal observation for this one-decision training episode.
+        """
+        return self._complete_decision(
+            "retrieve_city_knowledge",
+            {"topic": topic} if topic else {},
+        )
+
+    def get_poi_detail(self) -> str:
+        """Choose another trusted POI-detail lookup after review.
+
+        Returns:
+            A terminal observation for this one-decision training episode.
+        """
+        return self._complete_decision("get_poi_detail", {})
+
+    def get_route_matrix(self) -> str:
+        """Choose route-matrix refresh when review evidence requires it.
+
+        Returns:
+            A terminal observation for this one-decision training episode.
+        """
+        return self._complete_decision("get_route_matrix", {})
+
+    def search_current_info(
+        self,
+        query: str,
+        info_type: Literal[
+            "event", "opening_hours", "restaurant", "seasonal_activity", "closure", "general"
+        ] = "general",
+        date: str | None = None,
+    ) -> str:
+        """Choose live information research when review evidence is stale.
+
+        Args:
+            query: Grounded current-information query.
+            info_type: Type of current information being requested.
+            date: Optional grounded date in YYYY-MM-DD format.
+        Returns:
+            A terminal observation for this one-decision training episode.
+        """
+        arguments: dict[str, Any] = {"query": query, "info_type": info_type}
+        if date:
+            arguments["date"] = date
+        return self._complete_decision("search_current_info", arguments)
+
+    def search_transport(
+        self,
+        mode: Literal["flight", "train", "both"] = "both",
+        date: str | None = None,
+    ) -> str:
+        """Choose a transport refresh when review evidence requires it.
+
+        Args:
+            mode: Transport mode to search.
+            date: Optional grounded departure date in YYYY-MM-DD format.
+        Returns:
+            A terminal observation for this one-decision training episode.
+        """
+        arguments: dict[str, Any] = {"mode": mode}
+        if date:
+            arguments["date"] = date
+        return self._complete_decision("search_transport", arguments)
 
     def get_reward(self) -> float:
         """Score one target action plus its grounded argument contract."""

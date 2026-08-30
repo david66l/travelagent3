@@ -201,6 +201,37 @@ def test_city_knowledge_summary_exposes_coverage_without_replaying_records():
     assert "description" not in str(summary)
 
 
+def test_validation_summary_exposes_bounded_grounding_evidence():
+    artifact = ArtifactRecord(
+        artifact_id="validation",
+        artifact_type="validation_report",
+        payload={
+            "hard_pass": False,
+            "hard_violations": [
+                {
+                    "code": "BUDGET_EXCEEDED",
+                    "message": "当前行程超出总预算300元，需要减少景点或提高预算",
+                    "details": {"private_solver_trace": "must stay hidden"},
+                }
+            ],
+            "soft_scores": {"route_efficiency": 0.8},
+        },
+        goal_version=1,
+        plan_version=1,
+    )
+
+    summary = _artifact_summary(artifact)
+
+    assert summary["violation_codes"] == ["BUDGET_EXCEEDED"]
+    assert summary["violations"] == [
+        {
+            "code": "BUDGET_EXCEEDED",
+            "message": "当前行程超出总预算300元，需要减少景点或提高预算",
+        }
+    ]
+    assert "private_solver_trace" not in str(summary)
+
+
 @pytest.mark.asyncio
 async def test_loop_finishes_only_after_verified_task_closure():
     ledger = _ledger()

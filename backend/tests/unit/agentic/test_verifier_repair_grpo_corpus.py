@@ -48,6 +48,31 @@ def test_verifier_repair_variants_are_unique_and_prompt_target_is_hidden():
         ]
         assert "target_action" not in json.dumps(prompt, ensure_ascii=False)
         assert state["source_task_id"] == source.task.task_id
+        visible = json.dumps(prompt, ensure_ascii=False)
+        assert any(phrase in visible for phrase in state["grounding_phrases"])
+
+
+def test_verifier_repair_environment_exposes_the_production_review_action_space():
+    row = _prepare_variant(
+        _source(),
+        split="validation",
+        template=_TEMPLATES["validation"][0],
+        ordinal=0,
+    )
+    converted = to_trl_environment_rows([row])[0]
+    environment = build_trl_environment_factories("react")[converted["environment"]]()
+
+    environment.reset(**converted)
+
+    expected = set(
+        row.snapshot.hidden_test_facts["grpo_decision_state"]["review_allowed_actions"]
+    )
+    exposed = {
+        name
+        for name in expected
+        if callable(getattr(environment, name, None))
+    }
+    assert exposed == expected
 
 
 def test_each_verifier_repair_target_passes_only_with_grounded_arguments():

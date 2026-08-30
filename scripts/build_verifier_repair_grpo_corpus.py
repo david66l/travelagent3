@@ -62,6 +62,7 @@ _TEMPLATES: dict[str, tuple[dict[str, Any], ...]] = {
             "violation": "当前行程超出总预算300元，不能直接通过硬约束校验",
             "grounding_phrases": ["超出总预算300元", "硬约束"],
             "require_options": True,
+            "supervised_options": ["提高总预算", "减少一个非必去景点"],
         },
         {
             "family": "actionable_tradeoff",
@@ -70,6 +71,7 @@ _TEMPLATES: dict[str, tuple[dict[str, Any], ...]] = {
             "violation": "固定活动与末班交通相差40分钟，现有安排不可执行",
             "grounding_phrases": ["相差40分钟", "不可执行"],
             "require_options": True,
+            "supervised_options": ["调整固定活动时间", "删除一个非必要活动"],
         },
         {
             "family": "necessary_abort",
@@ -102,6 +104,7 @@ _TEMPLATES: dict[str, tuple[dict[str, Any], ...]] = {
             "violation": "保留全部必去项后预算缺口为260元，当前计划无法硬通过",
             "grounding_phrases": ["预算缺口为260元", "无法硬通过"],
             "require_options": True,
+            "supervised_options": ["增加260元预算", "删除一个非必去景点"],
         },
         {
             "family": "necessary_abort",
@@ -127,6 +130,7 @@ _TEMPLATES: dict[str, tuple[dict[str, Any], ...]] = {
             "violation": "当前可用时长少90分钟，无法同时保留全部普通景点",
             "grounding_phrases": ["少90分钟", "无法同时保留"],
             "require_options": True,
+            "supervised_options": ["延长一天", "取消一个普通景点"],
         },
         {
             "family": "necessary_abort",
@@ -213,6 +217,7 @@ def _prepare_variant(
         "expected_arguments": dict(template.get("expected_arguments") or {}),
         "grounding_phrases": list(template.get("grounding_phrases") or []),
         "require_options": bool(template.get("require_options", False)),
+        "supervised_options": list(template.get("supervised_options") or []),
         "prefix_actions": prefix_actions,
         "prompt_messages": prompt_messages,
         "source_task_id": source.task.task_id,

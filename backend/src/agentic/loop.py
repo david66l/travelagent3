@@ -1004,14 +1004,23 @@ def _artifact_summary(artifact: ArtifactRecord) -> dict[str, Any]:
             }
         )
     elif artifact.artifact_type == "validation_report":
+        violations = [
+            {
+                "code": item.get("code"),
+                "message": _compact_value(item.get("message")),
+            }
+            for item in (payload.get("hard_violations") or [])[:10]
+            if isinstance(item, dict)
+        ]
         summary.update(
             {
                 "hard_pass": payload.get("hard_pass"),
-                "violation_codes": [
-                    item.get("code")
-                    for item in (payload.get("hard_violations") or [])[:10]
-                    if isinstance(item, dict)
-                ],
+                "violation_codes": [item["code"] for item in violations],
+                # Review decisions need the verifier's bounded, user-facing
+                # evidence.  Codes alone cannot ground a retry, trade-off, or
+                # safe abort reason and made the previous reward contract
+                # impossible to satisfy from model-visible state.
+                "violations": violations,
                 "soft_scores": _compact_value(payload.get("soft_scores") or {}),
             }
         )
