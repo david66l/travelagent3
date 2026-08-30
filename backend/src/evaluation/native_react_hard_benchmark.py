@@ -399,7 +399,15 @@ def _build_family_case(
             f"第一次去{profile.city}玩{days}天，预算{budget}，优先历史文化，{profile.must_visit}一定要有，景点信息先核实。",
             f"在{profile.city}待{days}天，想围绕{profile.must_visit}规划，排除{profile.alternative}，相邻地点通勤别超过45分钟。",
         ]
-        slots.update({"must_visit": [profile.must_visit]})
+        slots = {
+            "destination": profile.city,
+            "travel_days": days,
+            "must_visit": [profile.must_visit],
+        }
+        if variant in {0, 2}:
+            slots["total_budget"] = budget
+        if variant == 1:
+            slots["travelers_count"] = travelers
         if variant in {0, 3}:
             slots["must_not_visit"] = [profile.alternative]
         variants = [
@@ -422,6 +430,9 @@ def _build_family_case(
             f"去{profile.city}玩{days}天，想看当周正在举办的演出或展览，活动、日期和场馆都先搜索确认。",
             f"到{profile.city}第一晚22点后才有空，查一家那时仍营业的{profile.cuisine}餐厅，再安排{days}天行程。",
         ]
+        slots = {"destination": profile.city, "travel_days": days}
+        if variant == 0:
+            slots["total_budget"] = budget
         actions = [
             "get_weather",
             "search_current_info",
@@ -508,12 +519,38 @@ def _build_family_case(
         ]
         variants = ["wheelchair", "elderly", "pregnant", "child"]
         extras = [
-            {"has_wheelchair": True, "max_walk_minutes": 40},
-            {"has_elderly": True, "travelers_count": 3, "pace": "relaxed"},
-            {"has_pregnant": True, "fatigue_preference": "low", "pace": "relaxed"},
-            {"has_children": True, "travelers_count": 3},
+            {
+                "destination": profile.city,
+                "travel_days": days,
+                "total_budget": budget,
+                "has_wheelchair": True,
+                "max_walk_minutes": 40,
+            },
+            {
+                "destination": profile.city,
+                "travel_days": days,
+                "travelers_count": 3,
+                "has_elderly": True,
+                "pace": "relaxed",
+            },
+            {
+                "destination": profile.city,
+                "travel_days": days,
+                "travelers_count": 2,
+                "total_budget": budget,
+                "has_pregnant": True,
+                "fatigue_preference": "low",
+                "pace": "relaxed",
+            },
+            {
+                "destination": profile.city,
+                "travel_days": days,
+                "travelers_count": 3,
+                "total_budget": budget,
+                "has_children": True,
+            },
         ]
-        slots.update(extras[variant])
+        slots = extras[variant]
         return (
             _draft(case_id, family, prompts[variant], expected_slots=slots),
             variants[variant],
@@ -528,11 +565,17 @@ def _build_family_case(
         prompt = f"去{profile.city}玩{days}天，预算{budget}元，想去{profile.must_visit}并体验{profile.cuisine}；即使查询暂时失败也请给出可验证的处理结果。"
         extra_actions = ["search_current_info"] if action == "search_current_info" else []
         extra_artifacts = ["current_info_search"] if action == "search_current_info" else []
+        recovery_slots = {
+            "destination": profile.city,
+            "travel_days": days,
+            "total_budget": budget,
+            "must_visit": [profile.must_visit],
+        }
         case = _draft(
             case_id,
             family,
             prompt,
-            expected_slots=slots,
+            expected_slots=recovery_slots,
             extra_actions=extra_actions,
             extra_artifacts=extra_artifacts,
         )
@@ -551,14 +594,20 @@ def _build_family_case(
         return case, f"{action}-{fault_types[variant]}", pattern_id, fault
 
     if family == "revision":
-        initial = f"去{profile.city}玩{days}天，预算{budget}元，喜欢文化和{profile.cuisine}，先给我一版正常节奏的行程。"
+        initial = f"去{profile.city}玩{days}天，预算{budget}元，喜欢文化和{profile.cuisine}，{profile.must_visit}想去，先给我一版正常节奏的行程。"
         revisions = [
             f"上一版太赶了，增加到{days + 1}天并改成轻松节奏。",
             f"预算要降到{max(1200, budget - 1000)}元，保留{profile.must_visit}，其他可以调整。",
             f"把{profile.must_visit}设为必去，同时不要安排{profile.alternative}。",
-            f"第一天晚上临时没空，重新排程，但总天数还是{days}天。",
+            "临时多来一个人，改成共4个人，预算不变，重新排程。",
         ]
-        case = _draft(case_id, family, initial, expected_slots=slots)
+        revision_slots = {
+            "destination": profile.city,
+            "travel_days": days,
+            "total_budget": budget,
+            "must_visit": [profile.must_visit],
+        }
+        case = _draft(case_id, family, initial, expected_slots=revision_slots)
         updates: dict[str, Any] = {
             "expected_outcome": "revision",
             "revision_input": revisions[variant],
@@ -580,9 +629,13 @@ def _build_family_case(
                 expected_revision_hard={"must_visit": [profile.must_visit]},
                 expected_revision_exclusions=[profile.alternative],
             )
+        else:
+            updates.update(expected_revision_hard={"travelers_count": 4})
         return (
             case.model_copy(update=updates),
-            ["extend-and-relax", "lower-budget", "must-and-exclude", "time-window-change"][variant],
+            ["extend-and-relax", "lower-budget", "must-and-exclude", "traveler-count-change"][
+                variant
+            ],
             pattern_id,
             None,
         )
@@ -635,7 +688,14 @@ def _build_family_case(
             f"下个月粗发{profile.city}，玩{days}天，预算大概{budget}，想去{profile.must_visit}，不要那种特种兵行程",
             f"Need a {days}-day trip to {profile.city} for {travelers}; total budget is CNY {budget}. Please verify {profile.must_visit} before scheduling.",
         ]
-        slots.update({"must_visit": [profile.must_visit]})
+        slots = {
+            "destination": profile.city,
+            "travel_days": days,
+            "total_budget": budget,
+            "must_visit": [profile.must_visit],
+        }
+        if variant in {1, 3}:
+            slots["travelers_count"] = travelers
         return (
             _draft(case_id, family, prompts[variant], expected_slots=slots),
             ["code-switch", "abbreviation", "typo-colloquial", "english-request"][variant],

@@ -36,6 +36,17 @@ def test_benchmark_is_deterministic_and_never_training_eligible():
     assert sum(case.metadata.fault_spec is not None for case in first) == 20
 
 
+def test_expected_slots_only_require_information_present_in_each_prompt_variant():
+    cases = build_cases()
+    by_id = {case.case.case_id: case.case for case in cases}
+
+    assert "travelers_count" not in by_id["nrhb-v1-poi-grounding-001-beijing"].expected_slots
+    assert "total_budget" not in by_id["nrhb-v1-current-information-002-shanghai"].expected_slots
+    assert by_id["nrhb-v1-accessibility-003-guangzhou"].expected_slots["travelers_count"] == 2
+    revision = by_id["nrhb-v1-revision-004-chengdu"]
+    assert revision.expected_revision_hard == {"travelers_count": 4}
+
+
 def test_duplicate_prompt_and_training_overlap_fail_the_gate():
     cases = build_cases()
     cases[1].case.user_input = cases[0].case.user_input
