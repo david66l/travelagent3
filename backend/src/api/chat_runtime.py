@@ -89,6 +89,60 @@ def enqueue_planning_job(job_id: str) -> None:
         logger.exception("Failed to enqueue planning job %s: %s", job_id, exc)
 
 
+async def create_chat_planning_job(
+    repo: PlanningJobRepository,
+    *,
+    session_id: str,
+    user_id: str,
+    user_uuid: UUID,
+    conversation_id: UUID,
+    content: str,
+    user_role: str = "guest",
+    attachments_meta: list[dict] | None = None,
+    action: str = "chat",
+    action_payload: dict[str, Any] | None = None,
+    idempotency_key: str | None = None,
+    idempotency_fingerprint: str | None = None,
+) -> str | None:
+    """Persist one chat turn as the durable unit of graph execution.
+
+    The API owns validation and transaction commit; a Celery or embedded
+    worker owns LangGraph execution. Runtime-only turn metadata travels with
+    the job so control actions and attachments work in either executor.
+    """
+    if action == "chat":
+        safe_content = sanitize_user_input(content.strip())
+        if not safe_content:
+            return None
+    else:
+        safe_content = sanitize_user_input((content or "").strip())
+
+    state = await manager.load_state(session_id)
+    state["user_id"] = user_id
+    state["user_role"] = user_role
+    if attachments_meta:
+        state["attachments_meta"] = attachments_meta
+    state["_job_context"] = {
+        "action": action,
+        "action_payload": action_payload or {},
+        "attachments_meta": attachments_meta or [],
+        "user_role": user_role,
+    }
+    if idempotency_fingerprint:
+        state["_idempotency_fingerprint"] = idempotency_fingerprint
+
+    job = await repo.create(
+        session_id,
+        user_id,
+        safe_content,
+        user_feedback=state,
+        user_uuid=user_uuid,
+        conversation_id=conversation_id,
+        idempotency_key=idempotency_key,
+    )
+    return str(job.id)
+
+
 class ConnectionManager:
     """WebSocket connections and SSE subscriber queues keyed by session_id."""
 
@@ -111,6 +165,10 @@ class ConnectionManager:
     def disconnect_ws(self, session_id: str) -> None:
         self._connections.pop(session_id, None)
 
+    def has_live_connection(self, session_id: str) -> bool:
+        """Return true while any local WebSocket or SSE subscriber is active."""
+        return session_id in self._connections or bool(self._sse_queues.get(session_id))
+
     def _total_sse_queues(self) -> int:
         return sum(len(qs) for qs in self._sse_queues.values())
 
@@ -130,6 +188,8 @@ class ConnectionManager:
         subs = self._sse_queues.get(session_id, [])
         if queue in subs:
             subs.remove(queue)
+        if not subs:
+            self._sse_queues.pop(session_id, None)
         set_active_sessions(self._total_sse_queues())
 
     async def send_json(self, session_id: str, data: dict[str, Any]) -> None:
@@ -359,6 +419,7 @@ async def _stream_graph_to_manager(
         messages=messages,
         attachments=state.get("attachments_meta"),
         profile=profile,
+        user_role=str(state.get("user_role") or "guest"),
         slots=slots,
         conversation_state=state,
         action=action,
@@ -440,6 +501,7 @@ async def _stream_graph_to_manager(
                     "output_pdf_url": payload.get("output_pdf_url"),
                     "output_excel_url": payload.get("output_excel_url"),
                     "output_map_url": payload.get("output_map_url"),
+                    "agent_policy_routing": payload.get("agent_policy_routing"),
                 },
             )
             await manager.send_json(
@@ -459,6 +521,8 @@ async def _stream_graph_to_manager(
                 state["itinerary"] = payload["itinerary"]
             if payload.get("profile"):
                 state["profile"] = payload["profile"]
+            if payload.get("agent_policy_routing"):
+                state["agent_policy_routing"] = payload["agent_policy_routing"]
             state.setdefault("recent_messages", []).append(
                 {
                     "role": "assistant",
@@ -490,8 +554,13 @@ async def _stream_graph_to_manager(
                     "type": "awaiting_confirm",
                     "itinerary": payload.get("itinerary") if isinstance(payload, dict) else None,
                     "warnings": payload.get("warnings", []) if isinstance(payload, dict) else [],
+                    "agent_policy_routing": payload.get("agent_policy_routing")
+                    if isinstance(payload, dict)
+                    else None,
                 },
             )
+            if isinstance(payload, dict) and payload.get("agent_policy_routing"):
+                state["agent_policy_routing"] = payload["agent_policy_routing"]
             await manager.save_gathering_state(session_id, state)
             await _persist_assistant_message(
                 conversation_id,
@@ -520,6 +589,8 @@ async def _stream_graph_to_manager(
             # Output node finished enrich + polish; surface prose + artifacts.
             if isinstance(payload, dict) and payload.get("content"):
                 latest_assistant_content = str(payload["content"])
+            if isinstance(payload, dict) and payload.get("agent_policy_routing"):
+                state["agent_policy_routing"] = payload["agent_policy_routing"]
             await manager.send_json(
                 session_id,
                 {
@@ -653,6 +724,68 @@ async def publish_live_stage(
             logger.warning("Failed to publish live stage for job %s: %s", job_id, exc)
 
 
+def _planning_event_message(
+    event: Any,
+    payload: dict[str, Any] | None,
+    job_id: str,
+) -> dict[str, Any]:
+    """Project a durable worker event onto the public SSE contract."""
+    body = payload or {}
+    common = {"event_id": event.id, "job_id": job_id}
+    event_type = str(event.event_type or "stage")
+
+    if event_type == "clarify":
+        messages = body.get("messages") or []
+        questions = body.get("clarification_questions") or []
+        if not questions and messages and isinstance(messages[-1], dict):
+            content = str(messages[-1].get("content") or "").strip()
+            questions = [content] if content else []
+        return {
+            **common,
+            "type": "needs_clarification",
+            "profile": body.get("profile", {}),
+            "questions": questions or ["请补充更多信息"],
+            "missing_required": body.get("missing_slots", []),
+        }
+    if event_type == "intent_ready":
+        return {
+            **common,
+            "type": "intent_ready",
+            "content": body.get("intent_ready_message")
+            or "意图识别已完成，接下来将进行大致的规划。",
+            "profile": body.get("profile", {}),
+        }
+    if event_type == "awaiting_confirm":
+        return {
+            **common,
+            "type": "awaiting_confirm",
+            "itinerary": body.get("itinerary"),
+            "warnings": body.get("warnings", []),
+            "agent_policy_routing": body.get("agent_policy_routing"),
+        }
+    if event_type in {"partial", "final"}:
+        return {
+            **common,
+            "type": event_type,
+            "stage": event.stage,
+            "payload": body,
+        }
+    if event_type == "error":
+        return {
+            **common,
+            "type": "error",
+            "stage": event.stage,
+            "error": body.get("error", "graph error"),
+        }
+    return {
+        **common,
+        "type": "stage",
+        "stage": event.stage,
+        "event_type": event_type,
+        "payload": body,
+    }
+
+
 async def push_job_status(job_id: str, session_id: str, from_event_id: int = 0) -> None:
     """Push job status events via DB polling + Redis pub/sub + token stream."""
     last_event_id = from_event_id
@@ -673,14 +806,7 @@ async def push_job_status(job_id: str, session_id: str, from_event_id: int = 0) 
                 payload = sanitize_itinerary_payload(payload)
             await manager.send_json(
                 session_id,
-                {
-                    "event_id": event.id,
-                    "type": "stage",
-                    "stage": event.stage,
-                    "event_type": event.event_type,
-                    "payload": payload,
-                    "job_id": job_id,
-                },
+                _planning_event_message(event, payload, job_id),
             )
             if event.stage == "completed" and (event.payload or {}).get("needs_human"):
                 await manager.send_json(
@@ -792,6 +918,8 @@ async def restore_session_state(session_id: str) -> None:
                 itinerary = message["itinerary"]
                 break
 
+    from graph.approval import public_approval
+
     await manager.send_json(
         session_id,
         {
@@ -805,13 +933,29 @@ async def restore_session_state(session_id: str) -> None:
             "output_pdf_url": state.get("output_pdf_url"),
             "output_excel_url": state.get("output_excel_url"),
             "output_map_url": state.get("output_map_url"),
+            "agent_policy_routing": state.get("agent_policy_routing"),
+            "pending_approval": public_approval(state.get("pending_approval")),
         },
     )
 
 
-async def delayed_cancel(job_id: str, delay: int) -> None:
-    """Cancel job after grace period if user disconnected."""
+async def delayed_cancel(
+    job_id: str,
+    delay: int,
+    *,
+    session_id: str | None = None,
+    user_id: str | None = None,
+) -> None:
+    """Cancel only when the session is still disconnected after the grace period."""
     await asyncio.sleep(delay)
+    if session_id and manager.has_live_connection(session_id):
+        return
+    if session_id and user_id:
+        try:
+            if await redis_client.get(f"sse:session:{user_id}:{session_id}") is not None:
+                return
+        except Exception:
+            logger.debug("Could not verify reconnect state for %s", session_id)
     async with async_session_maker() as db:
         repo = PlanningJobRepository(db)
         job = await repo.get(job_id)
@@ -840,7 +984,14 @@ def schedule_disconnect_cleanup(
 ) -> None:
     """On SSE/WS disconnect: delayed cancel + delayed archive for registered users."""
     if job_id:
-        asyncio.create_task(delayed_cancel(job_id, delay=30))
+        asyncio.create_task(
+            delayed_cancel(
+                job_id,
+                delay=30,
+                session_id=session_id,
+                user_id=user_id,
+            )
+        )
     if schedule_delayed_archive is not None and user_id and user_role != "guest":
         try:
             schedule_delayed_archive.delay(session_id, user_id)

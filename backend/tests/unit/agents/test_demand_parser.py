@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from agents import demand_parser
-from models.travel_slots import SlotParseOutput, TravelSlots
+from models.travel_slots import RevisionParseOutput, SlotParseOutput, TravelSlots
 
 
 @pytest.fixture
@@ -76,21 +76,18 @@ async def test_parse_maps_companion_types(parser):
 @pytest.mark.asyncio
 async def test_build_clarifying_question_lists_all_missing(parser):
     question = parser._build_clarifying_question(
-        ["origin", "travel_dates", "total_budget", "has_elderly", "has_children"],
+        ["destination", "travel_days"],
         "上海",
     )
     assert question.startswith("您需要把以下信息告诉我：")
-    assert "出发城市" in question
-    assert "出行日期" in question
-    assert "预算多少" in question
-    assert "有没有带老人" in question
-    assert "有没有带小孩" in question
+    assert "目的地" in question
+    assert "玩几天" in question
 
 
 @pytest.mark.asyncio
 async def test_build_clarifying_question_single_missing(parser):
-    question = parser._build_clarifying_question(["has_children"], "上海")
-    assert question == "您需要把这个信息告诉我：有没有带小孩。"
+    question = parser._build_clarifying_question(["travel_days"], "上海")
+    assert question == "您需要把这个信息告诉我：玩几天。"
 
 
 @pytest.mark.asyncio
@@ -102,6 +99,41 @@ async def test_parse_fills_missing_required(parser):
     assert "travel_days" in result.missing_slots
     assert result.clarifying_question.startswith("您需要把")
     assert "玩几天" in result.clarifying_question
+
+
+@pytest.mark.asyncio
+async def test_parse_requires_origin_for_explicit_intercity_transport(parser):
+    slots = TravelSlots(
+        destination="成都",
+        transport_modes_requested=["train"],
+        information_needs=["transport"],
+    )
+    fake = _make_parse_output(slots=slots)
+    with patch.object(demand_parser.llm, "structured_call", new=AsyncMock(return_value=fake)):
+        result = await parser.parse("我想坐高铁去成都", [], None)
+
+    assert result.missing_slots == ["travel_days", "origin"]
+    assert "玩几天" in result.clarifying_question
+    assert "出发城市" in result.clarifying_question
+
+
+@pytest.mark.asyncio
+async def test_transport_audit_recovers_mode_missed_by_primary_parser(parser):
+    primary = _make_parse_output(slots=TravelSlots(destination="成都"))
+    audit = demand_parser.IntercityTransportAudit(
+        explicit_request=True,
+        modes=["train"],
+        confidence=0.96,
+    )
+    with patch.object(
+        demand_parser.llm,
+        "structured_call",
+        new=AsyncMock(side_effect=[primary, audit]),
+    ):
+        result = await parser.parse("我想坐高铁去成都", [], None)
+
+    assert result.slots.transport_modes_requested == ["train"]
+    assert result.missing_slots == ["travel_days", "origin"]
 
 
 @pytest.mark.asyncio
@@ -124,8 +156,7 @@ async def test_parse_fallback_companion_couple(parser):
     assert result.slots.destination == "成都"
     assert result.slots.travel_days == 4
     assert result.slots.travel_companion == "couple"
-    assert "has_elderly" in result.missing_slots
-    assert "origin" in result.missing_slots
+    assert result.missing_slots == []
 
 
 @pytest.mark.asyncio
@@ -164,10 +195,9 @@ async def test_parse_rewrites_update_preferences_when_gathering(parser):
     }
     with patch.object(demand_parser.llm, "structured_call", new=AsyncMock(return_value=fake)):
         result = await parser.parse("5000块", [], None, known_profile=known)
-    assert result.intent == "generate_itinerary"
+    assert result.intent == "update_preferences"
     assert result.slots.total_budget == 5000
-    assert "has_elderly" in result.missing_slots
-    assert "has_children" in result.missing_slots
+    assert result.missing_slots == []
 
 
 @pytest.mark.asyncio
@@ -209,6 +239,29 @@ async def test_parse_chitchat_no_required_missing(parser):
     assert result.intent == "chitchat"
     assert result.missing_slots == []
     assert result.clarifying_question is None
+
+
+@pytest.mark.asyncio
+async def test_parse_revision_uses_structured_intent_model(parser):
+    expected = RevisionParseOutput(
+        confidence=0.96,
+        operations=[
+            {"field": "pace", "operation": "set", "value": "relaxed"},
+            {"field": "avoid_pois", "operation": "add", "value": ["博物馆"]},
+        ],
+        affected_domains=["candidates", "schedule"],
+    )
+    call = AsyncMock(return_value=expected)
+    with patch.object(demand_parser.llm, "structured_call", new=call):
+        result = await parser.parse_revision(
+            "节奏松一点，不要再安排博物馆",
+            current_goal={"hard_constraints": {"destination": "上海"}},
+        )
+
+    assert result == expected
+    assert call.await_args.kwargs["response_model"] is RevisionParseOutput
+    assert call.await_args.kwargs["task_type"] == "intent"
+    assert "节奏松一点" in call.await_args.kwargs["messages"][-1]["content"]
 
 
 def test_resolve_chinese_absolute_date_range_to_iso():

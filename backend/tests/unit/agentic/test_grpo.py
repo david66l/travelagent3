@@ -3,9 +3,18 @@
 from copy import deepcopy
 
 from agentic.environment import EnvironmentRollout
-from agentic.grpo import GRPOGroupAuditor, GRPOGroupConfig
-from agentic.reward import EpisodeReward, RewardComponents
+from agentic.grpo import (
+    GRPOGroupAuditor,
+    GRPOGroupConfig,
+    model_aware_curriculum,
+    policy_return_to_go_credit,
+    policy_turn_credit_records,
+    return_to_go_credit,
+)
+from agentic.loop import PolicyAction, PolicyContext
+from agentic.reward import EpisodeReward, RewardComponents, TurnReward
 from agentic.trajectory import AgentEpisode
+from agentic.trajectory import TrajectoryStep
 
 
 def _rollout(index: int, reward: float, *, fingerprint: str = "same") -> EnvironmentRollout:
@@ -102,3 +111,221 @@ def test_input_rollouts_are_not_mutated():
     _auditor().evaluate("group-pure", group)
 
     assert group == original
+
+
+def test_model_aware_curriculum_prioritizes_learnable_groups():
+    mixed = _auditor().evaluate(
+        "mixed", [_rollout(0, 0.8), _rollout(1, 0.4), _rollout(2, -0.3), _rollout(3, -0.6)]
+    )
+    easy = _auditor().evaluate("easy", [_rollout(index + 4, 0.8) for index in range(4)])
+
+    ranked = model_aware_curriculum([easy, mixed])
+
+    assert ranked[0].task_id == mixed.task_id
+    assert ranked[0].reason == "learnable_nonzero_variance"
+
+
+def test_return_to_go_credit_keeps_turn_signals_distinct():
+    reward = _rollout(0, 0.8).reward
+    reward.turn_rewards = [
+        TurnReward(
+            step_index=0,
+            action="search_pois",
+            format=1,
+            tool=-1,
+            grounding=1,
+            efficiency=-1,
+        ),
+        TurnReward(
+            step_index=1,
+            action="finish",
+            format=1,
+            tool=1,
+            grounding=1,
+            efficiency=1,
+        ),
+    ]
+
+    credits = return_to_go_credit(reward, gamma=0.9)
+
+    assert len(credits) == 2
+    assert credits[1] > credits[0]
+
+
+def test_policy_return_to_go_credit_excludes_controller_steps():
+    rollout = _rollout(0, 0.8)
+    context = PolicyContext(
+        trajectory_id=rollout.episode.trajectory_id,
+        goal_version=1,
+        plan_version=1,
+        original_request="plan",
+        current_subtask={"task_id": "search"},
+        hard_constraints={},
+        soft_preferences={},
+        relevant_fact_refs=[],
+        relevant_artifact_refs=[],
+        failure_summary=[],
+        remaining_tasks=1,
+        remaining_steps=2,
+        allowed_actions=["search_pois"],
+    )
+    rollout.episode.steps = [
+        TrajectoryStep(
+            step_index=0,
+            task_id="controller",
+            context=context,
+            action=PolicyAction(action="get_weather", decision_source="controller"),
+            state_before_hash="a",
+            state_after_hash="b",
+        ),
+        TrajectoryStep(
+            step_index=1,
+            task_id="search",
+            context=context,
+            action=PolicyAction(action="search_pois", decision_source="policy"),
+            state_before_hash="b",
+            state_after_hash="c",
+        ),
+    ]
+    rollout.reward.turn_rewards = [
+        TurnReward(
+            step_index=0,
+            action="get_weather",
+            format=-1,
+            tool=-1,
+            grounding=-1,
+            efficiency=-1,
+        ),
+        TurnReward(
+            step_index=1,
+            action="search_pois",
+            format=1,
+            tool=1,
+            grounding=1,
+            efficiency=1,
+        ),
+    ]
+
+    credits = policy_return_to_go_credit(rollout.reward, rollout.episode, gamma=1)
+
+    assert credits == [0.9]
+
+
+def test_policy_credit_discount_distance_counts_only_model_decisions():
+    rollout = _rollout(0, 1.0)
+    context = PolicyContext(
+        trajectory_id=rollout.episode.trajectory_id,
+        goal_version=1,
+        plan_version=1,
+        original_request="plan",
+        current_subtask={"task_id": "search"},
+        hard_constraints={},
+        soft_preferences={},
+        relevant_fact_refs=[],
+        relevant_artifact_refs=[],
+        failure_summary=[],
+        remaining_tasks=1,
+        remaining_steps=4,
+        allowed_actions=["search_pois", "finish"],
+    )
+    rollout.episode.steps = [
+        TrajectoryStep(
+            step_index=index,
+            task_id="search",
+            context=context,
+            action=PolicyAction(action=action, decision_source=source),
+            state_before_hash=f"before-{index}",
+            state_after_hash=f"after-{index}",
+        )
+        for index, (action, source) in enumerate(
+            [
+                ("get_weather", "controller"),
+                ("search_pois", "policy"),
+                ("get_route_matrix", "controller"),
+                ("finish", "policy"),
+            ]
+        )
+    ]
+    rollout.reward.episode_reward = 1.0
+    rollout.reward.turn_rewards = [
+        TurnReward(
+            step_index=index,
+            action=step.action.action,
+            format=1,
+            tool=1,
+            grounding=1,
+            efficiency=1,
+        )
+        for index, step in enumerate(rollout.episode.steps)
+    ]
+
+    records = policy_turn_credit_records(rollout.reward, rollout.episode, gamma=0.5)
+
+    assert [item.terminal_distance for item in records] == [1, 0]
+    assert [item.credit for item in records] == [0.75, 1.0]
+
+
+def test_validity_gate_blocks_success_from_washing_invalid_actions():
+    rollout = _rollout(0, 1.0)
+    context = PolicyContext(
+        trajectory_id=rollout.episode.trajectory_id,
+        goal_version=1,
+        plan_version=1,
+        original_request="plan",
+        current_subtask={"task_id": "search"},
+        hard_constraints={},
+        soft_preferences={},
+        relevant_fact_refs=[],
+        relevant_artifact_refs=[],
+        failure_summary=[],
+        remaining_tasks=1,
+        remaining_steps=3,
+        allowed_actions=["search_pois"],
+    )
+    rollout.episode.steps = [
+        TrajectoryStep(
+            step_index=index,
+            task_id="search",
+            context=context,
+            action=PolicyAction(action="search_pois", decision_source="policy"),
+            state_before_hash=f"before-{index}",
+            state_after_hash=f"after-{index}",
+        )
+        for index in range(3)
+    ]
+    rollout.reward.episode_reward = 1.0
+    rollout.reward.turn_rewards = [
+        TurnReward(
+            step_index=0,
+            action="search_pois",
+            format=-1,
+            tool=-1,
+            grounding=-1,
+            efficiency=-1,
+            validity="invalid",
+            future_credit_eligible=False,
+        ),
+        TurnReward(
+            step_index=1,
+            action="search_pois",
+            format=1,
+            tool=-0.5,
+            grounding=1,
+            efficiency=0,
+            validity="external_failure",
+            future_credit_eligible=False,
+        ),
+        TurnReward(
+            step_index=2,
+            action="search_pois",
+            format=1,
+            tool=1,
+            grounding=1,
+            efficiency=1,
+        ),
+    ]
+
+    records = policy_turn_credit_records(rollout.reward, rollout.episode, gamma=0.9)
+
+    assert [item.credit for item in records] == [-1.0, 0.0, 1.0]
+    assert [item.future_credit_eligible for item in records] == [False, False, True]

@@ -1,11 +1,10 @@
 """Archived dead-letter records (PRD §4.7.4)."""
 
 import uuid
-from datetime import datetime
-
 from sqlalchemy import Column, DateTime, String, Text, JSON
 
 from core.database import Base
+from core.clock import utc_now_naive
 
 
 class DeadLetterArchive(Base):
@@ -25,4 +24,4 @@ class DeadLetterArchive(Base):
     exception_type = Column(String(256), nullable=True)
     traceback = Column(Text, nullable=True)
     failed_at = Column(DateTime, nullable=True)
-    archived_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    archived_at = Column(DateTime, default=utc_now_naive, nullable=False, index=True)

@@ -43,6 +43,10 @@ class PlanningJobService(BaseService):
         """Fetch a planning job by ID."""
         return await self.repo.get_by_id(job_id)
 
+    async def commit_created_job(self) -> None:
+        """Make a newly created job visible before it is dispatched."""
+        await self.repo.db.commit()
+
     async def update_status(self, job_id: str, status: str) -> bool:
         """Update the status of a planning job."""
         rowcount = await self.repo.update_status(job_id, status)

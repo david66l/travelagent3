@@ -11,9 +11,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from contextlib import asynccontextmanager
 from copy import deepcopy
-from datetime import datetime
 from typing import Any, AsyncIterator, Optional, cast
 from uuid import UUID
 
@@ -217,7 +217,7 @@ class MemoryManager:
             "recent_messages": recent[-5:],
             "message_count": len(recent),
             "_compressed": True,
-            "compressed_at": int(datetime.utcnow().timestamp()),
+            "compressed_at": int(time.time()),
         }
         return summary
 

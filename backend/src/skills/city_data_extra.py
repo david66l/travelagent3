@@ -13,7 +13,7 @@ from schemas import Location, ScoredPOI
 
 def _jitter(name: str, lat: float, lng: float) -> Location:
     """Return a deterministic but slightly jittered location."""
-    h = int(hashlib.md5(name.encode("utf-8")).hexdigest(), 16)
+    h = int(hashlib.sha256(name.encode("utf-8")).hexdigest(), 16)
     dlat = ((h % 200) - 100) / 1000.0  # ±0.10°
     dlng = (((h // 200) % 200) - 100) / 1000.0
     return Location(lat=round(lat + dlat, 5), lng=round(lng + dlng, 5))

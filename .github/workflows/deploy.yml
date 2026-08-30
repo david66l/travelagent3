@@ -1,23 +1,23 @@
 name: Deploy
 
-# Build production images, push to registry, and trigger ArgoCD sync (M5).
-# Runs automatically on main branch pushes, or manually via workflow_dispatch.
+# Build production images, scan them, update immutable GitOps tags, and trigger
+# ArgoCD only after the unified CI workflow has succeeded on main.
 on:
-  push:
-    branches: [main, master]
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
   workflow_dispatch:
     inputs:
       environment:
         description: "Target environment"
         required: true
-        default: "staging"
+        default: "production"
         type: choice
         options:
-          - staging
           - production
 
 concurrency:
-  group: deploy-${{ github.ref }}
+  group: deploy-production
   cancel-in-progress: false
 
 env:
@@ -33,23 +33,36 @@ jobs:
   build-and-push:
     name: Build & Push Images
     runs-on: ubuntu-latest
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.actor.login != 'github-actions[bot]')
+    environment: ${{ github.event.inputs.environment || 'production' }}
     permissions:
       contents: read
       packages: write
     outputs:
       image_tag: ${{ steps.meta.outputs.version }}
+      source_sha: ${{ steps.meta.outputs.source_sha }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Set image tag
         id: meta
+        env:
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            VERSION="${{ github.event.inputs.environment }}-${{ github.sha }}"
+            VERSION="${{ github.event.inputs.environment }}-${SOURCE_SHA}"
           else
-            VERSION="${{ github.sha }}"
+            VERSION="${SOURCE_SHA}"
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "source_sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
           echo "IMAGE_TAG=$VERSION" >> "$GITHUB_ENV"
 
       - name: Set up Docker Buildx
@@ -70,7 +83,6 @@ jobs:
           push: true
           tags: |
             ${{ env.IMAGE_PREFIX }}/travel-agent-backend:${{ env.IMAGE_TAG }}
-            ${{ env.IMAGE_PREFIX }}/travel-agent-backend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -82,7 +94,6 @@ jobs:
           push: true
           tags: |
             ${{ env.IMAGE_PREFIX }}/travel-agent-frontend:${{ env.IMAGE_TAG }}
-            ${{ env.IMAGE_PREFIX }}/travel-agent-frontend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -94,21 +105,32 @@ jobs:
           push: true
           tags: |
             ${{ env.IMAGE_PREFIX }}/travel-agent-gateway:${{ env.IMAGE_TAG }}
-            ${{ env.IMAGE_PREFIX }}/travel-agent-gateway:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Build and push vLLM
-        uses: docker/build-push-action@v5
+      - name: Scan backend image for fixable high/critical CVEs
+        uses: aquasecurity/trivy-action@0.28.0
         with:
-          context: .
-          file: ./Dockerfile.vllm
-          push: true
-          tags: |
-            ${{ env.IMAGE_PREFIX }}/travel-agent-vllm:${{ env.IMAGE_TAG }}
-            ${{ env.IMAGE_PREFIX }}/travel-agent-vllm:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          image-ref: ${{ env.IMAGE_PREFIX }}/travel-agent-backend:${{ env.IMAGE_TAG }}
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Scan frontend image for fixable high/critical CVEs
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.IMAGE_PREFIX }}/travel-agent-frontend:${{ env.IMAGE_TAG }}
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Scan gateway image for fixable high/critical CVEs
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.IMAGE_PREFIX }}/travel-agent-gateway:${{ env.IMAGE_TAG }}
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
 
   # -------------------------------------------------------------------------
   # Update image tags in K8s manifests and commit back (GitOps)
@@ -117,28 +139,35 @@ jobs:
     name: Update K8s Manifests
     runs-on: ubuntu-latest
     needs: build-and-push
-    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          ref: main
 
       - name: Update image tags
         env:
           IMAGE_TAG: ${{ needs.build-and-push.outputs.image_tag }}
+          SOURCE_SHA: ${{ needs.build-and-push.outputs.source_sha }}
         run: |
+          CURRENT_SHA="$(git rev-parse HEAD)"
+          if [ "$CURRENT_SHA" != "$SOURCE_SHA" ]; then
+            echo "Refusing stale deploy: built $SOURCE_SHA but main is $CURRENT_SHA" >&2
+            exit 1
+          fi
           sed -i \
             "s|image: ghcr.io/travelagent/travel-agent-backend:.*|image: ghcr.io/travelagent/travel-agent-backend:${IMAGE_TAG}|g" \
-            k8s/backend-deployment.yaml k8s/celery-worker-deployment.yaml k8s/celery-beat-deployment.yaml
+            k8s/backend-deployment.yaml k8s/celery-worker-deployment.yaml \
+            k8s/celery-beat-deployment.yaml k8s/vrp-solver-deployment.yaml \
+            k8s/migration-job.yaml
           sed -i \
             "s|image: ghcr.io/travelagent/travel-agent-frontend:.*|image: ghcr.io/travelagent/travel-agent-frontend:${IMAGE_TAG}|g" \
             k8s/frontend-deployment.yaml
           sed -i \
             "s|image: ghcr.io/travelagent/travel-agent-gateway:.*|image: ghcr.io/travelagent/travel-agent-gateway:${IMAGE_TAG}|g" \
             k8s/gateway-deployment.yaml
-          sed -i \
-            "s|image: ghcr.io/travelagent/travel-agent-vllm:.*|image: ghcr.io/travelagent/travel-agent-vllm:${IMAGE_TAG}|g" \
-            k8s/vllm-deployment.yaml
 
       - name: Commit and push
         run: |
@@ -149,7 +178,7 @@ jobs:
             echo "No manifest changes to commit."
             exit 0
           fi
-          git commit -m "chore(k8s): deploy ${{ needs.build-and-push.outputs.image_tag }}"
+          git commit -m "chore(k8s): deploy ${{ needs.build-and-push.outputs.image_tag }} [skip ci]"
           git push
 
   # -------------------------------------------------------------------------
@@ -159,12 +188,17 @@ jobs:
     name: ArgoCD Sync
     runs-on: ubuntu-latest
     needs: [build-and-push, update-manifests]
-    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    environment: ${{ github.event.inputs.environment || 'production' }}
     steps:
       - name: Install ArgoCD CLI
         run: |
-          curl -sSL -o /tmp/argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
-          chmod +x /tmp/argocd
+          ARGOCD_VERSION="v3.5.2"
+          curl -fsSLo /tmp/argocd-linux-amd64 \
+            "https://github.com/argoproj/argo-cd/releases/download/${ARGOCD_VERSION}/argocd-linux-amd64"
+          curl -fsSLo /tmp/cli_checksums.txt \
+            "https://github.com/argoproj/argo-cd/releases/download/${ARGOCD_VERSION}/cli_checksums.txt"
+          (cd /tmp && grep ' argocd-linux-amd64$' cli_checksums.txt | sha256sum --check --strict)
+          install -m 0755 /tmp/argocd-linux-amd64 /tmp/argocd
 
       - name: Sync application
         run: |

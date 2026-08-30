@@ -2,15 +2,23 @@
 
 import json
 
+import pytest
+
 from agentic.environment import (
     EnvironmentSnapshot,
     EnvironmentTask,
+    SnapshotToolResponse,
     SnapshotToolExecutor,
     TravelAgentEnvironment,
     create_rollout_group,
 )
 from agentic.loop import PolicyAction, PolicyContext
-from agentic.trl_environment import TRLTravelEnvironment
+from agentic.trl_environment import (
+    TRLClarificationEnvironment,
+    TRLSearchEnvironment,
+    TRLTradeoffEnvironment,
+    TRLTravelEnvironment,
+)
 
 
 class FirstAllowedPolicy:
@@ -164,6 +172,112 @@ async def test_snapshot_fault_sequence_is_local_to_executor():
     assert first.call_counts == second.call_counts == {"get_weather": 1}
 
 
+async def test_snapshot_contract_selects_response_by_arguments_not_position():
+    snapshot = _snapshot()
+    snapshot.tool_responses["get_poi_detail"] = [
+        SnapshotToolResponse(
+            data={"name": "Restaurant"},
+            expected_arguments={"poi_name": "Restaurant", "city": "Shanghai"},
+        ),
+        SnapshotToolResponse(
+            data={"name": "Museum"},
+            expected_arguments={"poi_name": "Museum", "city": "Shanghai"},
+        ),
+    ]
+    executor = SnapshotToolExecutor(snapshot)
+    call = {
+        "id": "detail-1",
+        "type": "function",
+        "function": {
+            "name": "get_poi_detail",
+            "arguments": json.dumps({"poi_name": "Museum", "city": "Shanghai"}),
+        },
+    }
+
+    record = (await executor.execute([call], {"allowed_tools": {"get_poi_detail"}}))[0]
+
+    assert record["observation"]["ok"] is True
+    assert record["observation"]["data"]["name"] == "Museum"
+
+
+async def test_context_tolerant_keyword_contract_ignores_only_out_of_contract_context():
+    snapshot = _snapshot()
+    snapshot.tool_responses["search_pois"] = [
+        SnapshotToolResponse(
+            data=None,
+            data_source="unavailable",
+            expected_arguments={"keywords": ["历史", "博物馆"]},
+            argument_match_mode="context_tolerant_keywords",
+            ignored_keyword_values=["上海", "2026-08-12"],
+            error_code="QUERY_TOO_BROAD",
+            retryable=True,
+        ),
+        SnapshotToolResponse(
+            data=[{"name": "Museum"}],
+            expected_arguments={"keywords": ["历史"]},
+            argument_match_mode="context_tolerant_keywords",
+            ignored_keyword_values=["上海", "2026-08-12"],
+        ),
+    ]
+    executor = SnapshotToolExecutor(snapshot)
+    unexpected_executor = SnapshotToolExecutor(snapshot)
+
+    unexpected = await unexpected_executor.execute(
+        [
+            {
+                "id": "search-unexpected",
+                "type": "function",
+                "function": {
+                    "name": "search_pois",
+                    "arguments": json.dumps(
+                        {
+                            "city": "Shanghai",
+                            "keywords": ["历史", "博物馆", "购物"],
+                        }
+                    ),
+                },
+            }
+        ],
+        {"allowed_tools": {"search_pois"}},
+    )
+
+    broad = await executor.execute(
+        [
+            {
+                "id": "search-1",
+                "type": "function",
+                "function": {
+                    "name": "search_pois",
+                    "arguments": json.dumps(
+                        {
+                            "city": "Shanghai",
+                            "keywords": ["历史", "博物馆", "上海", "2026-08-12"],
+                        }
+                    ),
+                },
+            }
+        ],
+        {"allowed_tools": {"search_pois"}},
+    )
+    narrowed = await executor.execute(
+        [
+            {
+                "id": "search-2",
+                "type": "function",
+                "function": {
+                    "name": "search_pois",
+                    "arguments": json.dumps({"city": "Shanghai", "keywords": ["历史", "上海"]}),
+                },
+            }
+        ],
+        {"allowed_tools": {"search_pois"}},
+    )
+
+    assert broad[0]["observation"]["error"]["code"] == "QUERY_TOO_BROAD"
+    assert narrowed[0]["observation"]["ok"] is True
+    assert unexpected[0]["observation"]["error"]["code"] == ("SNAPSHOT_ARGUMENT_MISMATCH")
+
+
 async def test_trl_environment_runs_production_loop_and_six_component_reward():
     environment = TRLTravelEnvironment()
 
@@ -180,22 +294,45 @@ async def test_trl_environment_runs_production_loop_and_six_component_reward():
         "abort",
     ]
 
-    await environment.capability_check()
-    await environment.get_weather()
-    await environment.search_pois()
-    await environment.get_poi_detail()
-    await environment.get_route_matrix()
-    await environment.solve_itinerary()
-    await environment.validate_itinerary()
-    await environment.compose_draft()
-    terminal = json.loads(await environment.finish())
-    reward = await environment.get_reward()
+    transitions = [
+        json.loads(environment.capability_check()),
+        json.loads(environment.get_weather()),
+        json.loads(environment.search_pois()),
+        json.loads(environment.accept_candidates()),
+        json.loads(environment.get_poi_detail()),
+        json.loads(environment.get_route_matrix()),
+        json.loads(environment.solve_itinerary()),
+        json.loads(environment.validate_itinerary()),
+        json.loads(environment.accept_itinerary()),
+        json.loads(environment.compose_draft()),
+    ]
+    terminal = json.loads(environment.finish())
+    reward = environment.get_reward()
 
     assert terminal["done"] is True
     assert terminal["termination_reason"] == "awaiting_user"
     assert reward > 0
     assert environment.reward_record is not None
     assert environment.reward_record.gate_status == "passed"
+    policy_steps = [
+        step
+        for step in environment._session.recorder.episode.steps
+        if step.action.decision_source != "controller"
+    ]
+    assert all(transition["done"] is False for transition in transitions)
+    assert [step.action.action for step in policy_steps] == [
+        "capability_check",
+        "get_weather",
+        "search_pois",
+        "accept_candidates",
+        "get_poi_detail",
+        "get_route_matrix",
+        "solve_itinerary",
+        "validate_itinerary",
+        "accept_itinerary",
+        "compose_draft",
+        "finish",
+    ]
     assert set(environment.reward_record.components.model_dump()) == {
         "task",
         "constraint",
@@ -214,8 +351,99 @@ async def test_trl_environment_rejects_out_of_state_action_without_state_write()
         snapshot=_snapshot().model_dump(mode="json"),
     )
 
-    transition = json.loads(await environment.finish())
+    transition = json.loads(environment._act("get_weather", {}))
 
     assert transition["done"] is False
     assert transition["last_transition"]["verification"]["error_code"] == "ACTION_NOT_ALLOWED"
-    assert "capability_check" in transition["policy_state"]["allowed_actions"]
+    assert transition["policy_state"]["allowed_actions"] == [
+        "capability_check",
+        "ask_user",
+        "propose_tradeoff",
+        "abort",
+    ]
+    environment.get_reward()
+
+
+def test_trl_policy_driven_environment_rejects_teacher_trajectory_prefix():
+    environment = TRLTravelEnvironment()
+
+    with pytest.raises(ValueError, match="trajectory prefixes are forbidden"):
+        environment.reset(
+            task=_task().model_dump(mode="json"),
+            snapshot=_snapshot().model_dump(mode="json"),
+            prompt=[
+                {"role": "system", "content": "policy"},
+                {"role": "user", "content": _task().user_request},
+                {"role": "assistant", "content": "teacher action"},
+            ],
+        )
+
+
+def test_trl_rollout_audit_records_each_verified_turn_and_reward(tmp_path, monkeypatch):
+    audit_path = tmp_path / "rollouts.jsonl"
+    monkeypatch.setenv("AGENTIC_GRPO_AUDIT_PATH", str(audit_path))
+    environment = TRLTravelEnvironment()
+    environment.reset(
+        task=_task().model_dump(mode="json"),
+        snapshot=_snapshot().model_dump(mode="json"),
+    )
+    environment.capability_check()
+    environment.get_weather()
+    environment.search_pois()
+    environment.accept_candidates()
+    environment.get_poi_detail()
+    environment.get_route_matrix()
+    environment.solve_itinerary()
+    environment.validate_itinerary()
+    environment.accept_itinerary()
+    environment.compose_draft()
+    environment.finish()
+    environment.get_reward()
+
+    records = [json.loads(line) for line in audit_path.read_text(encoding="utf-8").splitlines()]
+    reward_record = records[-1]
+
+    assert reward_record["event"] == "reward"
+    assert reward_record["execution_mode"] == "policy_driven"
+    assert reward_record["rollout_contract"] == "fresh_ledger_no_teacher_prefix.v1"
+    assert len(reward_record["steps"]) == 11
+    assert all(step["verification"] for step in reward_record["steps"])
+    assert all(step["turn_reward"] is not None for step in reward_record["steps"])
+    assert reward_record["steps"][0]["decision_cardinality"] == 4
+    assert reward_record["steps"][1]["decision_cardinality"] == 1
+
+
+def test_trl_environments_expose_only_state_specific_policy_tools():
+    import inspect
+
+    def tools(environment):
+        return {
+            name
+            for name, member in inspect.getmembers(environment, predicate=inspect.ismethod)
+            if name not in {"reset", "get_reward"} and not name.startswith("_")
+        }
+
+    assert tools(TRLSearchEnvironment()) == {"search_pois"}
+    assert tools(TRLClarificationEnvironment()) == {"ask_user"}
+    assert tools(TRLTradeoffEnvironment()) == {"abort", "propose_tradeoff"}
+    assert tools(TRLTravelEnvironment()) == {
+        "accept_candidates",
+        "accept_itinerary",
+        "abort",
+        "ask_user",
+        "capability_check",
+        "compose_draft",
+        "finish",
+        "finalize_research",
+        "get_poi_detail",
+        "get_route_matrix",
+        "get_weather",
+        "propose_tradeoff",
+        "retrieve_city_knowledge",
+        "retry_solve",
+        "search_current_info",
+        "search_pois",
+        "search_transport",
+        "solve_itinerary",
+        "validate_itinerary",
+    }

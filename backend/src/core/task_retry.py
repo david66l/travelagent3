@@ -14,6 +14,28 @@ _RETRYABLE_EXCEPTIONS: tuple[Type[BaseException], ...] = (
     OSError,
 )
 
+_RETRYABLE_EXCEPTION_NAMES = {
+    "ConnectError",
+    "ConnectTimeout",
+    "ConnectionError",
+    "ConnectionResetError",
+    "DisconnectionError",
+    "InterfaceError",
+    "OperationalError",
+    "ReadTimeout",
+    "RedisError",
+    "TimeoutError",
+}
+
+
+class RetryableTaskError(RuntimeError):
+    """An explicitly classified transient failure safe to execute again."""
+
+
+class NonRetryableTaskError(RuntimeError):
+    """A deterministic task failure that must not be replayed."""
+
+
 _RETRY_KEY_PREFIX = "task_retry:"
 
 
@@ -43,16 +65,29 @@ async def reset_retry(task_name: str, job_id: str) -> None:
 
 
 def is_retryable(exc: BaseException) -> bool:
-    """Non-retryable: validation, permission, user cancel semantics."""
-    if isinstance(exc, (ValueError, PermissionError, KeyError, TypeError)):
-        return False
-    if isinstance(exc, _RETRYABLE_EXCEPTIONS):
-        return True
-    name = type(exc).__name__
-    if name in ("TimeoutError", "ConnectError", "ReadTimeout", "ConnectTimeout"):
-        return True
-    # LLM / external API transient failures often surface as RuntimeError
-    return True
+    """Return true only for explicit or recognisable transient failures.
+
+    Unknown programming errors default to non-retryable. Retrying every
+    ``RuntimeError`` can repeat costly model/tool side effects and hide defects.
+    Wrapped timeout/connection/database errors are still detected through the
+    exception cause chain.
+    """
+    current: BaseException | None = exc
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(current, NonRetryableTaskError):
+            return False
+        if isinstance(current, RetryableTaskError):
+            return True
+        if isinstance(current, (ValueError, PermissionError, KeyError, TypeError)):
+            return False
+        if isinstance(current, _RETRYABLE_EXCEPTIONS):
+            return True
+        if type(current).__name__ in _RETRYABLE_EXCEPTION_NAMES:
+            return True
+        current = current.__cause__ or current.__context__
+    return False
 
 
 def compute_retry_delay(

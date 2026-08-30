@@ -96,7 +96,12 @@ class AgentState(TypedDict):
     agent_step: NotRequired[int]
     subtask_step: NotRequired[int]
     agent_status: NotRequired[str]
+    agent_execution_mode: NotRequired[str]
+    agent_policy_routing: NotRequired[dict[str, Any]]
     termination_reason: NotRequired[str | None]
+    shadow_scenario_id: NotRequired[str]
+    shadow_input_hash: NotRequired[str]
+    shadow_status: NotRequired[str]
     # Accumulator: nodes return only their *new* warnings; the reducer concatenates.
     # NOTE: Annotated must be top-level (not wrapped in NotRequired) for LangGraph
     # to detect the reducer; the channel still defaults to [] when unset.
@@ -126,6 +131,7 @@ class AgentState(TypedDict):
     # (external_event for in-trip replanning is declared in the perception layer)
     confirm_decision: NotRequired[str | None]
     pending_change: NotRequired[dict[str, Any] | None]
+    pending_approval: NotRequired[dict[str, Any] | None]
 
     # Session / routing context
     session_id: NotRequired[str]

@@ -1,0 +1,71 @@
+# Idempotent Redis Cluster bootstrap.  This runs after the StatefulSet and
+# Services (wave -2) are healthy and before application workloads (wave 0).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: travel-agent-redis-cluster-init
+  namespace: travel-agent
+  annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/sync-wave: "-1"
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: 300
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        app: redis-cluster-init
+    spec:
+      restartPolicy: Never
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: bootstrap
+          image: redis@sha256:e7723ff73d963f5cc6d9c4643ea3d989527a402a319239054e9472a7fb9219a2
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              nodes=""
+              for ordinal in 0 1 2 3 4 5; do
+                host="redis-${ordinal}.redis"
+                until redis-cli -h "$host" ping 2>/dev/null | grep -q PONG; do
+                  echo "waiting for ${host}"
+                  sleep 2
+                done
+                nodes="${nodes} ${host}:6379"
+              done
+
+              if redis-cli -h redis-0.redis cluster info 2>/dev/null \
+                | grep -q 'cluster_state:ok'; then
+                echo "Redis cluster is already healthy."
+                exit 0
+              fi
+
+              redis-cli --cluster create ${nodes} \
+                --cluster-replicas 1 --cluster-yes
+              until redis-cli -h redis-0.redis cluster info 2>/dev/null \
+                | grep -q 'cluster_state:ok'; do
+                echo "waiting for Redis cluster convergence"
+                sleep 2
+              done
+              echo "Redis cluster bootstrap complete."
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 999
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL

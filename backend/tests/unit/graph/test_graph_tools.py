@@ -1,10 +1,40 @@
 """Tests for tool_call_node and output_node integration."""
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from graph.nodes import output_node, tool_call_node
+from graph.nodes import _agent_clarification_message, output_node, tool_call_node
+
+
+def test_event_tradeoff_hides_internal_verifier_language():
+    ledger = SimpleNamespace(
+        failures=[
+            SimpleNamespace(
+                message="EVENT_FIELDS_INCOMPLETE:start_time, EVENT_VENUE_UNGROUNDED:lat,lng"
+            )
+        ],
+        goal=SimpleNamespace(
+            hard_constraints={
+                "event_query": "某演唱会",
+                "start_date": "2026-10-01",
+            }
+        ),
+    )
+    artifact = SimpleNamespace(
+        payload={
+            "reason": "finalize_research verifier failed",
+            "options": ["retry verifier"],
+        }
+    )
+
+    question, options = _agent_clarification_message(ledger, artifact)
+
+    assert "2026-10-01" in question
+    assert "官方活动页" in question
+    assert "verifier" not in question
+    assert len(options) == 3
 
 
 @pytest.mark.asyncio
@@ -70,9 +100,9 @@ async def test_output_node_populates_urls():
         ),
     ):
         with patch(
-            "agents.output_format.output_format_agent.stream_markdown",
+            "agents.output_format.output_format_agent.stream_existing_markdown",
             new=AsyncMock(return_value="# 北京"),
-        ):
+        ) as stream_existing:
             with patch(
                 "agents.output_format.output_format_agent.build_artifacts",
                 new=AsyncMock(return_value={"pdf": None, "excel": None, "map": None}),
@@ -81,3 +111,4 @@ async def test_output_node_populates_urls():
 
     assert "output_markdown" in result
     assert result["messages"][-1]["content"] == "# 北京"
+    stream_existing.assert_awaited_once()

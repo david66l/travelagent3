@@ -1,10 +1,11 @@
 """Log analytics engine for monitoring planning failures, user intents, and destination satisfaction."""
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Any
 
 from sqlalchemy import select
 
+from core.clock import utc_now
 from models import Itinerary, PlanningJob, UserModificationLog
 
 
@@ -77,7 +78,7 @@ class LogAnalyticsEngine:
             return []
 
         try:
-            cutoff = datetime.utcnow() - timedelta(hours=hours)
+            cutoff = utc_now() - timedelta(hours=hours)
             stmt = (
                 select(PlanningJob)
                 .where(PlanningJob.status == "failed")
@@ -121,7 +122,7 @@ class LogAnalyticsEngine:
             return []
 
         try:
-            cutoff = datetime.utcnow() - timedelta(hours=hours)
+            cutoff = utc_now() - timedelta(hours=hours)
             stmt = select(UserModificationLog).where(UserModificationLog.created_at >= cutoff)
             result = await db_session.execute(stmt)
             rows = result.scalars().all()
@@ -162,7 +163,7 @@ class LogAnalyticsEngine:
             return []
 
         try:
-            cutoff = datetime.utcnow() - timedelta(days=days)
+            cutoff = utc_now() - timedelta(days=days)
             stmt = select(Itinerary).where(Itinerary.created_at >= cutoff)
             result = await db_session.execute(stmt)
             rows = result.scalars().all()

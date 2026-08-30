@@ -13,7 +13,8 @@ def test_default_graph_keeps_solver_and_validator_gates():
 
     DefaultTaskGraphPlanner.ensure_mandatory_gates(graph)
     assert graph.get("validate_itinerary").depends_on == ("solve_itinerary",)
-    assert graph.get("compose_draft").depends_on == ("validate_itinerary",)
+    assert graph.get("review_itinerary").depends_on == ("validate_itinerary",)
+    assert graph.get("compose_draft").depends_on == ("review_itinerary",)
 
 
 def test_missing_user_information_becomes_explicit_task():

@@ -85,3 +85,52 @@ groups:
           severity: critical
         annotations:
           summary: "Core dependency health check failing"
+      - alert: AgentSemanticFailureRateHigh
+        expr: |
+          sum(rate(agent_terminal_outcomes_total{outcome="failed"}[10m])) /
+          clamp_min(sum(rate(agent_terminal_outcomes_total[10m])), 0.001) > 0.10
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Agent terminal failure rate exceeds 10%"
+      - alert: AgentClarificationRateHigh
+        expr: |
+          sum(rate(agent_terminal_outcomes_total{outcome="clarify"}[15m])) /
+          clamp_min(sum(rate(agent_terminal_outcomes_total[15m])), 0.001) > 0.40
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Agent clarification rate exceeds 40%; inspect intent or retrieval quality"
+      - alert: PlanningNotificationFailures
+        expr: increase(planning_job_notification_failures_total[5m]) > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Redis notifications are failing after durable DB commits"
+      - alert: PlanningRetryExhausted
+        expr: increase(planning_task_retry_outcomes_total{outcome="exhausted"}[10m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "At least one planning task exhausted its retry budget"
+      - alert: SessionLockContentionHigh
+        expr: |
+          histogram_quantile(0.99,
+            sum(rate(session_run_lock_wait_seconds_bucket{outcome="acquired"}[10m])) by (le)
+          ) > 5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Per-conversation serialization lock P99 wait exceeds 5 seconds"
+      - alert: IdempotencyConflictSpike
+        expr: increase(chat_idempotency_total{outcome="conflict"}[10m]) > 20
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Idempotency-key conflicts spiking; inspect client reuse or abuse"

@@ -28,6 +28,36 @@
       "title": "LLM Token Usage",
       "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12},
       "targets": [{"expr": "sum(rate(llm_token_usage_total[5m])) by (model)", "refId": "A"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Agent Terminal Outcomes",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
+      "targets": [{"expr": "sum(rate(agent_terminal_outcomes_total[5m])) by (outcome)", "legendFormat": "{{outcome}}", "refId": "A"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Session Lock Wait P95/P99",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12},
+      "targets": [
+        {"expr": "histogram_quantile(0.95, sum(rate(session_run_lock_wait_seconds_bucket[5m])) by (le))", "legendFormat": "p95", "refId": "A"},
+        {"expr": "histogram_quantile(0.99, sum(rate(session_run_lock_wait_seconds_bucket[5m])) by (le))", "legendFormat": "p99", "refId": "B"}
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Idempotency and Retry Decisions",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 20},
+      "targets": [
+        {"expr": "sum(rate(chat_idempotency_total[5m])) by (outcome)", "legendFormat": "idempotency {{outcome}}", "refId": "A"},
+        {"expr": "sum(rate(planning_task_retry_outcomes_total[5m])) by (outcome)", "legendFormat": "retry {{outcome}}", "refId": "B"}
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Notification Failures (1h)",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 20},
+      "targets": [{"expr": "increase(planning_job_notification_failures_total[1h])", "refId": "A"}]
     }
   ]
 }

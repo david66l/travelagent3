@@ -5,10 +5,11 @@ import { useChatStore } from "@/stores/chatStore";
 import { cn } from "@/lib/utils";
 
 interface SidebarProps {
-  onNewChat: () => void;
+  onNewChat: () => void | Promise<void>;
+  isStartingNewChat?: boolean;
 }
 
-export function Sidebar({ onNewChat }: SidebarProps) {
+export function Sidebar({ onNewChat, isStartingNewChat = false }: SidebarProps) {
   const store = useChatStore();
   const { chatSnapshots, trips, activeView, setActiveView, loadTrip, restoreChat } = store;
 
@@ -42,9 +43,10 @@ export function Sidebar({ onNewChat }: SidebarProps) {
       {/* New Chat Button */}
       <button
         onClick={onNewChat}
-        className="btn-primary-dark w-full text-center transition-colors"
+        disabled={isStartingNewChat}
+        className="btn-primary-dark w-full text-center transition-colors disabled:cursor-wait disabled:opacity-60"
       >
-        新建对话
+        {isStartingNewChat ? "正在新建…" : "新建对话"}
       </button>
 
       {/* Current Trip Button */}

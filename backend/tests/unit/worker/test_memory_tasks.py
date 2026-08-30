@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 from unittest.mock import AsyncMock, patch
 
@@ -35,6 +36,17 @@ def test_archive_session_task_delays_to_memory_manager():
 
     assert result.get() is True
     mock_archive.assert_awaited_once_with("session-1", "user-1", None)
+
+
+def test_run_async_uses_psycopg_compatible_loop_on_windows():
+    async def _loop_name() -> str:
+        return type(asyncio.get_running_loop()).__name__
+
+    with patch.object(memory_tasks, "_worker_loop", None):
+        name = memory_tasks._run_async(_loop_name())
+
+    if memory_tasks.sys.platform == "win32":
+        assert "Selector" in name
 
 
 def test_archive_session_task_retries_on_failure():

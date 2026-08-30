@@ -3,6 +3,8 @@ import {
   useChatStore,
   type ConfirmedInfo,
   type PreferencePanel,
+  type PolicyRoutingSummary,
+  type PendingApproval,
 } from "@/stores/chatStore";
 import { labelForStage, resolveActivityPhase } from "@/lib/stageLabels";
 
@@ -139,12 +141,34 @@ function applyServerBudget(raw: unknown) {
   });
 }
 
+function applyPolicyRouting(raw: unknown) {
+  if (!raw || typeof raw !== "object") return;
+  const summary = raw as Partial<PolicyRoutingSummary>;
+  if (
+    summary.schema_version !== "agent-policy-routing-summary.v1" ||
+    !summary.route_counts ||
+    !Array.isArray(summary.decisions)
+  ) {
+    return;
+  }
+  useChatStore.getState().setPolicyRouting(summary as PolicyRoutingSummary);
+}
+
 export function handleChatEvent(
   data: Record<string, unknown>,
   refs: EventRefs
 ) {
   const store = useChatStore.getState();
   const type = data.type as string | undefined;
+
+  // Event ids belong to the durable PlanningJob event log, regardless of the
+  // public event type. Persist the cursor for reconnect before handling it.
+  if (typeof data.event_id === "number") {
+    refs.lastEventIdRef.current = Math.max(
+      refs.lastEventIdRef.current,
+      data.event_id
+    );
+  }
 
   if (type === "job_created") {
     store.setJobId(data.job_id as string);
@@ -206,11 +230,13 @@ export function handleChatEvent(
     store.setActivityPhase("idle");
     store.setNeedsClarification(false);
     store.setWaitingForConfirmation(false);
+    store.setPendingApproval(null);
     applyProfileFromServer(data.profile);
     if (itinerary) {
       store.setItinerary(itinerary);
     }
     applyServerBudget(data.budget_breakdown);
+    applyPolicyRouting(data.agent_policy_routing);
     store.setOutputUrls(outputUrls);
     finalizeStreamingToMessage();
     if (content) {
@@ -230,9 +256,13 @@ export function handleChatEvent(
     if (itinerary) {
       store.setItinerary(itinerary);
     }
+    applyPolicyRouting(data.agent_policy_routing);
     // Ensure streamed / partial prose is persisted before we drop the buffer.
     finalizeStreamingToMessage();
     store.setWaitingForConfirmation(true);
+    store.setPendingApproval(
+      (data.pending_approval as PendingApproval | undefined) || null
+    );
     store.saveChatSnapshot();
     return;
   }
@@ -244,6 +274,7 @@ export function handleChatEvent(
     if (itinerary) {
       store.setItinerary(itinerary);
     }
+    applyPolicyRouting(payload?.agent_policy_routing);
     if (content) {
       // A full `content` payload supersedes the live token buffer. Drop the
       // buffer (without committing it) and commit the consolidated prose once
@@ -291,9 +322,11 @@ export function handleChatEvent(
     store.setCurrentStage("完成");
     store.setActivityPhase("idle");
     store.setWaitingForConfirmation(false);
+    store.setPendingApproval(null);
     if (itinerary) {
       store.setItinerary(itinerary);
     }
+    applyPolicyRouting(payload?.agent_policy_routing);
     store.setOutputUrls(outputUrls);
     finalizeStreamingToMessage();
     if (content) {
@@ -306,6 +339,7 @@ export function handleChatEvent(
 
   if (type === "state_restored") {
     applyProfileFromServer(data.profile);
+    applyPolicyRouting(data.agent_policy_routing);
     const phase = (data.phase as string) || "gathering";
     const itinerary = data.itinerary as Parameters<typeof store.setItinerary>[0] | undefined;
     const recentMessages = Array.isArray(data.recent_messages)
@@ -328,6 +362,9 @@ export function handleChatEvent(
       messages: current.messages.length > 0 ? current.messages : recentMessages,
       itinerary: itinerary?.length ? itinerary : current.itinerary,
       waitingForConfirmation: phase === "awaiting_confirm",
+      pendingApproval:
+        (data.pending_approval as PendingApproval | undefined) ||
+        current.pendingApproval,
       isLoading: phase === "planning",
       currentStage:
         phase === "awaiting_confirm"
@@ -361,12 +398,8 @@ export function handleChatEvent(
   }
 
   if (type === "stage" || data.stage) {
-    if (typeof data.event_id === "number") {
-      refs.lastEventIdRef.current = Math.max(
-        refs.lastEventIdRef.current,
-        data.event_id
-      );
-    }
+    const stagePayload = data.payload as Record<string, unknown> | undefined;
+    applyPolicyRouting(stagePayload?.agent_policy_routing);
     const stage = data.stage as string;
     store.setJobStatus(stage);
 

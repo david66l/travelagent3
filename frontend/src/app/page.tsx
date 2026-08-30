@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useChatStore } from "@/stores/chatStore";
 import { useChat } from "@/hooks/useChat";
 import { TopBar } from "@/components/TopBar";
@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 export default function Home() {
   const { sendMessage, sendAction, reconnect } = useChat();
   const store = useChatStore();
+  const [isStartingNewChat, setIsStartingNewChat] = useState(false);
   const { activeView, activeTab, refreshTripStatuses } = store;
   const canModifyCurrentItinerary =
     !store.currentTrip ||
@@ -30,10 +31,15 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [refreshTripStatuses]);
 
-  const handleNewChat = () => {
+  const handleNewChat = async () => {
+    if (isStartingNewChat) return;
+    setIsStartingNewChat(true);
     store.setActiveView("chat");
-    store.clear();
-    reconnect();
+    try {
+      await reconnect();
+    } finally {
+      setIsStartingNewChat(false);
+    }
   };
 
   return (
@@ -65,17 +71,31 @@ export default function Home() {
       <div className="flex flex-1 gap-4 overflow-hidden">
         {/* Desktop Sidebar */}
         <div className="hidden md:block md:h-full">
-          <Sidebar onNewChat={handleNewChat} />
+          <Sidebar
+            onNewChat={handleNewChat}
+            isStartingNewChat={isStartingNewChat}
+          />
         </div>
 
-        {/* Main Panel - Desktop */}
-        <div className="hidden flex-1 gap-4 md:flex md:h-full">
+        {/* Main content. Stateful panels are mounted exactly once; responsive
+            classes only change their placement and visibility. */}
+        <div className="flex min-w-0 flex-1 flex-col gap-2 overflow-hidden md:h-full md:flex-row md:gap-4">
           {activeView === "chat" && (
             <>
-              <div className="flex-1">
+              <div
+                className={cn(
+                  "order-2 min-h-0 flex-1 md:order-1 md:block",
+                  activeTab === "chat" ? "block" : "hidden"
+                )}
+              >
                 <ChatPanel sendMessage={sendMessage} sendAction={sendAction} />
               </div>
-              <div className="w-[360px]">
+              <div
+                className={cn(
+                  "order-1 h-[220px] shrink-0 md:order-2 md:block md:h-auto md:w-[360px]",
+                  activeTab === "chat" ? "block" : "hidden"
+                )}
+              >
                 <PreviewPanel />
               </div>
             </>
@@ -112,32 +132,22 @@ export default function Home() {
               <SettingsPanel />
             </div>
           )}
-        </div>
-
-        {/* Mobile Panels */}
-        <div className="flex w-full flex-col overflow-hidden md:hidden">
-          {activeTab === "chat" && (
-            <div className="flex flex-1 flex-col gap-2 overflow-hidden">
-              <div className="h-[220px] shrink-0">
-                <PreviewPanel />
-              </div>
-              <div className="min-h-0 flex-1">
-                <ChatPanel sendMessage={sendMessage} sendAction={sendAction} />
-              </div>
+          {activeView === "chat" && activeTab === "itinerary" && (
+            <div className="flex min-h-0 flex-1 md:hidden">
+              <ItineraryPanel
+                onModify={canModifyCurrentItinerary ? async (change) => {
+                  store.addMessage({ role: "user", content: "修改行程草案", timestamp: Date.now() });
+                  await sendAction("modify", { change });
+                } : undefined}
+                onConfirm={async () => { await sendAction("confirm"); }}
+                onRegenerate={async () => { await sendAction("reject"); }}
+              />
             </div>
           )}
-          {activeTab === "itinerary" && (
-            <ItineraryPanel
-              onModify={canModifyCurrentItinerary ? async (change) => {
-                store.addMessage({ role: "user", content: "修改行程草案", timestamp: Date.now() });
-                await sendAction("modify", { change });
-              } : undefined}
-              onConfirm={async () => { await sendAction("confirm"); }}
-              onRegenerate={async () => { await sendAction("reject"); }}
-            />
-          )}
-          {activeTab === "panels" && (
-            <PanelSidebar />
+          {activeView === "chat" && activeTab === "panels" && (
+            <div className="flex min-h-0 flex-1 md:hidden">
+              <PanelSidebar />
+            </div>
           )}
         </div>
       </div>

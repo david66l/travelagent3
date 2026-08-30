@@ -30,7 +30,7 @@ async def health() -> dict[str, str]:
 async def solve(request: SolverRequest) -> SolverResponse:
     if not request.pois:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="pois must not be empty"
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="pois must not be empty"
         )
     logger.info(
         "Solving itinerary: pois=%d days=%d strategy=%s",
@@ -44,4 +44,9 @@ async def solve(request: SolverRequest) -> SolverResponse:
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("vrp_solver_service.main:app", host="0.0.0.0", port=8001, reload=False)
+    uvicorn.run(
+        "vrp_solver_service.main:app",
+        host="0.0.0.0",  # nosec B104
+        port=8001,
+        reload=False,
+    )

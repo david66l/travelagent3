@@ -1,12 +1,16 @@
 """Tests for WebSocket endpoint."""
 
+import asyncio
 from contextlib import asynccontextmanager
 from typing import Any
+from uuid import uuid4
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from api.chat_runtime import (
     ConnectionManager,
+    _planning_event_message,
+    create_chat_planning_job,
     delayed_cancel,
     manager as chat_manager,
     restore_session_state,
@@ -37,6 +41,14 @@ class TestConnectionManager:
 
     def test_disconnect_unknown(self):
         self.manager.disconnect_ws("unknown")  # should not raise
+
+    def test_unregister_removes_empty_session_bucket(self):
+        queue = asyncio.Queue()
+        self.manager._sse_queues["sess-1"].append(queue)
+
+        self.manager.unregister_sse("sess-1", queue)
+
+        assert "sess-1" not in self.manager._sse_queues
 
     @pytest.mark.asyncio
     async def test_send_json(self):
@@ -236,6 +248,61 @@ async def _null_lock(*args, **kwargs):
 # --------------------------------------------------------------------------- #
 # push_job_status coverage
 # --------------------------------------------------------------------------- #
+
+
+def test_planning_event_projection_preserves_public_event_and_cursor():
+    event = MagicMock(
+        id=17,
+        stage="draft_ready",
+        event_type="awaiting_confirm",
+    )
+
+    message = _planning_event_message(
+        event,
+        {"itinerary": [{"day_number": 1}], "warnings": ["rain"]},
+        "job-1",
+    )
+
+    assert message == {
+        "event_id": 17,
+        "job_id": "job-1",
+        "type": "awaiting_confirm",
+        "itinerary": [{"day_number": 1}],
+        "warnings": ["rain"],
+        "agent_policy_routing": None,
+    }
+
+
+@pytest.mark.asyncio
+async def test_create_chat_planning_job_persists_runtime_context():
+    repo = MagicMock()
+    repo.create = AsyncMock(return_value=MagicMock(id="job-1"))
+    user_uuid = uuid4()
+    conversation_id = uuid4()
+    state = default_conversation_state()
+
+    with patch.object(chat_manager, "load_state", new=AsyncMock(return_value=state)):
+        job_id = await create_chat_planning_job(
+            repo,
+            session_id=str(conversation_id),
+            user_id=str(user_uuid),
+            user_uuid=user_uuid,
+            conversation_id=conversation_id,
+            content="杭州三天",
+            user_role="member",
+            attachments_meta=[{"name": "plan.pdf"}],
+            action="modify",
+            action_payload={"change": "减少一个景点"},
+        )
+
+    assert job_id == "job-1"
+    persisted = repo.create.await_args.kwargs["user_feedback"]
+    assert persisted["_job_context"] == {
+        "action": "modify",
+        "action_payload": {"change": "减少一个景点"},
+        "attachments_meta": [{"name": "plan.pdf"}],
+        "user_role": "member",
+    }
 
 
 @pytest.mark.asyncio

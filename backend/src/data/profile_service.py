@@ -140,12 +140,15 @@ class ProfileService:
                             for i, col in enumerate(columns)
                         )
                         values = [merged[col] for col in columns]
-                        await conn.execute(
+                        query = (  # columns come only from the fixed allowlist above
                             f"""
                             UPDATE user_profile_vectors
                             SET {set_clause}, updated_at = NOW()
                             WHERE user_id = $1
-                            """,
+                            """  # nosec B608
+                        )
+                        await conn.execute(
+                            query,
                             user_id,
                             *values,
                         )

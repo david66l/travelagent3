@@ -8,12 +8,12 @@ from typing import Any
 
 from schemas import UserProfile
 
-CACHE_VERSION = "v1"
+CACHE_VERSION = "v2"
 
 
 def _query_hash(parts: list[str]) -> str:
     payload = "|".join(sorted(parts))
-    return hashlib.md5(payload.encode()).hexdigest()[:16]
+    return hashlib.sha256(payload.encode()).hexdigest()[:16]
 
 
 def poi_key(city: str, category: str | None, keywords: list[str]) -> str:
@@ -38,7 +38,7 @@ def route_key(origin: dict[str, Any], destination: dict[str, Any], mode: str) ->
     payload = json.dumps(
         {"origin": origin, "destination": destination, "mode": mode}, sort_keys=True
     )
-    h = hashlib.md5(payload.encode()).hexdigest()[:16]
+    h = hashlib.sha256(payload.encode()).hexdigest()[:16]
     return f"route:{h}:{CACHE_VERSION}"
 
 
@@ -87,5 +87,5 @@ def tool_cache_key(tool_name: str, params: dict[str, Any]) -> str:
         price_type = str(params.get("price_type") or "default")
         return price_key(poi_id, day, price_type)
     payload = json.dumps(params, sort_keys=True, ensure_ascii=False, default=str)
-    digest = hashlib.md5(payload.encode()).hexdigest()
+    digest = hashlib.sha256(payload.encode()).hexdigest()
     return f"tool:{tool_name}:{digest}"

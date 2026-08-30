@@ -138,12 +138,43 @@ PROMPT_INJECTION_BLOCKED = Counter(
     "Blocked prompt-injection attempts",
 )
 
+CHAT_IDEMPOTENCY = Counter(
+    "chat_idempotency_total",
+    "Idempotent chat submissions by bounded outcome",
+    ["outcome"],
+)
+
+PLANNING_JOB_NOTIFICATION_FAILURES = Counter(
+    "planning_job_notification_failures_total",
+    "Durable planning stages committed while best-effort Redis notification failed",
+)
+
+SESSION_RUN_LOCK_WAIT = Histogram(
+    "session_run_lock_wait_seconds",
+    "Time spent waiting to serialize graph mutations for one conversation",
+    ["outcome"],
+    buckets=(0.001, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0),
+)
+
+AGENT_TERMINAL_OUTCOMES = Counter(
+    "agent_terminal_outcomes_total",
+    "Agent-loop terminal outcomes",
+    ["outcome"],
+)
+
+PLANNING_TASK_RETRY_OUTCOMES = Counter(
+    "planning_task_retry_outcomes_total",
+    "Planning task retry decisions",
+    ["outcome"],
+)
+
 _COUNTER_MAP: Dict[str, Counter] = {
     "planning_jobs_created_total": PLANNING_JOBS_CREATED,
     "planning_jobs_completed_total": PLANNING_JOBS_COMPLETED,
     "planning_jobs_failed_total": PLANNING_JOBS_FAILED,
     "planning_jobs_force_cancelled_total": PLANNING_JOBS_FORCE_CANCELLED,
     "dead_letter_entries_total": DEAD_LETTER_ENTRIES,
+    "planning_job_notification_failures_total": PLANNING_JOB_NOTIFICATION_FAILURES,
 }
 
 _lock = threading.Lock()
@@ -224,6 +255,35 @@ def record_cache_miss(cache_type: str) -> None:
 
 def record_prompt_injection_blocked() -> None:
     PROMPT_INJECTION_BLOCKED.inc()
+
+
+def record_chat_idempotency(outcome: str) -> None:
+    """Record a bounded idempotency outcome without request/user cardinality."""
+    allowed = {"created", "replay", "race_replay", "conflict"}
+    CHAT_IDEMPOTENCY.labels(outcome=outcome if outcome in allowed else "conflict").inc()
+
+
+def record_planning_notification_failure() -> None:
+    PLANNING_JOB_NOTIFICATION_FAILURES.inc()
+
+
+def record_session_lock_wait(duration_s: float, outcome: str) -> None:
+    allowed = {"acquired", "cancelled", "error"}
+    SESSION_RUN_LOCK_WAIT.labels(outcome=outcome if outcome in allowed else "error").observe(
+        max(0.0, duration_s)
+    )
+
+
+def record_agent_terminal_outcome(outcome: str) -> None:
+    allowed = {"completed", "awaiting_confirm", "clarify", "failed", "cancelled"}
+    AGENT_TERMINAL_OUTCOMES.labels(outcome=outcome if outcome in allowed else "failed").inc()
+
+
+def record_planning_task_retry(outcome: str) -> None:
+    allowed = {"scheduled", "nonretryable", "exhausted"}
+    PLANNING_TASK_RETRY_OUTCOMES.labels(
+        outcome=outcome if outcome in allowed else "nonretryable"
+    ).inc()
 
 
 def record_http_request(method: str, endpoint: str, status_code: int, duration_s: float) -> None:

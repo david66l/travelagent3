@@ -8,6 +8,7 @@ control.  No second RL-only state machine is introduced.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from typing import Any
 
 from pydantic import BaseModel
@@ -34,12 +35,20 @@ class InteractiveTransition(BaseModel):
 
 
 class _InteractivePolicy:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        automatic_action: Callable[[PolicyContext], PolicyAction | None] | None = None,
+    ) -> None:
         self.requests: asyncio.Queue[tuple[PolicyContext, asyncio.Future[PolicyAction]]] = (
             asyncio.Queue()
         )
+        self.automatic_action = automatic_action
 
     async def propose(self, context: PolicyContext) -> PolicyAction:
+        if self.automatic_action is not None:
+            action = self.automatic_action(context)
+            if action is not None:
+                return action
         future: asyncio.Future[PolicyAction] = asyncio.get_running_loop().create_future()
         await self.requests.put((context, future))
         return await future
@@ -57,10 +66,11 @@ class InteractiveAgentSession:
         validator_version: str,
         policy_name: str,
         policy_version: str,
+        automatic_action: Callable[[PolicyContext], PolicyAction | None] | None = None,
     ) -> None:
         self.ledger = ledger.model_copy(deep=True)
         self.executor = executor
-        self.policy = _InteractivePolicy()
+        self.policy = _InteractivePolicy(automatic_action)
         self.recorder = EpisodeRecorder(
             self.ledger,
             environment_version=environment_version,

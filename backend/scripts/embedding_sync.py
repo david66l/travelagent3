@@ -31,7 +31,9 @@ async def sync_attraction_embeddings(
     """Sync description embeddings for attractions in batches."""
     embedder = await get_embedder()
 
-    where_clause = "WHERE description_vector IS NULL AND description IS NOT NULL AND status != 'deprecated'"
+    where_clause = (
+        "WHERE description_vector IS NULL AND description IS NOT NULL AND status != 'deprecated'"
+    )
     params: dict[str, object] = {}
     if city:
         where_clause += " AND city = :city"

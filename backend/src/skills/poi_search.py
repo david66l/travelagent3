@@ -8,6 +8,7 @@ from typing import Optional
 from core.circuit_breaker import get_circuit_breaker
 from core.llm_client import llm
 from core.settings import settings
+from core.city_names import canonical_city_name
 from schemas import ScoredPOI, ToolResult
 from skills.tavily_search import TavilySearchSkill, SearchResult
 from tools.base import Tool
@@ -205,6 +206,138 @@ CITY_FALLBACK_POIS: dict[str, list[dict]] = {
         {"name": "青岛啤酒", "category": "restaurant"},
         {"name": "海鲜大咖", "category": "restaurant"},
         {"name": "鲅鱼饺子", "category": "restaurant"},
+    ],
+    "苏州": [
+        {
+            "name": "拙政园",
+            "category": "attraction",
+            "tags": ["园林", "世界遗产", "历史"],
+            "area": "姑苏区",
+            "recommended_hours": "2-3小时",
+            "indoor_outdoor": "mixed",
+        },
+        {
+            "name": "留园",
+            "category": "attraction",
+            "tags": ["园林", "世界遗产", "建筑"],
+            "area": "姑苏区",
+            "recommended_hours": "2小时",
+            "indoor_outdoor": "mixed",
+        },
+        {
+            "name": "苏州博物馆",
+            "category": "attraction",
+            "tags": ["博物馆", "建筑", "文化"],
+            "area": "姑苏区",
+            "recommended_hours": "2-3小时",
+            "indoor_outdoor": "indoor",
+        },
+        {
+            "name": "虎丘",
+            "category": "attraction",
+            "tags": ["历史", "园林", "古迹"],
+            "area": "姑苏区",
+            "recommended_hours": "2-3小时",
+            "indoor_outdoor": "outdoor",
+        },
+        {
+            "name": "寒山寺",
+            "category": "attraction",
+            "tags": ["寺庙", "历史", "文化"],
+            "area": "姑苏区",
+            "recommended_hours": "1-2小时",
+            "indoor_outdoor": "mixed",
+        },
+        {
+            "name": "平江路历史街区",
+            "category": "attraction",
+            "tags": ["历史街区", "本地生活", "古城"],
+            "area": "姑苏区",
+            "recommended_hours": "2小时",
+            "indoor_outdoor": "outdoor",
+        },
+        {
+            "name": "山塘街",
+            "category": "attraction",
+            "tags": ["历史街区", "夜景", "本地生活"],
+            "area": "姑苏区",
+            "recommended_hours": "2小时",
+            "indoor_outdoor": "outdoor",
+        },
+        {
+            "name": "金鸡湖景区",
+            "category": "attraction",
+            "tags": ["湖景", "城市风光", "夜景"],
+            "area": "苏州工业园区",
+            "recommended_hours": "2-3小时",
+            "indoor_outdoor": "outdoor",
+        },
+    ],
+    "丽江": [
+        {
+            "name": "丽江古城",
+            "category": "attraction",
+            "tags": ["世界遗产", "古城", "文化"],
+            "area": "古城区",
+            "recommended_hours": "半天",
+            "indoor_outdoor": "outdoor",
+        },
+        {
+            "name": "木府",
+            "category": "attraction",
+            "tags": ["建筑", "历史", "文化"],
+            "area": "古城区",
+            "recommended_hours": "2小时",
+            "indoor_outdoor": "mixed",
+        },
+        {
+            "name": "黑龙潭公园",
+            "category": "attraction",
+            "tags": ["园林", "湖景", "建筑"],
+            "area": "古城区",
+            "recommended_hours": "2小时",
+            "indoor_outdoor": "outdoor",
+        },
+        {
+            "name": "束河古镇",
+            "category": "attraction",
+            "tags": ["古镇", "文化", "本地生活"],
+            "area": "古城区",
+            "recommended_hours": "半天",
+            "indoor_outdoor": "outdoor",
+        },
+        {
+            "name": "白沙古镇",
+            "category": "attraction",
+            "tags": ["古镇", "壁画", "文化"],
+            "area": "玉龙县",
+            "recommended_hours": "2-3小时",
+            "indoor_outdoor": "mixed",
+        },
+        {
+            "name": "玉龙雪山",
+            "category": "attraction",
+            "tags": ["雪山", "自然", "户外"],
+            "area": "玉龙县",
+            "recommended_hours": "全天",
+            "indoor_outdoor": "outdoor",
+        },
+        {
+            "name": "东巴文化博物馆",
+            "category": "attraction",
+            "tags": ["博物馆", "东巴文化", "历史"],
+            "area": "古城区",
+            "recommended_hours": "1-2小时",
+            "indoor_outdoor": "indoor",
+        },
+        {
+            "name": "拉市海",
+            "category": "attraction",
+            "tags": ["湿地", "自然", "户外"],
+            "area": "玉龙县",
+            "recommended_hours": "半天",
+            "indoor_outdoor": "outdoor",
+        },
     ],
     "济南": [
         {
@@ -994,6 +1127,7 @@ class POISearchSkill(Tool):
 
     def _get_builtin_pois(self, city: str, category: Optional[str] = None) -> list[ScoredPOI]:
         """Return built-in POIs for a city, optionally filtered by category."""
+        city = canonical_city_name(city)
         try:
             from skills.city_data import CITY_DEFAULTS as rich_city_data
 

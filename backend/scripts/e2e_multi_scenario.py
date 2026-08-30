@@ -121,12 +121,16 @@ def run_scenario(scenario: dict) -> dict:
                 etype = event.get("type")
                 if etype in ("message", "final"):
                     payload = event.get("payload", event)
-                    itinerary = payload.get("itinerary") or payload.get("itinerary_final") or itinerary
+                    itinerary = (
+                        payload.get("itinerary") or payload.get("itinerary_final") or itinerary
+                    )
                     output_pdf_url = payload.get("output_pdf_url") or output_pdf_url
                     output_excel_url = payload.get("output_excel_url") or output_excel_url
                 elif etype == "completed":
                     payload = event.get("payload", {})
-                    itinerary = payload.get("itinerary") or payload.get("itinerary_final") or itinerary
+                    itinerary = (
+                        payload.get("itinerary") or payload.get("itinerary_final") or itinerary
+                    )
                     output_pdf_url = payload.get("output_pdf_url") or output_pdf_url
                     output_excel_url = payload.get("output_excel_url") or output_excel_url
                 elif etype == "done":
@@ -202,13 +206,17 @@ def main():
             result = {"name": scenario["name"], "status": "FAIL", "error": str(exc), "elapsed": 0}
         results.append(result)
 
-        print(f"    {result['status']}: {result.get('days', '-')} days, {result.get('activities', '-')} activities, {result['elapsed']:.1f}s")
+        print(
+            f"    {result['status']}: {result.get('days', '-')} days, {result.get('activities', '-')} activities, {result['elapsed']:.1f}s"
+        )
         if result.get("itinerary"):
             for day in result["itinerary"]:
                 acts = day.get("activities", [])
                 print(f"      Day {day.get('day_number')}: {len(acts)} activities")
                 for a in acts:
-                    print(f"        {a.get('start_time','')} - {a.get('end_time','')} {a.get('poi_name','')}")
+                    print(
+                        f"        {a.get('start_time', '')} - {a.get('end_time', '')} {a.get('poi_name', '')}"
+                    )
         if result["status"] != "PASS":
             print(f"      error: {result.get('error')}")
 

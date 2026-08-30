@@ -254,7 +254,6 @@ class WeatherQuerySkill(Tool):
             "timezone": "Asia/Shanghai",
             "start_date": start_date,
             "end_date": end_date,
-            "forecast_days": 16,
         }
         resp = await client.get(OPEN_METEO_URL, params=params)
         resp.raise_for_status()
@@ -275,7 +274,7 @@ class WeatherQuerySkill(Tool):
             high = int(round(highs[i])) if i < len(highs) else 25
             low = int(round(lows[i])) if i < len(lows) else 15
             precip = int(precips[i]) if i < len(precips) else 0
-            wind = round(winds[i], 1) if i < len(winds) else None
+            wind = int(round(float(winds[i]))) if i < len(winds) else None
 
             results.append(
                 WeatherDay(

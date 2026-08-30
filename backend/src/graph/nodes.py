@@ -26,15 +26,24 @@ async def profile_node(state: dict[str, Any]) -> dict[str, Any]:
 
     projected_state = {**state, **result}
     result.update(initialize_agent_ledger(projected_state, mode=settings.agentic_policy_mode))
+    if result.get("policy_mode") == "shadow":
+        from agentic.shadow import start_shadow_run
+
+        result.update(await start_shadow_run({**projected_state, **result}))
     return result
 
 
 @with_error_handling("agent_loop")
 async def agent_loop_node(state: dict[str, Any]) -> dict[str, Any]:
-    """Run the bounded Agent Loop only when policy_mode explicitly selects it."""
+    """Execute one durable decide-act-observe-verify batch.
+
+    LangGraph checkpoints the returned ledger before the router schedules the
+    next batch, so a worker crash resumes after the last committed action rather
+    than replaying the whole episode.
+    """
     from agentic.integration import run_agent_branch
 
-    return await run_agent_branch(state)
+    return await run_agent_branch(state, single_step=True)
 
 
 @with_error_handling("retrieve")
@@ -106,11 +115,37 @@ async def confirm_gate_node(state: dict[str, Any]) -> dict[str, Any]:
             "stage": "modifying",
         }
     if action == "reject":
-        # Re-solve from scratch; treat the next plan as a fresh draft.
+        reason = str(decision.get("reason") or "").strip()
+        if state.get("policy_mode") == "agent" and state.get("agent_ledger"):
+            if not reason:
+                return {
+                    "confirm_decision": "reject_needs_reason",
+                    "agent_status": "awaiting_revision_reason",
+                    "next_action": "clarify",
+                    "clarification_questions": [
+                        "这版行程哪里不合适？例如太赶、预算过高、景点不喜欢或交通不方便。"
+                    ],
+                    "stage": "awaiting_revision_reason",
+                }
+            from agentic.runtime import revise_agent_ledger
+
+            ledger = await revise_agent_ledger(state["agent_ledger"], revision_reason=reason)
+            return {
+                "confirm_decision": "reject_with_reason",
+                "agent_ledger": ledger.model_dump(mode="json"),
+                "agent_status": "running",
+                "next_action": "agent_continue",
+                "stage": "revision_resumed",
+            }
+        # Legacy baseline: re-solve from scratch.
         return {"confirm_decision": None, "stage": "rejected"}
     # confirm → proceed to deep enrichment
     agent_patch: dict[str, Any] = {}
-    if state.get("policy_mode") == "agent" and state.get("agent_ledger"):
+    if (
+        state.get("policy_mode") == "agent"
+        and state.get("agent_status") == "awaiting_confirmation"
+        and state.get("agent_ledger")
+    ):
         from agentic.runtime import confirm_agent_ledger
 
         ledger, completion = confirm_agent_ledger(state["agent_ledger"])
@@ -133,7 +168,20 @@ async def factcheck_node(state: dict[str, Any]) -> dict[str, Any]:
     """Fact checking against structured data."""
     from graph.node_impl import _fact_check_async
 
-    return await _fact_check_async(state)
+    result = await _fact_check_async(state)
+    if state.get("policy_mode") == "agent" and result.get("next_action") == "planner":
+        # Never let a post-confirmation enrichment conflict silently jump into
+        # the legacy planner and overwrite the verified Agent Loop itinerary.
+        # The current episode stops explicitly; a later user turn may start a
+        # fresh/revised plan with the conflict visible in the state.
+        return {
+            **result,
+            "agent_status": "failed",
+            "stage": "agent_postcheck_failed",
+            "next_action": "agent_error",
+            "termination_reason": "POST_CONFIRMATION_FACT_CONFLICT",
+        }
+    return result
 
 
 @traceable_step("planning/hallucination_check", run_type="chain")
@@ -295,17 +343,56 @@ async def _trace_output_format(
     )
 
 
+def _agent_clarification_message(ledger: Any, latest: Any) -> tuple[str, list[str]]:
+    """Render model-selected tradeoffs as product language, not debug text."""
+    latest_failure = ledger.failures[-1] if ledger.failures else None
+    failure_message = str(getattr(latest_failure, "message", "") or "")
+    hard = ledger.goal.hard_constraints
+    if "EVENT_FIELDS_INCOMPLETE" in failure_message or "EVENT_VENUE_UNGROUNDED" in failure_message:
+        event_name = str(hard.get("event_query") or "这场演唱会")
+        event_date = str(hard.get("start_date") or "你计划的日期")
+        return (
+            f"我还没查到与 {event_date}、{event_name} 完全匹配的可靠开场时间和场馆信息。"
+            "请补充艺人或演出名称，最好再提供官方活动页或购票链接。",
+            [
+                "补充演出名称或官方链接后继续规划",
+                "先在场馆附近预留晚间时段，但不把未确认的演出写成确定安排",
+                "取消演唱会这一硬约束，改做普通城市行程",
+            ],
+        )
+    if "TRANSPORT" in failure_message:
+        return (
+            "还缺少可核验的大交通信息。请确认你更倾向飞机、火车，还是两者都比较。",
+            ["比较飞机和火车", "只看火车", "只看飞机"],
+        )
+
+    payload = latest.payload
+    question = str(
+        payload.get("question") or payload.get("reason") or "需要你补充一个信息后，我才能继续规划。"
+    )
+    technical_markers = (
+        "finalize_research",
+        "verifier",
+        "artifact",
+        "action_attempt",
+        "failure_summary",
+        "RESEARCH_",
+    )
+    if any(marker in question for marker in technical_markers):
+        question = "现有可靠信息还不足以满足你的硬性要求。请补充关键信息，或选择放宽一项要求。"
+    options = [str(item) for item in (payload.get("options") or [])]
+    return question, options[:3]
+
+
 @with_error_handling("output")
 async def output_node(state: dict[str, Any]) -> dict[str, Any]:
     """Output formatting (Markdown / clarification) + multi-modal export.
 
-    For the itinerary path we stream the prose in real-time from a single LLM
-    call while the structured enrichment (card recommendation reasons) runs
-    concurrently — so the chat starts streaming immediately after planning
-    instead of blocking on a sequential enrich → polish pass.
+    The writer may use one structured LLM call for themes and recommendation
+    reasons, but the final Markdown is always rendered deterministically from
+    the enriched itinerary. This prevents prose generation from changing names,
+    times, prices or route order while retaining progressive client rendering.
     """
-    import asyncio
-
     from api.chat_runtime import publish_live_stage, publish_token
     from agents.output_format import output_format_agent
     from core.conversation_state import flatten_profile
@@ -314,6 +401,63 @@ async def output_node(state: dict[str, Any]) -> dict[str, Any]:
     job_id = state.get("job_id")
     session_id = state.get("session_id")
     itinerary = state.get("itinerary", []) or []
+    if (
+        state.get("policy_mode") == "agent"
+        and state.get("agent_status") == "awaiting_information"
+        and state.get("agent_ledger")
+    ):
+        from agentic.state import AgentLedgerState
+
+        ledger = AgentLedgerState(**state["agent_ledger"])
+        questions = [
+            artifact
+            for artifact in ledger.artifacts.values()
+            if artifact.artifact_type in {"user_question", "propose_tradeoff"}
+            and artifact.goal_version == ledger.goal.goal_version
+            and artifact.plan_version == ledger.task_graph.plan_version
+        ]
+        latest = questions[-1] if questions else None
+        blocked = next(
+            (task for task in ledger.task_graph.tasks if task.status == "blocked"),
+            None,
+        )
+        if latest is not None:
+            question, options = _agent_clarification_message(ledger, latest)
+            if options:
+                question = f"{question}\n" + "\n".join(
+                    f"{index}. {option}" for index, option in enumerate(options, start=1)
+                )
+            return {
+                "messages": (state.get("messages") or [])
+                + [
+                    {
+                        "role": "assistant",
+                        "content": question,
+                        "type": "agent_clarification",
+                        "task_id": blocked.task_id if blocked else None,
+                        "question_id": latest.artifact_id,
+                    }
+                ],
+                "stage": "agent_awaiting_information",
+                "next_action": "clarify",
+            }
+    if state.get("policy_mode") == "agent" and state.get("agent_status") == "failed":
+        reason = str(state.get("termination_reason") or "AGENT_STOPPED")
+        return {
+            "messages": (state.get("messages") or [])
+            + [
+                {
+                    "role": "assistant",
+                    "content": (
+                        "这次规划没有在安全预算内得到可验证行程，已停止执行，"
+                        f"没有切换到另一套流程掩盖失败。原因：{reason}。"
+                    ),
+                    "type": "agent_error",
+                }
+            ],
+            "stage": "agent_failed",
+            "next_action": "agent_error",
+        }
     # Some callers/tests restore an itinerary-only checkpoint created before
     # ``next_action`` became part of the state schema.  Treat an existing
     # itinerary as the itinerary path instead of accidentally formatting it as
@@ -368,19 +512,8 @@ async def output_node(state: dict[str, Any]) -> dict[str, Any]:
     sid = session_id or state.get("user_id") or "default"
     on_token = _on_token if (job_id or session_id) else None
 
-    # Kick off structured enrichment (card reasons) in the background, then
-    # stream the prose immediately so there is no dead wait.
-    enrich_task = asyncio.create_task(_output_async(state))
     try:
-        polished = await output_format_agent.stream_markdown(
-            itinerary, profile_raw, on_token=on_token
-        )
-    except Exception as exc:
-        logger.warning("Streaming prose failed: %s", exc)
-        polished = ""
-
-    try:
-        base = await enrich_task
+        base = await _output_async(state)
     except Exception as exc:
         logger.warning("Itinerary enrichment failed: %s", exc)
         base = {
@@ -388,7 +521,7 @@ async def output_node(state: dict[str, Any]) -> dict[str, Any]:
             + [
                 {
                     "role": "assistant",
-                    "content": polished,
+                    "content": "",
                     "type": "itinerary",
                     "itinerary": itinerary,
                     "warnings": state.get("warnings", []),
@@ -402,7 +535,8 @@ async def output_node(state: dict[str, Any]) -> dict[str, Any]:
         base["safety_result"] = safety_dict
 
     enriched_itin = base.get("itinerary") or itinerary
-    final_md = polished or (base["messages"][-1].get("content", "") if base.get("messages") else "")
+    final_md = base["messages"][-1].get("content", "") if base.get("messages") else ""
+    await output_format_agent.stream_existing_markdown(final_md, on_token)
 
     try:
         artifacts = await output_format_agent.build_artifacts(final_md, enriched_itin, city, sid)
@@ -419,6 +553,15 @@ async def output_node(state: dict[str, Any]) -> dict[str, Any]:
         base["messages"][-1]["output_pdf_url"] = artifacts.get("pdf")
         base["messages"][-1]["output_excel_url"] = artifacts.get("excel")
         base["messages"][-1]["output_map_url"] = artifacts.get("map")
+
+    if state.get("confirm_decision") != "confirm" and enriched_itin:
+        from graph.approval import issue_pending_approval
+
+        base["pending_approval"] = issue_pending_approval(
+            {**state, **base, "itinerary": enriched_itin}
+        )
+    else:
+        base["pending_approval"] = None
 
     return base
 
@@ -463,8 +606,7 @@ def _trace_apply_single_change(
 def _activity_cost(activity: dict[str, Any]) -> float:
     """Return the explicit cost carried by one scheduled activity."""
     return sum(
-        float(activity.get(field) or 0)
-        for field in ("ticket_price", "meal_cost", "transport_cost")
+        float(activity.get(field) or 0) for field in ("ticket_price", "meal_cost", "transport_cost")
     )
 
 
@@ -483,9 +625,7 @@ def _refresh_day_costs(
     previous_explicit = sum(_activity_cost(activity) for activity in previous_activities)
     fixed_daily_cost = max(0.0, float(day.get("total_cost") or 0) - previous_explicit)
     activities = [
-        activity
-        for activity in (day.get("activities") or [])
-        if isinstance(activity, dict)
+        activity for activity in (day.get("activities") or []) if isinstance(activity, dict)
     ]
     explicit_cost = sum(_activity_cost(activity) for activity in activities)
     day["total_cost"] = round(fixed_daily_cost + explicit_cost, 2)

@@ -1,5 +1,6 @@
 """Lightweight service endpoints."""
 
+import logging
 import uuid
 
 from fastapi import APIRouter, Response, status
@@ -10,6 +11,7 @@ from core.database import async_session_maker
 from core.redis_client import redis_client
 
 router = APIRouter(prefix="/api")
+logger = logging.getLogger(__name__)
 
 
 class CreateSessionResponse(BaseModel):
@@ -39,14 +41,16 @@ async def readiness_check(response: Response) -> dict:
         pong = await redis_client._client.ping()
         result["redis"] = "ok" if pong else "no_pong"
     except Exception as exc:
-        result["redis"] = str(exc)
+        logger.warning("Readiness Redis probe failed: %s", type(exc).__name__)
+        result["redis"] = "unavailable"
 
     try:
         async with async_session_maker() as db:
             await db.execute(text("SELECT 1"))
         result["database"] = "ok"
     except Exception as exc:
-        result["database"] = str(exc)
+        logger.warning("Readiness database probe failed: %s", type(exc).__name__)
+        result["database"] = "unavailable"
 
     if result.get("redis") != "ok" or result.get("database") != "ok":
         result["status"] = "degraded"

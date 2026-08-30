@@ -4,7 +4,12 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from core.task_retry import compute_retry_delay, is_retryable
+from core.task_retry import (
+    NonRetryableTaskError,
+    RetryableTaskError,
+    compute_retry_delay,
+    is_retryable,
+)
 
 
 def test_is_retryable_validation_errors():
@@ -15,7 +20,22 @@ def test_is_retryable_validation_errors():
 def test_is_retryable_transient_errors():
     assert is_retryable(TimeoutError()) is True
     assert is_retryable(ConnectionError()) is True
-    assert is_retryable(RuntimeError("api down")) is True
+    assert is_retryable(RetryableTaskError("api down")) is True
+
+
+def test_is_retryable_unknown_runtime_error_defaults_to_false():
+    assert is_retryable(RuntimeError("programmer bug")) is False
+    assert is_retryable(NonRetryableTaskError("invalid response")) is False
+
+
+def test_is_retryable_detects_wrapped_transient_cause():
+    try:
+        try:
+            raise TimeoutError("upstream")
+        except TimeoutError as exc:
+            raise RuntimeError("request failed") from exc
+    except RuntimeError as wrapped:
+        assert is_retryable(wrapped) is True
 
 
 def test_compute_retry_delay_caps_and_positive():

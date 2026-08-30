@@ -15,10 +15,10 @@ from agentic.observations import ObservationEnvelope
 from agentic.state import AgentLedgerState
 
 
-EPISODE_SCHEMA_VERSION = "agent-episode.v1"
-_PHONE = re.compile(r"(?<!\d)(?:\+?86[- ]?)?1[3-9]\d{9}(?!\d)")
+EPISODE_SCHEMA_VERSION = "agent-episode.v2"
+_PHONE = re.compile(r"(?<![A-Za-z0-9])(?:\+?86[- ]?)?1[3-9]\d{9}(?![A-Za-z0-9])")
 _EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
-_ID_CARD = re.compile(r"(?<!\d)\d{17}[\dXx](?!\d)")
+_ID_CARD = re.compile(r"(?<![A-Za-z0-9])\d{17}[\dXx](?![A-Za-z0-9])")
 
 
 def _now() -> datetime:
@@ -41,6 +41,8 @@ class TrajectoryStep(BaseModel):
     state_after_hash: str
     started_at: datetime = Field(default_factory=_now)
     finished_at: datetime = Field(default_factory=_now)
+    policy_latency_ms: int = Field(default=0, ge=0)
+    action_latency_ms: int = Field(default=0, ge=0)
 
 
 class AgentEpisode(BaseModel):
@@ -71,7 +73,16 @@ class AgentEpisode(BaseModel):
 
 def episode_content_hash(episode: AgentEpisode) -> str:
     """Return the canonical integrity hash used by finalized episodes."""
-    return _canonical_hash(episode.model_dump(mode="json", exclude={"content_hash"}))
+    payload = episode.model_dump(mode="json", exclude={"content_hash"})
+    if episode.schema_version == "agent-episode.v1":
+        # ``inference_metrics`` was introduced with v2. Pydantic fills the new
+        # optional field with ``None`` when an old v1 record is loaded, but that
+        # key was absent from the original serialized payload and its hash.
+        for step in payload.get("steps", []):
+            action = step.get("action")
+            if isinstance(action, dict):
+                action.pop("inference_metrics", None)
+    return _canonical_hash(payload)
 
 
 class EpisodeRecorder:
@@ -96,6 +107,24 @@ class EpisodeRecorder:
             initial_state=redacted,
         )
 
+    @classmethod
+    def resume(cls, episode: AgentEpisode | dict[str, Any]) -> EpisodeRecorder:
+        """Resume an append-only episode at a LangGraph action checkpoint."""
+        parsed = episode if isinstance(episode, AgentEpisode) else AgentEpisode(**episode)
+        if parsed.status not in {"running", "interrupted"}:
+            raise ValueError(f"cannot resume terminal episode with status={parsed.status}")
+        recorder = cls.__new__(cls)
+        recorder.episode = parsed.model_copy(
+            deep=True,
+            update={
+                "status": "running",
+                "termination_reason": None,
+                "completed_at": None,
+                "content_hash": None,
+            },
+        )
+        return recorder
+
     def record_step(
         self,
         *,
@@ -106,6 +135,8 @@ class EpisodeRecorder:
         verification: dict[str, Any],
         state_before: AgentLedgerState,
         state_after: AgentLedgerState,
+        policy_latency_ms: int = 0,
+        action_latency_ms: int = 0,
     ) -> None:
         before = redact_pii(state_before.model_dump(mode="json"))
         after = redact_pii(state_after.model_dump(mode="json"))
@@ -124,16 +155,26 @@ class EpisodeRecorder:
                 verification=redact_pii(verification),
                 state_before_hash=_canonical_hash(before),
                 state_after_hash=_canonical_hash(after),
+                policy_latency_ms=policy_latency_ms,
+                action_latency_ms=action_latency_ms,
             )
         )
 
     def finalize(self, result: AgentLoopResult) -> AgentEpisode:
-        self.episode.events = result.events
+        sequence_offset = len(self.episode.events)
+        self.episode.events.extend(
+            event.model_copy(update={"sequence": sequence_offset + index})
+            for index, event in enumerate(result.events, start=1)
+        )
         self.episode.final_state = redact_pii(result.ledger.model_dump(mode="json"))
         self.episode.status = result.status
         self.episode.termination_reason = result.termination_reason
-        self.episode.completed_at = _now()
-        self.episode.content_hash = episode_content_hash(self.episode)
+        if result.status == "running":
+            self.episode.completed_at = None
+            self.episode.content_hash = None
+        else:
+            self.episode.completed_at = _now()
+            self.episode.content_hash = episode_content_hash(self.episode)
         return self.episode
 
 

@@ -28,7 +28,7 @@ jobs:
         working-directory: ./backend
     services:
       postgres:
-        image: postgres:16-alpine
+        image: pgvector/pgvector@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b
         env:
           POSTGRES_USER: travelagent
           POSTGRES_PASSWORD: travelagent123
@@ -41,7 +41,7 @@ jobs:
         ports:
           - 5432:5432
       redis:
-        image: redis:7-alpine
+        image: redis@sha256:e7723ff73d963f5cc6d9c4643ea3d989527a402a319239054e9472a7fb9219a2
         options: >-
           --health-cmd "redis-cli ping"
           --health-interval 5s
@@ -58,20 +58,19 @@ jobs:
           python-version: "3.13"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v5
         with:
-          version: "0.5.x"
+          version: "0.12.1"
 
       - name: Install dependencies
         run: |
-          uv venv
-          uv pip install -e ".[dev,mlflow]"
+          uv sync --frozen --extra dev
 
       - name: Lint (Ruff)
-        run: uv run ruff check src/ tests/
+        run: uv run ruff check src/ tests/ scripts/ migrations/
 
       - name: Format check (Ruff)
-        run: uv run ruff format --check src/ tests/
+        run: uv run ruff format --check src/ tests/ scripts/ migrations/
 
       - name: Type check (MyPy)
         run: uv run mypy src/ --ignore-missing-imports
@@ -84,8 +83,22 @@ jobs:
           JWT_SECRET: ci-test-secret-not-for-production
         run: uv run pytest tests/ -q --cov=src --cov-report=xml --cov-report=term
 
+      - name: Apply and validate database migrations
+        env:
+          DATABASE_URL: postgresql+asyncpg://travelagent:travelagent123@localhost:5432/travel_agent
+        run: |
+          uv run alembic upgrade head
+          uv run alembic check
+
       - name: Security scan (Bandit)
         run: uv run bandit -r src/ -ll
+
+      - name: Dependency vulnerability audit
+        run: uv run pip-audit --desc
+
+      - name: Scan tracked files for credentials
+        working-directory: .
+        run: uv run --project backend python scripts/check_staged_secrets.py --tracked
 
       - name: Upload coverage
         uses: codecov/codecov-action@v4
@@ -110,12 +123,15 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
           cache: "npm"
           cache-dependency-path: ./frontend/package-lock.json
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Dependency vulnerability audit
+        run: npm audit --omit=dev --audit-level=high
 
       - name: Lint
         run: npm run lint
@@ -144,7 +160,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version: "1.26"
           cache-dependency-path: ./gateway/go.sum
 
       - name: Download dependencies
@@ -153,7 +169,7 @@ jobs:
       - name: Lint
         uses: golangci/golangci-lint-action@v6
         with:
-          version: latest
+          version: v2.13.2
           working-directory: ./gateway
           args: --timeout=5m
 
@@ -164,12 +180,169 @@ jobs:
         run: go build -o /tmp/gateway ./cmd/gateway
 
   # -------------------------------------------------------------------------
+  # Release configuration: Kubernetes schemas, security posture, IaC scan
+  # -------------------------------------------------------------------------
+  release-config-ci:
+    name: Release Configuration CI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate GitHub Actions and embedded shell
+        run: >-
+          docker run --rm
+          -v "$PWD:/repo"
+          -w /repo
+          rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+          -color
+
+      - name: Scan Git history for committed credentials
+        run: >-
+          docker run --rm
+          -v "$PWD:/repo"
+          -w /repo
+          ghcr.io/gitleaks/gitleaks@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
+          git --redact --no-banner --no-color --log-level warn /repo
+
+      - name: Validate Kubernetes schemas
+        run: >-
+          docker run --rm
+          -v "$PWD/k8s:/manifests:ro"
+          ghcr.io/yannh/kubeconform@sha256:faffaf43f95aa6425306e1ab8d6fcad72acb9049158f38e574c085ea1ec0f64e
+          -strict -summary -ignore-missing-schemas /manifests
+
+      - name: Lint Kubernetes security and reliability
+        run: >-
+          docker run --rm
+          -v "$PWD:/workdir:ro"
+          stackrox/kube-linter@sha256:f2bfce7879206d32f69ab6572c376f916643f54ca291ac38cf7d01ef591ff3f9
+          lint /workdir/k8s
+
+      - name: Scan repository and IaC for high/critical findings
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret,misconfig
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+
+  # -------------------------------------------------------------------------
+  # Control-plane capacity gate. Model execution has a separate episode SLO.
+  # -------------------------------------------------------------------------
+  control-plane-load-ci:
+    name: Control Plane Load CI
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b
+        env:
+          POSTGRES_USER: travelagent
+          POSTGRES_PASSWORD: travelagent123
+          POSTGRES_DB: travel_agent
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      redis:
+        image: redis@sha256:e7723ff73d963f5cc6d9c4643ea3d989527a402a319239054e9472a7fb9219a2
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.12.1"
+
+      - uses: grafana/setup-k6-action@v1
+        with:
+          k6-version: "2.1.0"
+
+      - name: Install dependencies and migrate a fresh database
+        working-directory: ./backend
+        env:
+          APP_ENV: test
+          DATABASE_URL: postgresql+asyncpg://travelagent:travelagent123@localhost:5432/travel_agent
+          REDIS_URL: redis://localhost:6379/0
+          OPENAI_API_KEY: sk-test-mock
+          JWT_SECRET: ci-only-jwt-secret-0123456789abcdef0123456789abcdef
+          PRIVACY_ENCRYPTION_KEY: ci-only-privacy-key-0123456789abcdef0123456789abcdef
+          RATE_LIMIT_IP_PER_MINUTE: "100000"
+          RATE_LIMIT_GUEST_PER_MINUTE: "100000"
+        run: |
+          uv sync --frozen --extra dev
+          uv run alembic upgrade head
+          uv run alembic check
+
+      - name: Start API and wait for readiness
+        working-directory: ./backend
+        env:
+          APP_ENV: test
+          DATABASE_URL: postgresql+asyncpg://travelagent:travelagent123@localhost:5432/travel_agent
+          REDIS_URL: redis://localhost:6379/0
+          OPENAI_API_KEY: sk-test-mock
+          JWT_SECRET: ci-only-jwt-secret-0123456789abcdef0123456789abcdef
+          PRIVACY_ENCRYPTION_KEY: ci-only-privacy-key-0123456789abcdef0123456789abcdef
+          RATE_LIMIT_IP_PER_MINUTE: "100000"
+          RATE_LIMIT_GUEST_PER_MINUTE: "100000"
+        run: |
+          nohup uv run python scripts/run_api.py >/tmp/travelagent-api.log 2>&1 &
+          for attempt in {1..30}; do
+            curl -fsS http://127.0.0.1:8000/api/ready && exit 0
+            echo "readiness attempt ${attempt}/30"
+            sleep 1
+          done
+          cat /tmp/travelagent-api.log
+          exit 1
+
+      - name: Enforce admission latency and error budgets
+        env:
+          BASE_URL: http://127.0.0.1:8000
+          VUS: "20"
+          DURATION: 15s
+        run: |
+          mkdir -p artifacts/performance
+          k6 run --summary-export artifacts/performance/k6-ci-summary.json scripts/load/k6_sse.js
+
+      - name: Collect API log
+        if: always()
+        run: |
+          mkdir -p artifacts/performance
+          cp /tmp/travelagent-api.log artifacts/performance/api.log || true
+
+      - name: Upload performance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: control-plane-load-evidence
+          path: |
+            artifacts/performance/k6-ci-summary.json
+            artifacts/performance/api.log
+          if-no-files-found: warn
+
+  # -------------------------------------------------------------------------
   # Docker build (no push) to ensure all images are buildable
   # -------------------------------------------------------------------------
   docker-build:
     name: Docker Build
     runs-on: ubuntu-latest
-    needs: [backend-ci, frontend-ci, gateway-ci]
+    needs: [backend-ci, frontend-ci, gateway-ci, release-config-ci, control-plane-load-ci]
     steps:
       - uses: actions/checkout@v4
 
@@ -182,7 +355,10 @@ jobs:
           context: ./backend
           file: ./backend/Dockerfile
           push: false
-          tags: ${{ env.IMAGE_PREFIX }}/travel-agent-backend:${{ github.sha }}
+          load: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/travel-agent-backend:${{ github.sha }}
+            travelagent2-backend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -192,7 +368,10 @@ jobs:
           context: ./frontend
           file: ./frontend/Dockerfile
           push: false
-          tags: ${{ env.IMAGE_PREFIX }}/travel-agent-frontend:${{ github.sha }}
+          load: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/travel-agent-frontend:${{ github.sha }}
+            travelagent2-frontend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -202,16 +381,30 @@ jobs:
           context: ./gateway
           file: ./gateway/Dockerfile
           push: false
-          tags: ${{ env.IMAGE_PREFIX }}/travel-agent-gateway:${{ github.sha }}
+          load: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/travel-agent-gateway:${{ github.sha }}
+            travelagent2-gateway:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Build vLLM image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./Dockerfile.vllm
-          push: false
-          tags: ${{ env.IMAGE_PREFIX }}/travel-agent-vllm:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      - name: Start production images and verify health contracts
+        run: |
+          cp .env.example .env
+          {
+            echo "POSTGRES_PASSWORD=ci-only-postgres-password"
+            echo "OPENAI_API_KEY=sk-test-mock"
+            echo "TAVILY_API_KEY=tvly-test-mock"
+            echo "JWT_SECRET=ci-only-jwt-secret-0123456789abcdef0123456789abcdef"
+            echo "PRIVACY_ENCRYPTION_KEY=ci-only-privacy-key-0123456789abcdef0123456789abcdef"
+          } >> .env
+          docker compose up -d --wait --no-build postgres redis backend frontend gateway vrp_solver
+          curl -fsS http://127.0.0.1:8000/api/health
+          curl -fsS http://127.0.0.1:8000/api/ready
+          curl -fsS http://127.0.0.1:8001/health
+          curl -fsS http://127.0.0.1:8080/api/v1/health
+          curl -fsS http://127.0.0.1:3000/login >/dev/null
+
+      - name: Stop production image smoke stack
+        if: always()
+        run: docker compose down -v

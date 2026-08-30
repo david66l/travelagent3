@@ -10,7 +10,6 @@ Create Date: 2026-06-18
   - attractions.walk_intensity → 已有，skip
 """
 
-from typing import Sequence, Union
 from alembic import op
 import sqlalchemy as sa
 
@@ -39,7 +38,9 @@ def upgrade() -> None:
         sa.Column("source", sa.String(20), nullable=False, server_default="amap"),
         sa.Column("source_updated_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("status", sa.String(20), nullable=False, server_default="active"),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+        ),
     )
     op.create_index("ix_hotels_city", "hotels", ["city"])
 

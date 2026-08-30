@@ -9,6 +9,7 @@ metadata:
   namespace: travel-agent
 spec:
   minAvailable: 2
+  unhealthyPodEvictionPolicy: AlwaysAllow
   selector:
     matchLabels:
       app: gateway
@@ -20,6 +21,7 @@ metadata:
   namespace: travel-agent
 spec:
   minAvailable: 2
+  unhealthyPodEvictionPolicy: AlwaysAllow
   selector:
     matchLabels:
       app: backend
@@ -31,6 +33,7 @@ metadata:
   namespace: travel-agent
 spec:
   minAvailable: 2
+  unhealthyPodEvictionPolicy: AlwaysAllow
   selector:
     matchLabels:
       app: celery-worker
@@ -43,6 +46,7 @@ metadata:
   namespace: travel-agent
 spec:
   minAvailable: 1
+  unhealthyPodEvictionPolicy: AlwaysAllow
   selector:
     matchLabels:
       app: celery-worker
@@ -55,6 +59,7 @@ metadata:
   namespace: travel-agent
 spec:
   minAvailable: 1
+  unhealthyPodEvictionPolicy: AlwaysAllow
   selector:
     matchLabels:
       app: celery-worker
@@ -67,6 +72,7 @@ metadata:
   namespace: travel-agent
 spec:
   minAvailable: 1
+  unhealthyPodEvictionPolicy: AlwaysAllow
   selector:
     matchLabels:
       app: celery-worker
@@ -81,6 +87,7 @@ spec:
   # Redis Cluster needs at least half of the master nodes available to stay operational.
   # With 6 pods (3 masters + 3 replicas), minAvailable=3 keeps quorum.
   minAvailable: 3
+  unhealthyPodEvictionPolicy: AlwaysAllow
   selector:
     matchLabels:
       app: redis
@@ -93,6 +100,7 @@ metadata:
 spec:
   # Keep at least the primary available; replica can be disrupted.
   minAvailable: 1
+  unhealthyPodEvictionPolicy: AlwaysAllow
   selector:
     matchLabels:
       app: postgres

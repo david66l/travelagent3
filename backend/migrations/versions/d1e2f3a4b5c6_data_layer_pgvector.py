@@ -54,7 +54,9 @@ def upgrade() -> None:
         sa.Column("source_updated_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("status", sa.String(20), nullable=False, server_default="active"),
         sa.Column("review_status", sa.String(20), nullable=False, server_default="verified"),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+        ),
     )
     op.create_index("ix_attractions_city", "attractions", ["city"])
     op.create_index("ix_attractions_category", "attractions", ["category"])
@@ -79,7 +81,9 @@ def upgrade() -> None:
         sa.Column("source", sa.String(20), nullable=False, server_default="amap"),
         sa.Column("source_updated_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("status", sa.String(20), nullable=False, server_default="active"),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+        ),
     )
     op.create_index("ix_restaurants_city", "restaurants", ["city"])
     op.create_index("ix_restaurants_name_city", "restaurants", ["name", "city"], unique=True)
@@ -93,9 +97,13 @@ def upgrade() -> None:
         sa.Column("content_type", sa.String(20), nullable=False, server_default="guide"),
         sa.Column("walk_intensity", sa.Integer(), nullable=True),
         sa.Column("suitable_for", sa.ARRAY(sa.Text()), nullable=False, server_default="{}"),
-        sa.Column("embedding", sa.Text(), nullable=True),  # TODO: Vector(1024) after pgvector installed
+        sa.Column(
+            "embedding", sa.Text(), nullable=True
+        ),  # TODO: Vector(1024) after pgvector installed
         sa.Column("source", sa.String(20), nullable=False, server_default="manual"),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+        ),
     )
     op.create_index("ix_knowledge_tips_city", "knowledge_tips", ["city"])
     # pgvector IVFFlat 索引（等数据量 > 1000 后再建更有效）
@@ -114,7 +122,9 @@ def upgrade() -> None:
         sa.Column("reported_value", sa.Text(), nullable=True),
         sa.Column("status", sa.String(20), nullable=False, server_default="pending"),
         sa.Column("resolved_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+        ),
     )
     op.create_index("ix_data_audit_log_status", "data_audit_log", ["status"])
 

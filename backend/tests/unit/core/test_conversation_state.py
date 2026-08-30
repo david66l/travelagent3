@@ -213,12 +213,12 @@ class TestIsProfileReady:
         del profile["trip"]["travel_days"]
         assert not is_profile_ready(profile)
 
-    def test_not_ready_without_has_children(self):
+    def test_ready_without_optional_child_flag(self):
         profile = default_conversation_state()["profile"]
         patch = self._complete_trip()
         patch.pop("has_children")
         profile["trip"].update(patch)
-        assert not is_profile_ready(profile)
+        assert is_profile_ready(profile)
 
     def test_flat_profile_still_works(self):
         """Old flat profile dict tolerated by is_profile_ready."""

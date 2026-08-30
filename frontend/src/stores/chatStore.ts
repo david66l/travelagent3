@@ -105,6 +105,42 @@ export interface OutputUrls {
   map?: string;
 }
 
+export interface PendingApproval {
+  schema_version: string;
+  approval_id: string;
+  goal_version: number;
+  plan_version: number;
+  itinerary_hash: string;
+  issued_at: string;
+  expires_at: string;
+  action_scope: string[];
+}
+
+export interface PolicyRoutingDecision {
+  step_index: number;
+  task_id: string;
+  action: string;
+  requested_target: "student" | "teacher";
+  executed_target: "student" | "teacher";
+  family: "clarification" | "search" | "recovery" | "tradeoff" | "complex";
+  reason: string;
+  fallback_used: boolean;
+  fallback_error_code?: string | null;
+  model?: string | null;
+  completion_tokens: number;
+  request_latency_ms: number;
+}
+
+export interface PolicyRoutingSummary {
+  schema_version: "agent-policy-routing-summary.v1";
+  decisions: PolicyRoutingDecision[];
+  route_counts: { student: number; teacher: number };
+  family_counts: Record<string, number>;
+  fallback_count: number;
+  completion_tokens: number;
+  request_latency_ms: number;
+}
+
 export interface ChatSnapshot {
   id: string;
   title: string;
@@ -129,6 +165,7 @@ export interface ChatState {
   intent: string | null;
   needsClarification: boolean;
   waitingForConfirmation: boolean;
+  pendingApproval: PendingApproval | null;
   activeTab: "chat" | "itinerary" | "panels";
   activeView: "chat" | "itinerary" | "export" | "booking" | "settings";
 
@@ -149,6 +186,7 @@ export interface ChatState {
 
   // Exported artifact URLs from the graph runtime
   outputUrls: OutputUrls | null;
+  policyRouting: PolicyRoutingSummary | null;
 
   // Streaming text state
   streamingContent: string;
@@ -165,6 +203,7 @@ export interface ChatState {
   setIntent: (v: string | null) => void;
   setNeedsClarification: (v: boolean) => void;
   setWaitingForConfirmation: (v: boolean) => void;
+  setPendingApproval: (v: PendingApproval | null) => void;
   setActiveTab: (v: "chat" | "itinerary" | "panels") => void;
   setActiveView: (v: "chat" | "itinerary" | "export" | "booking" | "settings") => void;
 
@@ -185,6 +224,7 @@ export interface ChatState {
   setJobStatus: (status: string | null) => void;
   setActivityPhase: (phase: "idle" | "gathering" | "planning") => void;
   setOutputUrls: (urls: OutputUrls | null) => void;
+  setPolicyRouting: (summary: PolicyRoutingSummary | null) => void;
 
   // Streaming text setters
   appendStreamingContent: (chunk: string) => void;
@@ -283,6 +323,7 @@ export const useChatStore = create<ChatState>()(
       intent: null,
       needsClarification: false,
       waitingForConfirmation: false,
+      pendingApproval: null,
       activeTab: "chat",
       activeView: "chat",
 
@@ -300,6 +341,7 @@ export const useChatStore = create<ChatState>()(
       jobStatus: null,
       activityPhase: "idle",
       outputUrls: null,
+      policyRouting: null,
 
       streamingContent: "",
       isStreaming: false,
@@ -362,6 +404,7 @@ export const useChatStore = create<ChatState>()(
       setIntent: (v) => set({ intent: v }),
       setNeedsClarification: (v) => set({ needsClarification: v }),
       setWaitingForConfirmation: (v) => set({ waitingForConfirmation: v }),
+      setPendingApproval: (v) => set({ pendingApproval: v }),
       setActiveTab: (v) => set({ activeTab: v }),
       setActiveView: (v) => set({ activeView: v }),
 
@@ -474,6 +517,7 @@ export const useChatStore = create<ChatState>()(
       setJobStatus: (status) => set({ jobStatus: status }),
       setActivityPhase: (phase) => set({ activityPhase: phase }),
       setOutputUrls: (urls) => set({ outputUrls: urls }),
+      setPolicyRouting: (summary) => set({ policyRouting: summary }),
 
       appendStreamingContent: (chunk) =>
         set((state) => ({
@@ -558,6 +602,7 @@ export const useChatStore = create<ChatState>()(
           intent: null,
           needsClarification: false,
           waitingForConfirmation: false,
+          pendingApproval: null,
           confirmedInfo: null,
           activeBriefDay: 0,
           pendingSuggestions: [],
@@ -569,6 +614,7 @@ export const useChatStore = create<ChatState>()(
           jobStatus: null,
           activityPhase: "idle",
           outputUrls: null,
+          policyRouting: null,
           streamingContent: "",
           isStreaming: false,
         });
@@ -600,6 +646,7 @@ export const useChatStore = create<ChatState>()(
           budgetPanel: currentTrip?.budgetPanel ?? activeSnapshot?.budgetPanel ?? null,
           pendingSuggestions: activeSnapshot?.pendingSuggestions ?? [],
           waitingForConfirmation: persisted?.waitingForConfirmation ?? false,
+          pendingApproval: persisted?.pendingApproval ?? null,
           activeView: persisted?.activeView ?? "chat",
           currentTrip,
           chatSnapshots: snapshots,
@@ -609,6 +656,7 @@ export const useChatStore = create<ChatState>()(
       partialize: (state) => ({
         sessionId: state.sessionId,
         waitingForConfirmation: state.waitingForConfirmation,
+        pendingApproval: state.pendingApproval,
         activeView: state.activeView,
         currentTrip: state.currentTrip,
         chatSnapshots: state.chatSnapshots,

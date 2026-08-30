@@ -41,7 +41,10 @@ def _pct(values: list[float], p: float) -> float:
 
 async def _one(client: LLMClient, prompt: str) -> tuple[bool, float, str]:
     msgs = [
-        {"role": "system", "content": "你是意图识别器，输出JSON: intent/confidence/sentiment/slots/missing_slots"},
+        {
+            "role": "system",
+            "content": "你是意图识别器，输出JSON: intent/confidence/sentiment/slots/missing_slots",
+        },
         {"role": "user", "content": prompt},
     ]
     t = time.monotonic()
@@ -57,9 +60,7 @@ async def _one(client: LLMClient, prompt: str) -> tuple[bool, float, str]:
 
 async def run_level(client: LLMClient, n: int) -> None:
     start = time.monotonic()
-    results = await asyncio.gather(
-        *(_one(client, _PROMPTS[i % len(_PROMPTS)]) for i in range(n))
-    )
+    results = await asyncio.gather(*(_one(client, _PROMPTS[i % len(_PROMPTS)]) for i in range(n)))
     wall = time.monotonic() - start
 
     oks = [r for r in results if r[0]]

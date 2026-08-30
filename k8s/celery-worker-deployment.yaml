@@ -27,10 +27,13 @@ spec:
         queue: default
         tier: worker
     spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: worker
-          image: ghcr.io/travelagent/travel-agent-backend:latest
-          imagePullPolicy: Always
+          image: ghcr.io/travelagent/travel-agent-backend:git-sha-required
+          imagePullPolicy: IfNotPresent
           command:
             - celery
             - -A
@@ -68,7 +71,7 @@ spec:
           securityContext:
             allowPrivilegeEscalation: false
             runAsNonRoot: true
-            runAsUser: 1000
+            runAsUser: 999
             readOnlyRootFilesystem: true
             capabilities:
               drop:
@@ -76,6 +79,16 @@ spec:
       volumes:
         - name: tmp
           emptyDir: {}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 80
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: celery-worker
+                    queue: default
+                topologyKey: kubernetes.io/hostname
       terminationGracePeriodSeconds: 60
 ---
 # -----------------------------------------------------------------------------
@@ -103,10 +116,13 @@ spec:
         queue: planning
         tier: worker
     spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: worker
-          image: ghcr.io/travelagent/travel-agent-backend:latest
-          imagePullPolicy: Always
+          image: ghcr.io/travelagent/travel-agent-backend:git-sha-required
+          imagePullPolicy: IfNotPresent
           command:
             - celery
             - -A
@@ -144,7 +160,7 @@ spec:
           securityContext:
             allowPrivilegeEscalation: false
             runAsNonRoot: true
-            runAsUser: 1000
+            runAsUser: 999
             readOnlyRootFilesystem: true
             capabilities:
               drop:
@@ -191,10 +207,13 @@ spec:
         queue: poi
         tier: worker
     spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: worker
-          image: ghcr.io/travelagent/travel-agent-backend:latest
-          imagePullPolicy: Always
+          image: ghcr.io/travelagent/travel-agent-backend:git-sha-required
+          imagePullPolicy: IfNotPresent
           command:
             - celery
             - -A
@@ -232,7 +251,7 @@ spec:
           securityContext:
             allowPrivilegeEscalation: false
             runAsNonRoot: true
-            runAsUser: 1000
+            runAsUser: 999
             readOnlyRootFilesystem: true
             capabilities:
               drop:
@@ -240,6 +259,16 @@ spec:
       volumes:
         - name: tmp
           emptyDir: {}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 80
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: celery-worker
+                    queue: poi
+                topologyKey: kubernetes.io/hostname
       terminationGracePeriodSeconds: 60
 ---
 # -----------------------------------------------------------------------------
@@ -255,7 +284,7 @@ metadata:
     queue: memory
     tier: worker
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: celery-worker
@@ -267,10 +296,13 @@ spec:
         queue: memory
         tier: worker
     spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: worker
-          image: ghcr.io/travelagent/travel-agent-backend:latest
-          imagePullPolicy: Always
+          image: ghcr.io/travelagent/travel-agent-backend:git-sha-required
+          imagePullPolicy: IfNotPresent
           command:
             - celery
             - -A
@@ -308,7 +340,7 @@ spec:
           securityContext:
             allowPrivilegeEscalation: false
             runAsNonRoot: true
-            runAsUser: 1000
+            runAsUser: 999
             readOnlyRootFilesystem: true
             capabilities:
               drop:
@@ -316,4 +348,14 @@ spec:
       volumes:
         - name: tmp
           emptyDir: {}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 80
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: celery-worker
+                    queue: memory
+                topologyKey: kubernetes.io/hostname
       terminationGracePeriodSeconds: 60

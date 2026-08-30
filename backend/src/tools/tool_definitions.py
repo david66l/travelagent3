@@ -65,9 +65,26 @@ class TicketLinkParams(BaseModel):
     city: str | None = Field(None, description="城市名称")
 
 
-class LocalEventsParams(BaseModel):
-    city: str = Field(..., description="城市名称")
-    date: str | None = Field(None, description="日期 YYYY-MM-DD")
+class CityKnowledgeParams(BaseModel):
+    city: str = Field(..., description="已由用户目标确定的城市")
+    topic: str | None = Field(None, description="可选主题，例如历史文化、亲子或美食")
+
+
+class CurrentInfoParams(BaseModel):
+    query: str = Field(..., min_length=2, description="需要核实的时效事实")
+    city: str | None = Field(None, description="目标城市")
+    date: str | None = Field(None, description="相关日期 YYYY-MM-DD")
+    info_type: Literal[
+        "event", "opening_hours", "restaurant", "seasonal_activity", "closure", "general"
+    ] = "general"
+
+
+class TransportSearchParams(BaseModel):
+    origin: str = Field(..., description="出发城市")
+    destination: str = Field(..., description="到达城市")
+    date: str | None = Field(None, description="出发日期 YYYY-MM-DD")
+    return_date: str | None = Field(None, description="可选返程日期 YYYY-MM-DD")
+    mode: Literal["flight", "train", "both"] = "both"
 
 
 class EmergencyServicesParams(BaseModel):
@@ -181,9 +198,25 @@ TOOLS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
-            "name": "get_local_events",
-            "description": "查询城市近期活动、展览、演出或节庆。",
-            "parameters": _schema(LocalEventsParams),
+            "name": "retrieve_city_knowledge",
+            "description": "优先查询本地知识库中的城市与 POI 稳定事实，作为实时搜索前的基础证据。",
+            "parameters": _schema(CityKnowledgeParams),
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_current_info",
+            "description": "统一联网核实任意活动、营业时间、临时闭馆、餐厅和季节信息，并返回来源链接。",
+            "parameters": _schema(CurrentInfoParams),
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_transport",
+            "description": "查询指定日期的航班或火车班次信息；价格和余票必须带查询时间。",
+            "parameters": _schema(TransportSearchParams),
         },
     },
     {
@@ -254,7 +287,9 @@ TOOL_NAME_TO_MODEL: dict[str, type[BaseModel]] = {
     "find_hotels": HotelParams,
     "get_queue_time": QueueTimeParams,
     "get_ticket_link": TicketLinkParams,
-    "get_local_events": LocalEventsParams,
+    "retrieve_city_knowledge": CityKnowledgeParams,
+    "search_current_info": CurrentInfoParams,
+    "search_transport": TransportSearchParams,
     "get_emergency_services": EmergencyServicesParams,
     "get_poi_detail": POIDetailParams,
     "update_user_profile": UpdateProfileParams,

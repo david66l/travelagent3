@@ -72,3 +72,17 @@ class TestMemoryConflictResolver:
         assert result["max_transit_minutes"] == 120
         assert result["travelers_count"] is None
         assert result["has_children"] is None
+
+    def test_trip_poi_constraints_and_fatigue_survive_resolution(self, resolver):
+        result = resolver.resolve(
+            {
+                "must_visit": ["故宫"],
+                "must_not_visit": ["外滩"],
+                "fatigue_preference": "low",
+            },
+            {},
+        )
+
+        assert result["must_visit"] == ["故宫"]
+        assert result["must_not_visit"] == ["外滩"]
+        assert result["fatigue_preference"] == "low"

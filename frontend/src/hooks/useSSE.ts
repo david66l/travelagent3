@@ -134,10 +134,11 @@ export function useSSE(options: UseSSEOptions = {}) {
       conversationId: string,
       connectOptions?: { jobId?: string; lastEventId?: number }
     ) => {
-      if (connectingRef.current === conversationId) {
+      const connectionKey = `${conversationId}:${connectOptions?.jobId ?? "session"}`;
+      if (connectingRef.current === connectionKey) {
         return;
       }
-      connectingRef.current = conversationId;
+      connectingRef.current = connectionKey;
 
       disconnect();
 
@@ -264,7 +265,7 @@ export function useSSE(options: UseSSEOptions = {}) {
         }
         return;
       } finally {
-        if (connectingRef.current === conversationId) {
+        if (connectingRef.current === connectionKey) {
           connectingRef.current = null;
         }
         if (abortRef.current === controller) {

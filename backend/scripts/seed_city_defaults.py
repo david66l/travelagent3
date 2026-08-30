@@ -15,7 +15,7 @@ import logging
 import re
 import uuid
 from datetime import datetime, time, timezone
-from typing import Any, Optional
+from typing import Any
 
 from sqlalchemy import text
 
@@ -52,15 +52,25 @@ def _parse_recommended_hours(hours_str: str | None) -> int:
 def _time_window(best_time: str | None) -> tuple[time, time]:
     """根据最佳游玩时间推断开放时段。"""
     if best_time == "上午":
-        return datetime.strptime("08:00", "%H:%M").time(), datetime.strptime("14:00", "%H:%M").time()
+        return datetime.strptime("08:00", "%H:%M").time(), datetime.strptime(
+            "14:00", "%H:%M"
+        ).time()
     if best_time == "下午":
-        return datetime.strptime("12:00", "%H:%M").time(), datetime.strptime("21:00", "%H:%M").time()
+        return datetime.strptime("12:00", "%H:%M").time(), datetime.strptime(
+            "21:00", "%H:%M"
+        ).time()
     if best_time == "傍晚":
-        return datetime.strptime("16:00", "%H:%M").time(), datetime.strptime("22:00", "%H:%M").time()
+        return datetime.strptime("16:00", "%H:%M").time(), datetime.strptime(
+            "22:00", "%H:%M"
+        ).time()
     if best_time == "晚上":
-        return datetime.strptime("18:00", "%H:%M").time(), datetime.strptime("23:00", "%H:%M").time()
+        return datetime.strptime("18:00", "%H:%M").time(), datetime.strptime(
+            "23:00", "%H:%M"
+        ).time()
     if best_time == "全天":
-        return datetime.strptime("08:00", "%H:%M").time(), datetime.strptime("23:00", "%H:%M").time()
+        return datetime.strptime("08:00", "%H:%M").time(), datetime.strptime(
+            "23:00", "%H:%M"
+        ).time()
     return datetime.strptime("08:00", "%H:%M").time(), datetime.strptime("22:00", "%H:%M").time()
 
 
@@ -256,7 +266,12 @@ async def main():
         for city, pois in CITY_DEFAULTS.items():
             attractions = [p for p in pois if p.category == "attraction"]
             restaurants = [p for p in pois if p.category == "restaurant"]
-            logger.info("Seeding %s: %d attractions, %d restaurants", city, len(attractions), len(restaurants))
+            logger.info(
+                "Seeding %s: %d attractions, %d restaurants",
+                city,
+                len(attractions),
+                len(restaurants),
+            )
 
             attr_count = await _insert_attractions(db, city, attractions, embedder)
             rest_count = await _insert_restaurants(db, city, restaurants)

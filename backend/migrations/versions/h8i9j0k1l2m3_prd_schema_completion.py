@@ -11,7 +11,6 @@ PRD 缺失补充:
   - hotels.cancel_policy / distance_to_center_km
 """
 
-from typing import Sequence, Union
 from alembic import op
 import sqlalchemy as sa
 

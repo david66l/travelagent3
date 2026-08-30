@@ -7,7 +7,6 @@ Create Date: 2026-06-18
 补全 user_profile_vectors 缺失列.
 """
 
-from typing import Sequence, Union
 from alembic import op
 import sqlalchemy as sa
 
@@ -18,8 +17,14 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column("user_profile_vectors", sa.Column("preferred_transport", sa.String(50), nullable=False, server_default=""))
-    op.add_column("user_profile_vectors", sa.Column("preferred_accommodation", sa.String(50), nullable=False, server_default=""))
+    op.add_column(
+        "user_profile_vectors",
+        sa.Column("preferred_transport", sa.String(50), nullable=False, server_default=""),
+    )
+    op.add_column(
+        "user_profile_vectors",
+        sa.Column("preferred_accommodation", sa.String(50), nullable=False, server_default=""),
+    )
 
 
 def downgrade() -> None:

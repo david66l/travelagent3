@@ -1,0 +1,51 @@
+{
+  "schema_version": "agent-policy-sft-experiment-matrix.v1",
+  "dataset": "ml/agentic/datasets/stage2-sft-v2-curriculum-v1",
+  "initial_checkpoint": "ml/agentic/checkpoints/stage2-policy-driven-sft-smoke20-v1",
+  "goal": "repair schema-copy failures without regressing search, recovery, clarification or tradeoff",
+  "shared": {
+    "max_steps": 60,
+    "gradient_accumulation": 4,
+    "max_train_examples": 0,
+    "max_eval_examples": 128,
+    "termination_token_weight": 1.0,
+    "warmup_ratio": 0.05,
+    "max_grad_norm": 1.0,
+    "logging_steps": 5,
+    "eval_steps": 10,
+    "save_steps": 10,
+    "save_total_limit": 7,
+    "eval_during_smoke": true,
+    "minimum_train_examples": 1000
+  },
+  "runs": [
+    {
+      "id": "stage2-sft-v2-lr3e6",
+      "learning_rate": 0.000003
+    },
+    {
+      "id": "stage2-sft-v2-lr8e6",
+      "learning_rate": 0.000008
+    },
+    {
+      "id": "stage2-sft-v2-lr1e5",
+      "learning_rate": 0.00001
+    }
+  ],
+  "checkpoint_gate": {
+    "screen_steps": [10, 20, 30, 40, 50, 60],
+    "stage_1": "isolated native tool-call schema and field-confusion evaluation",
+    "stage_2": "frozen sequential Agent Loop evaluation for the best checkpoint from each LR",
+    "promotion_order": [
+      "policy_argument_validity",
+      "full_trajectory_success",
+      "worst_action_family_success",
+      "mean_model_latency"
+    ],
+    "minimums": {
+      "policy_argument_validity": 0.99,
+      "full_trajectory_success": 0.9,
+      "worst_action_family_success": 0.85
+    }
+  }
+}

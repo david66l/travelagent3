@@ -10,6 +10,7 @@ from pydantic import BaseModel, ValidationError
 
 from core.cost_circuit_breaker import is_cost_circuit_active, record_daily_tokens
 from core.json_extract import extract_json_text
+from core.inference_metrics import InferenceMetrics
 from core.metrics import (
     record_llm_duration,
     record_llm_tokens,
@@ -26,22 +27,44 @@ logger = logging.getLogger(__name__)
 
 
 class LLMClient:
-    def __init__(self):
-        base_url = settings.vllm_base_url if settings.vllm_enabled else settings.openai_base_url
-        api_key = (
-            settings.vllm_api_key
-            if settings.vllm_enabled
-            else (settings.deepseek_api_key or settings.openai_api_key)
+    def __init__(
+        self,
+        *,
+        base_url: str | None = None,
+        api_key: str | None = None,
+        using_vllm: bool | None = None,
+    ):
+        configured_vllm = settings.vllm_enabled if using_vllm is None else using_vllm
+        resolved_base_url = base_url or (
+            settings.vllm_base_url if configured_vllm else settings.openai_base_url
         )
+        resolved_api_key = (
+            api_key
+            if api_key is not None
+            else (
+                settings.vllm_api_key
+                if configured_vllm
+                else (settings.deepseek_api_key or settings.openai_api_key)
+            )
+        )
+        # Constructing the module-level client must remain side-effect free for
+        # offline dataset building, evaluation and training. The OpenAI SDK
+        # rejects an empty key during construction even when no API request will
+        # ever be made; an actual cloud call with this sentinel still fails at
+        # the provider boundary instead of leaking a credential into ML jobs.
+        resolved_api_key = resolved_api_key or "not-configured"
         self.client = AsyncOpenAI(
-            api_key=api_key,
-            base_url=base_url,
+            api_key=resolved_api_key,
+            base_url=resolved_base_url,
             timeout=settings.llm_timeout,
         )
         self.model = settings.llm_model
-        self._using_vllm = settings.vllm_enabled
+        self._using_vllm = configured_vllm
         self._last_token_usage: ContextVar[int] = ContextVar(
             f"llm_token_usage_{id(self)}", default=0
+        )
+        self._last_request_metrics: ContextVar[InferenceMetrics | None] = ContextVar(
+            f"llm_request_metrics_{id(self)}", default=None
         )
 
         # 本地 llama.cpp 客户端（意图识别专用）
@@ -67,6 +90,49 @@ class LLMClient:
     @last_token_usage.setter
     def last_token_usage(self, value: int) -> None:
         self._last_token_usage.set(int(value))
+
+    @property
+    def last_request_metrics(self) -> InferenceMetrics | None:
+        return self._last_request_metrics.get()
+
+    @last_request_metrics.setter
+    def last_request_metrics(self, value: InferenceMetrics | None) -> None:
+        self._last_request_metrics.set(value)
+
+    def _backend_for_model(self, model_name: str) -> str:
+        if self._uses_local_llm(model_name):
+            return "local-openai-compatible"
+        return "vllm" if self._using_vllm else "cloud-openai-compatible"
+
+    def _capture_request_metrics(
+        self,
+        response: Any,
+        *,
+        model: str,
+        task_type: str,
+        duration_s: float,
+        thinking_mode: str = "unknown",
+    ) -> InferenceMetrics:
+        usage = getattr(response, "usage", None)
+        prompt_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
+        completion_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
+        prompt_details = getattr(usage, "prompt_tokens_details", None)
+        cached_tokens = int(getattr(prompt_details, "cached_tokens", 0) or 0)
+        choices = list(getattr(response, "choices", None) or [])
+        finish_reason = str(getattr(choices[0], "finish_reason", "") or "") if choices else None
+        metrics = InferenceMetrics(
+            model=model,
+            backend=self._backend_for_model(model),
+            task_type=task_type,
+            thinking_mode=thinking_mode,  # type: ignore[arg-type]
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            cached_prompt_tokens=cached_tokens,
+            request_latency_ms=round(duration_s * 1000, 3),
+            finish_reason=finish_reason or None,
+        )
+        self.last_request_metrics = metrics
+        return metrics
 
     def _client_for_model(self, model_name: str) -> tuple[AsyncOpenAI, str]:
         """根据模型名返回对应的客户端和实际模型名。"""
@@ -111,8 +177,13 @@ class LLMClient:
             task_type=task,
             cost_circuit_active=cost_active,
         )
-        compressed = compress_message_history(messages)
-        return model, compressed, tier
+        # Agent policy state is already projected and size-gated by
+        # policy_prompt_payload/preflight_sft_model. Generic middle truncation can
+        # corrupt its JSON and remove the artifact that distinguishes the next
+        # ReAct action, creating train/serve skew. Conversation tasks still use the
+        # ordinary history compressor.
+        prepared = messages if task == "agent_policy" else compress_message_history(messages)
+        return model, prepared, tier
 
     @staticmethod
     def _thinking_extra_body(
@@ -137,11 +208,13 @@ class LLMClient:
         max_tokens: int = 256,
         task_type: str = "agent_policy",
         model_override: str | None = None,
+        seed: int | None = None,
     ) -> dict[str, Any]:
         """Request exactly one native function call from an OpenAI-compatible model."""
         if not tools:
             raise ValueError("native tool call requires at least one tool schema")
         self.last_token_usage = 0
+        self.last_request_metrics = None
         routed_model, prepared_messages, tier = await self._prepare_request(messages, task_type)
         model = model_override or routed_model
         request_kwargs: dict[str, Any] = {
@@ -153,13 +226,26 @@ class LLMClient:
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
-        extra_body = self._thinking_extra_body(model, task_type)
+        if seed is not None:
+            request_kwargs["seed"] = seed
+        extra_body = self._thinking_extra_body(model, task_type) or {}
+        if self._using_vllm:
+            # Qwen3 enables thinking by default. Agent Policy expects exactly one
+            # short tool call, so keep its serving template aligned with SFT/GRPO.
+            extra_body["chat_template_kwargs"] = {"enable_thinking": False}
         if extra_body:
             request_kwargs["extra_body"] = extra_body
         start = time.monotonic()
         response = await self._create_completion(**request_kwargs)
         duration = time.monotonic() - start
         self._log_usage(response, model=model, tier=tier, duration_s=duration)
+        self._capture_request_metrics(
+            response,
+            model=model,
+            task_type=task_type,
+            duration_s=duration,
+            thinking_mode="disabled" if self._using_vllm else "unknown",
+        )
         usage = getattr(response, "usage", None)
         self.last_token_usage = int(getattr(usage, "total_tokens", 0) or 0)
 
@@ -213,6 +299,7 @@ class LLMClient:
         temperature: float,
         max_tokens: int,
         tier: str,
+        task_type: str,
         extra_body: Optional[dict[str, Any]] = None,
     ) -> str:
         start = time.monotonic()
@@ -228,6 +315,13 @@ class LLMClient:
         response = await self._create_completion(**request_kwargs)
         duration = time.monotonic() - start
         self._log_usage(response, model=model, tier=tier, duration_s=duration)
+        self._capture_request_metrics(
+            response,
+            model=model,
+            task_type=task_type,
+            duration_s=duration,
+            thinking_mode="disabled" if extra_body else "unknown",
+        )
         usage = getattr(response, "usage", None)
         self.last_token_usage += int(getattr(usage, "total_tokens", 0) or 0)
         return response.choices[0].message.content or "{}"
@@ -240,6 +334,7 @@ class LLMClient:
         task_type: Optional[str] = None,
     ) -> T:
         self.last_token_usage = 0
+        self.last_request_metrics = None
         model, prepared_messages, tier = await self._prepare_request(messages, task_type)
         temp = temperature if temperature is not None else 0.3
         max_tokens = settings.llm_max_tokens
@@ -254,6 +349,7 @@ class LLMClient:
             temperature=temp,
             max_tokens=max_tokens,
             tier=tier,
+            task_type=task_type or "chat",
             extra_body=extra_body,
         )
         try:
@@ -281,6 +377,7 @@ class LLMClient:
                 temperature=0.1,
                 max_tokens=max_tokens,
                 tier=tier,
+                task_type=task_type or "chat",
                 extra_body=extra_body,
             )
             return self._parse_structured(repaired, response_model)

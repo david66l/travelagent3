@@ -1,8 +1,9 @@
 """Integration tests for PlanningJob repository with real PostgreSQL."""
 
 import asyncio
+import time
 import pytest
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
 from sqlalchemy import select, update
@@ -10,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import async_session_maker
 from models.planning_job import PlanningJob
+from models import User
 from repositories.planning_job import PlanningJobRepository
 from tests.support.planning_feedback import feedback_with_trip
 
@@ -50,6 +52,87 @@ class TestPlanningJobRepository:
         fetched = await repo.get(job.id)
         assert fetched is not None
         assert fetched.id == job.id
+
+    @pytest.mark.asyncio
+    async def test_guest_quota_counts_verified_itineraries_not_clarification_turns(
+        self, db: AsyncSession
+    ):
+        user = User(role="guest")
+        db.add(user)
+        await db.flush()
+        repo = PlanningJobRepository(db)
+
+        clarification = await repo.create(
+            session_id="quota-clarify",
+            user_id=str(user.id),
+            user_uuid=user.id,
+            user_input="国庆去上海看演唱会",
+        )
+        clarification.status = "completed"
+        clarification.user_feedback = {
+            "agent_status": "awaiting_information",
+            "itinerary": [],
+        }
+        await db.commit()
+        assert await repo.count_completed_for_user(user.id) == 0
+
+        itinerary = await repo.create(
+            session_id="quota-success",
+            user_id=str(user.id),
+            user_uuid=user.id,
+            user_input="杭州一天",
+        )
+        itinerary.status = "completed"
+        itinerary.user_feedback = {
+            "agent_status": "awaiting_confirmation",
+            "itinerary": [{"day_number": 1, "activities": []}],
+        }
+        await db.commit()
+        assert await repo.count_completed_for_user(user.id) == 1
+
+    @pytest.mark.asyncio
+    async def test_idempotency_advisory_lock_serializes_first_writer_race(self, db: AsyncSession):
+        user = User(role="guest")
+        db.add(user)
+        await db.commit()
+        user_id = user.id
+        key = "concurrent-integration-key"
+        first_locked = asyncio.Event()
+        first_job_id: str | None = None
+
+        async def first_writer():
+            nonlocal first_job_id
+            async with async_session_maker() as session:
+                repo = PlanningJobRepository(session)
+                await repo.acquire_idempotency_lock(user_id, key)
+                first_locked.set()
+                job = await repo.create(
+                    session_id="idempotency-race",
+                    user_id=str(user_id),
+                    user_uuid=user_id,
+                    user_input="上海一天",
+                    idempotency_key=key,
+                )
+                first_job_id = job.id
+                await asyncio.sleep(0.2)
+                await session.commit()
+
+        async def second_writer():
+            await first_locked.wait()
+            started = time.monotonic()
+            async with async_session_maker() as session:
+                repo = PlanningJobRepository(session)
+                await repo.acquire_idempotency_lock(user_id, key)
+                existing = await repo.get_by_idempotency_key(user_id, key)
+                waited = time.monotonic() - started
+                await session.commit()
+                return existing, waited
+
+        (_, second_result) = await asyncio.gather(first_writer(), second_writer())
+        existing, waited = second_result
+        assert existing is not None
+        assert existing.id == first_job_id
+        assert waited >= 0.15
 
     @pytest.mark.asyncio
     async def test_acquire_job_pending(self, db: AsyncSession):
@@ -314,7 +397,7 @@ class TestPlanningJobRepository:
         await db.execute(
             update(PlanningJob)
             .where(PlanningJob.id == acquired1.id)
-            .values(lock_expires_at=datetime.utcnow() - timedelta(seconds=1))
+            .values(lock_expires_at=datetime.now(UTC).replace(tzinfo=None) - timedelta(seconds=1))
         )
         await db.commit()
 

@@ -2,17 +2,19 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+import hashlib
+from datetime import timedelta
 from typing import Optional, Sequence
 from uuid import UUID
 
-from sqlalchemy import select, update, func
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.conversation_turn import (
     feedback_from_input_requirements,
     input_requirements_from_feedback,
 )
+from core.clock import utc_now_naive
 from models.planning_job import PlanningJob, PlanningJobEvent
 
 
@@ -35,6 +37,7 @@ class PlanningJobRepository:
         user_feedback: Optional[dict] = None,
         user_uuid: Optional[UUID] = None,
         conversation_id: Optional[UUID] = None,
+        idempotency_key: Optional[str] = None,
     ) -> PlanningJob:
         fb = user_feedback if user_feedback is not None else dict()
         job = PlanningJob(
@@ -47,6 +50,7 @@ class PlanningJobRepository:
             status="pending",
             user_feedback=fb,
             input_requirements=input_requirements_from_feedback(fb),
+            idempotency_key=idempotency_key,
         )
         self.db.add(job)
         await self.db.flush()
@@ -60,6 +64,30 @@ class PlanningJobRepository:
     async def get_by_id(self, job_id: str) -> Optional[PlanningJob]:
         """Alias for REST services (same as ``get``)."""
         return await self.get(job_id)
+
+    async def get_by_idempotency_key(
+        self,
+        user_uuid: UUID,
+        idempotency_key: str,
+    ) -> Optional[PlanningJob]:
+        result = await self.db.execute(
+            select(PlanningJob).where(
+                PlanningJob.user_uuid == user_uuid,
+                PlanningJob.idempotency_key == idempotency_key,
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def acquire_idempotency_lock(self, user_uuid: UUID, idempotency_key: str) -> None:
+        """Serialize first-writer creation for one user/idempotency key.
+
+        PostgreSQL transaction advisory locks close the lookup/insert race. The
+        lock is released automatically on commit or rollback, including process
+        crashes, and avoids holding a Redis-only correctness dependency.
+        """
+        digest = hashlib.sha256(f"{user_uuid}:{idempotency_key}".encode()).digest()
+        lock_id = int.from_bytes(digest[:8], byteorder="big", signed=True)
+        await self.db.execute(select(func.pg_advisory_xact_lock(lock_id)))
 
     async def get_by_conversation(
         self,
@@ -336,6 +364,10 @@ class PlanningJobRepository:
         }
         if error:
             values["last_error"] = error
+        elif status == "completed":
+            # A prior transient attempt may have populated last_error. A later
+            # successful retry must not leave the job looking partially failed.
+            values["last_error"] = None
         if status in ("completed", "failed", "cancelled"):
             values["completed_at"] = func.now()
 
@@ -389,12 +421,22 @@ class PlanningJobRepository:
         return status in ("cancelling", "cancelled", "force_cancelled")
 
     async def count_completed_for_user(self, user_uuid: UUID) -> int:
+        # A completed *turn* can be a clarification request. Only a verified
+        # itinerary awaiting confirmation (or a legacy persisted final
+        # itinerary) consumes the guest's one-itinerary allowance.
+        successful_itinerary = or_(
+            PlanningJob.itinerary_final.is_not(None),
+            PlanningJob.user_feedback["agent_status"]
+            .as_string()
+            .in_(("awaiting_confirmation", "confirmed", "completed", "final")),
+        )
         result = await self.db.execute(
             select(func.count())
             .select_from(PlanningJob)
             .where(
                 PlanningJob.user_uuid == user_uuid,
                 PlanningJob.status == "completed",
+                successful_itinerary,
             )
         )
         return int(result.scalar_one() or 0)
@@ -434,7 +476,7 @@ class PlanningJobRepository:
             return False
 
         timings = job.stage_timings or {}
-        elapsed = (datetime.utcnow() - job.created_at).total_seconds()
+        elapsed = (utc_now_naive() - job.created_at).total_seconds()
         timings[stage] = round(elapsed, 1)
 
         values = {

@@ -1346,15 +1346,29 @@ async def _output_async(state: dict) -> dict:
     from core.conversation_state import flatten_profile
 
     profile_raw = flatten_profile(state.get("profile") or {})
+    profile_raw.update(
+        {
+            key: value
+            for key, value in (state.get("slots") or {}).items()
+            if value not in (None, "", [])
+        }
+    )
     from schemas import DayPlan, UserProfile
     from planner.core.writer import enrich as enrich_writer
 
     profile_obj = UserProfile(
         destination=profile_raw.get("destination"),
         travel_days=profile_raw.get("travel_days") or 1,
+        travel_dates=profile_raw.get("travel_dates"),
+        travelers_count=profile_raw.get("travelers_count"),
+        travelers_type=profile_raw.get("travelers_type"),
+        budget_range=profile_raw.get("budget_range"),
         interests=profile_raw.get("interests") or [],
         food_preferences=profile_raw.get("food_preferences") or [],
+        food_taboos=profile_raw.get("food_taboos") or [],
         pace=profile_raw.get("pace") or "moderate",
+        has_elderly=bool(profile_raw.get("has_elderly", False)),
+        has_children=bool(profile_raw.get("has_children", False)),
     )
 
     try:

@@ -1,6 +1,6 @@
 # Dockerfile.vllm — Production vLLM inference image for TravelAgent2 (M4)
 # Base: vLLM OpenAI-compatible server with CUDA support
-# Includes: Qwen2.5-14B-Instruct base model + travel LoRA adapters
+# Includes: Qwen2.5-14B-Instruct serving defaults + optional LoRA artifacts
 #
 # Build:
 #   docker build -f Dockerfile.vllm -t ghcr.io/travelagent/travel-agent-vllm:latest .
@@ -12,10 +12,13 @@
 #
 # Notes:
 # - Model weights are downloaded at build time if HF_TOKEN is provided.
-# - LoRA adapters are copied from ml/adapters/ and pre-registered.
+# - LoRA artifacts are copied from ml/adapters/ but only registered by an
+#   explicit release override after real PEFT weights pass compatibility gates.
 # - For air-gapped environments, mount model weights as a PVC/volume.
 
-FROM vllm/vllm-openai:v0.6.3.post1 AS base
+# v0.8.3 introduced required tool choice; v0.9.2 includes Qwen3 support while
+# retaining the Hermes JSON-in-<tool_call> protocol used by this repository.
+FROM vllm/vllm-openai:v0.9.2 AS base
 
 # Build arguments
 ARG HF_TOKEN=""
@@ -44,7 +47,8 @@ WORKDIR /models
 # Copy LoRA adapters into image (lightweight; base model mounted separately in K8s)
 COPY --chown=vllm:vllm ${ADAPTER_DIR} /models/adapters
 
-# Pre-create adapter mount points so --lora-modules resolves even if PVC not mounted
+# Keep stable mount points, but do not register placeholder adapters. A release
+# image may opt in through VLLM_EXTRA_ARGS only after real PEFT weights exist.
 RUN for adapter in travel-chat-v1 travel-plan-v1 travel-repair-v1; do \
       mkdir -p /models/adapters/${adapter}; \
     done
@@ -65,15 +69,12 @@ CMD exec python -m vllm.entrypoints.openai.api_server \
     --model "${VLLM_MODEL}" \
     --host 0.0.0.0 \
     --port ${VLLM_PORT} \
-    --enable-lora \
-    --lora-modules \
-      travel-chat-v1=/models/adapters/travel-chat-v1,\
-      travel-plan-v1=/models/adapters/travel-plan-v1,\
-      travel-repair-v1=/models/adapters/travel-repair-v1 \
     --tensor-parallel-size 1 \
     --max-model-len 8192 \
     --gpu-memory-utilization 0.85 \
     --dtype half \
     --max-num-seqs 256 \
+    --enable-auto-tool-choice \
+    --tool-call-parser hermes \
     --enable-prefix-caching \
     ${VLLM_EXTRA_ARGS}

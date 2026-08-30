@@ -1,6 +1,7 @@
 # TravelAgent2 shared ConfigMap (M5)
 # Non-sensitive configuration consumed by backend, gateway, celery, and frontend.
-# Sensitive values live in k8s/secret.yaml.
+# Sensitive values are injected by the cluster secret manager. A non-deployable
+# example lives at deploy/examples/travel-agent-secret.yaml.example.
 #
 # Redis topology:
 # - Redis Cluster is deployed as 3-master/3-replica StatefulSet (PRD §4.7.6).
@@ -17,6 +18,8 @@ kind: ConfigMap
 metadata:
   name: travel-agent-config
   namespace: travel-agent
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
 data:
   # -------------------------------------------------------------------------
   # Gateway
@@ -46,6 +49,7 @@ data:
   # -------------------------------------------------------------------------
   APP_HOST: "0.0.0.0"
   APP_PORT: "8000"
+  APP_ENV: "production"
   LOG_LEVEL: "INFO"
   # Redis Cluster mode (PRD §4.7.6)
   REDIS_CLUSTER: "true"
@@ -58,17 +62,20 @@ data:
   # In production these should match the headless pod DNS of the 3 masters.
   REDIS_REDLOCK_URLS: "redis://redis-0.redis:6379/0,redis://redis-2.redis:6379/0,redis://redis-4.redis:6379/0"
   # Database (populated from secret DATABASE_URL; this is a fallback for non-secret aware tools)
-  # DATABASE_URL: see secret.yaml
-  # LLM / vLLM (M4)
+  # DATABASE_URL: see deploy/examples/travel-agent-secret.yaml.example
+  # The production default must match the model used by the native ReAct
+  # release evaluation. Local/student models remain shadow candidates until
+  # they pass the same full-loop promotion gate.
   LLM_MODEL: "deepseek-v4-flash"
   LOCAL_LLM_ENABLED: "false"
   VLLM_BASE_URL: "http://vllm:8000/v1"
   VLLM_API_KEY: "not-needed"
-  VLLM_ENABLED: "true"
+  VLLM_ENABLED: "false"
   VLLM_MAX_RETRIES: "3"
   DEFAULT_MODEL: "deepseek-v4-flash"
   SMALL_MODEL: "deepseek-v4-flash"
   REPAIR_MODEL: "deepseek-v4-flash"
+  AGENTIC_EXECUTION_MODE: "react"
   # Search / external APIs (keys in secret)
   SEARCH_ENGINE: "tavily"
   # VRP solver microservice (M5)
@@ -79,8 +86,9 @@ data:
   OTEL_ENABLED: "false"
   OTEL_EXPORTER_ENDPOINT: "http://otel-collector.monitoring.svc.cluster.local:4318/v1/traces"
   OTEL_SERVICE_NAME: "travel-agent-backend"
-  # MLflow (M5)
-  MLFLOW_TRACKING_URI: "http://mlflow:5000"
+  # MLflow belongs to the training/control plane, not the serving namespace.
+  # Inject an authenticated external URI only for jobs that emit experiments.
+  MLFLOW_TRACKING_URI: ""
   # AI Safety (M5 §4.9)
   INPUT_SAFETY_ENABLED: "true"
   OUTPUT_SAFETY_ENABLED: "true"

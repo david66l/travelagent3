@@ -24,6 +24,12 @@ def redis_connected():
             yield
 
 
+@pytest.fixture(autouse=True)
+def worker_graph_ready():
+    with patch("worker.planning_tasks._ensure_worker_graph", new=AsyncMock()):
+        yield
+
+
 def test_execute_planning_job_runs_worker():
     with patch(
         "worker.planning_worker.PlanningWorker.execute_job_by_id",
@@ -85,6 +91,36 @@ def test_execute_planning_job_retryable_marks_retrying():
                         assert "retry scheduled" in str(exc)
 
     mock_retrying.assert_awaited_once()
+
+
+def test_redispatch_pending_jobs_republishes_durable_rows():
+    def _complete_without_running(coro):
+        coro.close()
+        return ["job-1", "job-2"]
+
+    with patch("worker.planning_tasks._run_async", side_effect=_complete_without_running):
+        with patch.object(planning_tasks.execute_planning_job, "apply_async") as dispatch:
+            count = planning_tasks.redispatch_pending_planning_jobs.run(limit=10)
+
+    assert count == 2
+    assert dispatch.call_count == 2
+    dispatch.assert_any_call(
+        args=["job-1"],
+        queue=planning_tasks.settings.celery_planning_queue,
+    )
+
+
+@pytest.mark.asyncio
+async def test_close_worker_graph_releases_process_lifetime_checkpointer():
+    context = AsyncMock()
+    planning_tasks._worker_checkpointer_context = context
+    planning_tasks._worker_graph_ready = True
+
+    await planning_tasks.close_worker_graph()
+
+    context.__aexit__.assert_awaited_once_with(None, None, None)
+    assert planning_tasks._worker_checkpointer_context is None
+    assert planning_tasks._worker_graph_ready is False
 
 
 @pytest.mark.asyncio

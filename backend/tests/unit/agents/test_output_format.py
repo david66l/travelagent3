@@ -65,6 +65,26 @@ async def test_polish_disabled_streams_existing_prose(agent):
 
 
 @pytest.mark.asyncio
+async def test_stream_existing_markdown_never_calls_llm(agent):
+    chunks: list[str] = []
+
+    async def collect(chunk: str) -> None:
+        chunks.append(chunk)
+
+    text = "# 苏州\n1. **拙政园** (09:00-11:00)\n"
+    with (
+        patch("core.llm_client.llm.chat", new=AsyncMock()) as mock_chat,
+        patch("core.llm_client.llm.stream_chat", new=AsyncMock()) as mock_stream,
+    ):
+        returned = await agent.stream_existing_markdown(text, collect)
+
+    assert returned == text
+    assert "".join(chunks) == text
+    mock_chat.assert_not_called()
+    mock_stream.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_polish_enabled_streams_real_llm_tokens(agent):
     """With polish enabled, real model tokens stream through on_token in order."""
 

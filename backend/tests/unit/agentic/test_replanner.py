@@ -50,6 +50,7 @@ def test_transport_change_invalidates_route_and_downstream_only():
         "collect_route_matrix",
         "solve_itinerary",
         "validate_itinerary",
+        "review_itinerary",
         "compose_draft",
         "await_confirmation",
     }

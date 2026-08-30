@@ -8,7 +8,7 @@ FROM python:3.13-slim AS builder
 WORKDIR /app
 
 # Install build dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     gcc \
     g++ \
     libpq-dev \
@@ -25,15 +25,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     shared-mime-info \
     && rm -rf /var/lib/apt/lists/*
 
-# Install uv for fast package management
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
+# Keep image builds reproducible with the same uv release used in CI.
+COPY --from=ghcr.io/astral-sh/uv:0.12.1 /uv /bin/uv
 
 # Copy dependency definitions
-COPY pyproject.toml ./
+COPY pyproject.toml uv.lock ./
 
 # Install production dependencies into a virtual environment
-RUN uv venv /opt/venv && \
-    uv pip install --no-cache -e "." --python /opt/venv/bin/python
+ENV UV_PROJECT_ENVIRONMENT=/opt/venv
+RUN uv sync --frozen --no-dev --no-install-project --no-cache
 
 # ── Production stage ──
 FROM python:3.13-slim AS production
@@ -41,7 +41,7 @@ FROM python:3.13-slim AS production
 WORKDIR /app
 
 # Install runtime dependencies only
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     libpq5 \
     curl \
     libgl1 \
@@ -64,6 +64,10 @@ RUN groupadd -r appgroup && useradd -r -g appgroup -d /app appuser
 COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 ENV PYTHONPATH="/app/src"
+
+# Package installers are unnecessary at runtime and carry vendored code that
+# expands the attack surface even when the application never imports it.
+RUN /usr/local/bin/python -m pip uninstall --yes pip
 
 # Copy application code, data, and migrations
 COPY --chown=appuser:appgroup src/ ./src/

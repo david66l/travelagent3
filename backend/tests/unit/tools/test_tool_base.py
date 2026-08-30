@@ -61,6 +61,20 @@ async def test_tool_execute_success(mock_redis):
 
 
 @pytest.mark.asyncio
+async def test_tool_executes_when_cache_lock_backend_is_unavailable(mock_redis, monkeypatch):
+    monkeypatch.setattr(
+        "tools.base.redis_client.lock",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("redis unavailable")),
+    )
+    tool = DummyTool(execute_result={"value": 42})
+
+    result = await tool.run({"q": "beijing"})
+
+    assert result.data == {"value": 42}
+    assert result.data_source == "api"
+
+
+@pytest.mark.asyncio
 async def test_tool_retry_then_success(mock_redis):
     mock_redis.get_json = AsyncMock(return_value=None)
     mock_redis.set_json = AsyncMock()

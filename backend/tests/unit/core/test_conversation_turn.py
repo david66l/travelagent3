@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from core.conversation_turn import process_user_turn
+from core.conversation_turn import process_user_turn, retain_agent_semantics_from_previous_turn
 from core.conversation_state import default_conversation_state
 from models.travel_slots import SlotParseOutput, TravelSlots
 
@@ -20,6 +20,27 @@ def _make_parsed(**overrides) -> SlotParseOutput:
     }
     defaults.update(overrides)
     return SlotParseOutput(**defaults)
+
+
+def test_slot_filling_retains_model_derived_agent_semantics_only_when_omitted():
+    previous = {
+        "intent_kind": "event_trip",
+        "event_query": "周杰伦上海站",
+        "information_needs": ["event"],
+    }
+    filled = retain_agent_semantics_from_previous_turn(
+        TravelSlots(travel_days=2),
+        previous,
+    )
+    assert filled.intent_kind == "event_trip"
+    assert filled.event_query == "周杰伦上海站"
+
+    explicitly_cleared = retain_agent_semantics_from_previous_turn(
+        TravelSlots(intent_kind="itinerary", information_needs=[]),
+        previous,
+    )
+    assert explicitly_cleared.intent_kind == "itinerary"
+    assert explicitly_cleared.information_needs == []
 
 
 @pytest.mark.asyncio
@@ -214,11 +235,46 @@ async def test_process_user_turn_recomputes_missing_from_merged_profile():
 
     assert "destination" not in result.missing_required
     assert "travel_days" not in result.missing_required
-    assert "has_elderly" in result.missing_required
-    assert "has_children" in result.missing_required
-    assert result.clarification_questions
-    assert "目的地" not in result.clarification_questions[0]
-    assert "玩几天" not in result.clarification_questions[0]
+    assert "has_elderly" not in result.missing_required
+    assert "has_children" not in result.missing_required
+    assert result.clarification_questions == []
+
+
+@pytest.mark.asyncio
+async def test_process_user_turn_keeps_transport_origin_as_turn_required():
+    state = default_conversation_state()
+    state["user_id"] = "user-1"
+    parsed = _make_parsed(
+        slots=TravelSlots(
+            destination="成都",
+            transport_modes_requested=["train"],
+            information_needs=["transport"],
+        ),
+        missing_slots=["travel_days", "origin"],
+    )
+    recall_payload = {
+        "source": "anonymous",
+        "short_term_profile": AsyncMock(model_dump=lambda **kw: {}),
+        "long_term_profile": AsyncMock(model_dump=lambda **kw: {}),
+        "merged_profile": AsyncMock(model_dump=lambda **kw: {}),
+        "recalled_profile": AsyncMock(model_dump=lambda **kw: {}),
+        "inferred_slots": {},
+        "confidence": 0.0,
+    }
+    with (
+        patch(
+            "core.conversation_turn.DemandParserAgent.parse",
+            new=AsyncMock(return_value=parsed),
+        ),
+        patch(
+            "core.conversation_turn.ProfileRecallAgent.recall",
+            new=AsyncMock(return_value=recall_payload),
+        ),
+    ):
+        result = await process_user_turn(state, "我想坐高铁去成都")
+
+    assert result.missing_required == ["travel_days", "origin"]
+    assert "出发城市" in result.clarification_questions[0]
 
 
 @pytest.mark.asyncio

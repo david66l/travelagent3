@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     llm_temperature: float = 0.7
     llm_max_tokens: int = 4096
     llm_timeout: int = 60
+    agentic_tool_timeout_seconds: float = 30.0
     vllm_base_url: str = "http://vllm:8000/v1"
     vllm_api_key: str = "not-needed"
     vllm_enabled: bool = False
@@ -62,7 +63,9 @@ class Settings(BaseSettings):
     search_engine: Literal["tavily", "duckduckgo"] = "tavily"
 
     # App
-    app_host: str = "0.0.0.0"
+    app_env: Literal["development", "test", "production"] = "development"
+    # Wildcard bind is intentional for container networking, not an authorization rule.
+    app_host: str = "0.0.0.0"  # nosec B104
     app_port: int = 8000
     public_app_url: str | None = None  # external URL for generated download links
     debug: bool = False
@@ -98,7 +101,7 @@ class Settings(BaseSettings):
     # startup so the app can run without hard-coding a production credential.
     # Sessions will not survive restarts until JWT_SECRET is explicitly set.
     jwt_secret: str = ""
-    jwt_algorithm: str = "HS256"
+    jwt_algorithm: Literal["HS256", "HS384", "HS512"] = "HS256"
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 7
     guest_token_expire_hours: int = 24
@@ -163,6 +166,7 @@ class Settings(BaseSettings):
     celery_task_default_queue: str = "default"
     celery_planning_queue: str = "planning"
     celery_memory_queue: str = "memory"
+    celery_shadow_queue: str = "shadow"
     celery_dead_letter_queue: str = "planning_dead_letter"
     celery_worker_prefetch_multiplier: int = 1
     # Redis broker re-delivers a message if not acked within this window. Must
@@ -185,12 +189,41 @@ class Settings(BaseSettings):
     # Tool / circuit breaker
     tool_timeout_seconds: float = 3.0
     tool_max_retries: int = 3
-    agentic_guard_mode: Literal["off", "shadow", "enforce"] = "shadow"
-    agentic_completion_guard_mode: Literal["off", "shadow", "enforce"] = "shadow"
-    agentic_policy_mode: Literal["deterministic", "shadow", "agent"] = "shadow"
+    agentic_guard_mode: Literal["off", "shadow", "enforce"] = "enforce"
+    agentic_completion_guard_mode: Literal["off", "shadow", "enforce"] = "enforce"
+    agentic_policy_mode: Literal["deterministic", "shadow", "agent"] = "agent"
+    agentic_policy_backend: Literal["api", "local_checkpoint"] = "api"
     agentic_policy_protocol: Literal["json", "native_tool"] = "json"
+    # Environment/deployment selects ``react`` for the new production path;
+    # the code default preserves historical DAG replay compatibility.
+    agentic_execution_mode: Literal["controller_first", "policy_driven", "react"] = "policy_driven"
+    agentic_policy_repair_attempts: int = Field(default=1, ge=0, le=2)
     agentic_policy_model: str = ""
-    agentic_tool_call_budget: int = 12
+    agentic_decision_specialist_enabled: bool = False
+    agentic_decision_specialist_model: str = ""
+    agentic_policy_routing_enabled: bool = False
+    agentic_student_policy_model: str = ""
+    agentic_teacher_policy_model: str = ""
+    agentic_student_base_url: str = ""
+    agentic_teacher_base_url: str = ""
+    agentic_student_max_tokens: int = Field(default=128, ge=16, le=512)
+    agentic_teacher_max_tokens: int = Field(default=192, ge=16, le=1024)
+    agentic_challenger_shadow_enabled: bool = False
+    agentic_challenger_policy_model: str = ""
+    agentic_challenger_base_url: str = ""
+    agentic_challenger_max_tokens: int = Field(default=128, ge=16, le=512)
+    agentic_local_checkpoint: str = ""
+    agentic_local_revision: str = ""
+    agentic_local_load_in_4bit: bool = True
+    agentic_local_max_new_tokens: int = Field(default=192, ge=16, le=2048)
+    agentic_local_structured_decoding: Literal["native", "json_schema", "qwen_tool_envelope"] = (
+        "native"
+    )
+    agentic_shadow_sample_rate: float = Field(default=1.0, ge=0, le=1)
+    agentic_deployment_id: str = "local"
+    agentic_tool_call_budget: int = 24
+    agentic_poi_detail_limit: int = Field(default=8, ge=1, le=20)
+    agentic_reserved_gate_tool_calls: int = Field(default=3, ge=3, le=8)
     circuit_breaker_failure_threshold: float = 0.5
     circuit_breaker_min_failures: int = 20
     circuit_breaker_recovery_seconds: int = 30
@@ -253,7 +286,52 @@ class Settings(BaseSettings):
         return self.database_url.replace("+asyncpg", "")
 
 
+def _prepare_runtime_secrets(cfg: Settings) -> None:
+    """Fail closed for weak production secrets; provide explicit dev fallbacks."""
+    weak_placeholders = {
+        "change-me-in-production",
+        "your-secret-key-change-in-production",
+    }
+    jwt_is_placeholder = cfg.jwt_secret in weak_placeholders or cfg.jwt_secret.startswith(
+        "change-me-in-production"
+    )
+    if jwt_is_placeholder or (cfg.jwt_secret and len(cfg.jwt_secret) < 32):
+        raise ValueError("JWT_SECRET must be at least 32 characters and not a placeholder")
+    if not cfg.jwt_secret:
+        if cfg.app_env == "production":
+            raise ValueError("JWT_SECRET is required in production")
+        cfg.jwt_secret = secrets.token_urlsafe(32)
+        warnings.warn(
+            "JWT_SECRET is not configured. A one-time random secret has been generated "
+            "for this process only. Set JWT_SECRET for persistent sessions across restarts.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+
+    privacy_is_placeholder = (
+        cfg.privacy_encryption_key in weak_placeholders
+        or cfg.privacy_encryption_key.startswith("change-me-in-production")
+    )
+    if privacy_is_placeholder or (
+        cfg.privacy_encryption_key and len(cfg.privacy_encryption_key) < 32
+    ):
+        raise ValueError(
+            "PRIVACY_ENCRYPTION_KEY must be at least 32 characters and not a placeholder"
+        )
+    if not cfg.privacy_encryption_key:
+        if cfg.app_env == "production":
+            raise ValueError("PRIVACY_ENCRYPTION_KEY is required in production")
+        cfg.privacy_encryption_key = hashlib.sha256(cfg.jwt_secret.encode("utf-8")).hexdigest()
+        warnings.warn(
+            "PRIVACY_ENCRYPTION_KEY is not configured. A deterministic key has been "
+            "derived from JWT_SECRET. Set a separate key for persistent encryption.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+
+
 settings = Settings()
+_prepare_runtime_secrets(settings)
 
 
 def _apply_langsmith_env(cfg: Settings) -> None:
@@ -267,36 +345,3 @@ def _apply_langsmith_env(cfg: Settings) -> None:
 
 
 _apply_langsmith_env(settings)
-
-# Reject the unsafe placeholder explicitly.
-if settings.jwt_secret == "your-secret-key-change-in-production":
-    raise ValueError(
-        "JWT_SECRET is using the unsafe placeholder. "
-        "Please set a strong JWT_SECRET in your .env file."
-    )
-
-# Dev-only fallback: generate a random secret if none was configured.
-if not settings.jwt_secret:
-    _generated_jwt_secret = secrets.token_urlsafe(32)
-    settings.jwt_secret = _generated_jwt_secret
-    warnings.warn(
-        "JWT_SECRET is not configured. A one-time random secret has been generated "
-        "for this process only. Set JWT_SECRET in your .env file for persistent "
-        "sessions across restarts.",
-        RuntimeWarning,
-        stacklevel=2,
-    )
-
-# Dev-only fallback: derive a deterministic privacy key from JWT_SECRET if none
-# was configured.  This is process-only when JWT_SECRET is also process-only.
-if not settings.privacy_encryption_key:
-    settings.privacy_encryption_key = hashlib.sha256(
-        settings.jwt_secret.encode("utf-8")
-    ).hexdigest()
-    warnings.warn(
-        "PRIVACY_ENCRYPTION_KEY is not configured. A deterministic key has been "
-        "derived from JWT_SECRET for this process only. Set PRIVACY_ENCRYPTION_KEY "
-        "in your .env file for persistent encryption across restarts.",
-        RuntimeWarning,
-        stacklevel=2,
-    )

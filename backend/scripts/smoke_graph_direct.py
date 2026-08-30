@@ -1,4 +1,5 @@
 """Direct graph smoke test."""
+
 import asyncio
 import sys
 

@@ -1,7 +1,7 @@
 """Tests for WeatherQuerySkill."""
 
 import pytest
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 from skills.weather_query import WeatherQuerySkill
 
 
@@ -56,6 +56,35 @@ class TestWeatherQuerySkill:
         mock_redis.set_json = AsyncMock()
         result = await self.skill.query("上海", "2026-06-01", "2026-06-01")
         assert len(result) == 1
+
+    @pytest.mark.asyncio
+    async def test_open_meteo_date_range_does_not_send_conflicting_forecast_days(self):
+        response = MagicMock()
+        response.raise_for_status = MagicMock()
+        response.json.return_value = {
+            "daily": {
+                "time": ["2026-09-02"],
+                "weather_code": [0],
+                "temperature_2m_max": [30],
+                "temperature_2m_min": [22],
+                "precipitation_probability_max": [10],
+                "wind_speed_10m_max": [8.5],
+            }
+        }
+        client = AsyncMock()
+        client.get.return_value = response
+        self.skill._http = client
+
+        result = await self.skill._fetch_open_meteo(
+            "上海", 31.2304, 121.4737, "2026-09-02", "2026-09-02"
+        )
+
+        assert len(result) == 1
+        assert result[0].wind_speed == 8
+        params = client.get.await_args.kwargs["params"]
+        assert params["start_date"] == "2026-09-02"
+        assert params["end_date"] == "2026-09-02"
+        assert "forecast_days" not in params
 
     def test_recommend_rain(self):
         rec = self.skill._recommend("小雨", 20, 15)

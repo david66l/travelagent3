@@ -21,10 +21,13 @@ spec:
         app: frontend
         tier: web
     spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: frontend
-          image: ghcr.io/travelagent/travel-agent-frontend:latest
-          imagePullPolicy: Always
+          image: ghcr.io/travelagent/travel-agent-frontend:git-sha-required
+          imagePullPolicy: IfNotPresent
           ports:
             - name: http
               containerPort: 3000

@@ -1,13 +1,15 @@
 services:
   postgres:
-    image: ankane/pgvector:latest
+    # PostgreSQL 15 is retained for on-disk compatibility with existing local
+    # volumes; pgvector is upgraded to the maintained upstream image.
+    image: pgvector/pgvector@sha256:a947c45cdc5906a1bc951f20a8709e321256343ee0f251e4ae00b5e7def4e6da
     container_name: travel_agent_postgres
     environment:
       POSTGRES_USER: travelagent
-      POSTGRES_PASSWORD: travelagent123
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be configured}
       POSTGRES_DB: travel_agent
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -19,10 +21,10 @@ services:
       - travel_agent_network
 
   redis:
-    image: redis:7-alpine
+    image: redis:7-alpine@sha256:e7723ff73d963f5cc6d9c4643ea3d989527a402a319239054e9472a7fb9219a2
     container_name: travel_agent_redis
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -42,9 +44,11 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://travelagent:travelagent123@postgres:5432/travel_agent
+      APP_ENV: production
+      DATABASE_URL: postgresql+asyncpg://travelagent:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be configured}@postgres:5432/travel_agent
       REDIS_URL: redis://redis:6379/0
       VRP_SOLVER_URL: http://vrp_solver:8001
+      AGENTIC_EXECUTION_MODE: ${AGENTIC_EXECUTION_MODE:-react}
     ports:
       - "8000:8000"
     depends_on:
@@ -71,7 +75,8 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://travelagent:travelagent123@postgres:5432/travel_agent
+      APP_ENV: production
+      DATABASE_URL: postgresql+asyncpg://travelagent:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be configured}@postgres:5432/travel_agent
       REDIS_URL: redis://redis:6379/0
     ports:
       - "8001:8001"
@@ -108,14 +113,16 @@ services:
   celery_worker:
     image: travelagent2-backend:latest
     container_name: travel_agent_celery_worker
-    command: celery -A core.celery_app worker -Q default,planning -l info
+    command: celery -A core.celery_app worker -Q default,planning,shadow -l info
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://travelagent:travelagent123@postgres:5432/travel_agent
+      APP_ENV: production
+      DATABASE_URL: postgresql+asyncpg://travelagent:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be configured}@postgres:5432/travel_agent
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/1
       CELERY_RESULT_BACKEND: redis://redis:6379/2
+      AGENTIC_EXECUTION_MODE: ${AGENTIC_EXECUTION_MODE:-react}
     depends_on:
       postgres:
         condition: service_healthy
@@ -137,7 +144,8 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://travelagent:travelagent123@postgres:5432/travel_agent
+      APP_ENV: production
+      DATABASE_URL: postgresql+asyncpg://travelagent:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be configured}@postgres:5432/travel_agent
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/1
       CELERY_RESULT_BACKEND: redis://redis:6379/2
@@ -163,7 +171,7 @@ services:
       BACKEND_URL: http://backend:8000
       FRONTEND_URL: http://frontend:3000
       REDIS_URL: redis://redis:6379/0
-      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be configured with at least 32 characters}
     ports:
       - "8080:8080"
     depends_on:

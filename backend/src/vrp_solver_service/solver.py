@@ -6,10 +6,12 @@ import logging
 import math
 import re
 import time
+from datetime import date
 from typing import Any
 
 from ortools.sat.python import cp_model
 
+from core.settings import settings
 from planner.preprocessing import (
     CPSATTuningGuide,
     FatigueModel,
@@ -105,7 +107,7 @@ class TravelVRPSolver:
             else:
                 logger.info("Using CP-SAT (%d POIs, %d days)", n_real, constraints.travel_days)
                 params = self._tuning_guide.recommend(constraints, len(pois))
-                days = _cpsat_solve(
+                days, cpsat_status = _cpsat_solve(
                     pois,
                     constraints,
                     dist,
@@ -113,7 +115,7 @@ class TravelVRPSolver:
                     walk_limits,
                     params,
                 )
-                status = "optimal"
+                status = "optimal" if cpsat_status in {"OPTIMAL", "FEASIBLE"} else "fallback"
         except Exception as exc:
             logger.exception("Solver failed: %s", exc)
             days = _greedy_solve(pois, constraints, dist, tc, walk_limits)
@@ -167,6 +169,11 @@ class TravelVRPSolver:
                 "poi_count": n_real,
                 "travel_days": constraints.travel_days,
                 "hotel_injected": True,
+                **(
+                    {"cpsat_status": cpsat_status}
+                    if not use_greedy and "cpsat_status" in locals()
+                    else {}
+                ),
             },
         )
 
@@ -247,6 +254,44 @@ def _fmt_time(minutes: int) -> str:
     h = minutes // 60
     m = minutes % 60
     return f"{h:02d}:{m:02d}"
+
+
+def _daily_boundaries(constraints: ConstraintsInput) -> tuple[list[int], list[int]]:
+    days = max(1, constraints.travel_days)
+    starts = [constraints.day_start_min or DAY_START_MIN for _ in range(days)]
+    ends = [constraints.day_end_min or DAY_END_MIN for _ in range(days)]
+    for index, value in enumerate(constraints.daily_start_minutes[:days]):
+        if int(value) > 0:
+            starts[index] = int(value)
+    for index, value in enumerate(constraints.daily_end_minutes[:days]):
+        if int(value) > 0:
+            ends[index] = int(value)
+    return starts, ends
+
+
+def _trip_day_date(constraints: ConstraintsInput, day_index: int) -> str | None:
+    if not constraints.trip_start_date:
+        return None
+    try:
+        from datetime import timedelta
+
+        return (
+            date.fromisoformat(constraints.trip_start_date) + timedelta(days=day_index)
+        ).isoformat()
+    except ValueError:
+        return None
+
+
+def _poi_window_on_day(
+    poi: POIInput,
+    constraints: ConstraintsInput,
+    day_index: int,
+) -> tuple[int, int]:
+    trip_date = _trip_day_date(constraints, day_index)
+    override = poi.date_opening_hours.get(trip_date or "")
+    if override:
+        return _time_to_minutes(override[0]), _time_to_minutes(override[1])
+    return _time_to_minutes(poi.open_time), _time_to_minutes(poi.close_time)
 
 
 def _geo_day_clusters(
@@ -340,7 +385,7 @@ def _cpsat_solve(
     tc: list[list[float]],
     walk_limits: list[int],
     params: dict[str, Any],
-) -> list[DayPlanOutput]:
+) -> tuple[list[DayPlanOutput], str]:
     n = len(pois)
     # Meal dummy nodes are time-window obligations, NOT travel stops. They are kept
     # out of the routing circuit (no X arcs): when meals were routed nodes with
@@ -353,9 +398,8 @@ def _cpsat_solve(
     route_nodes = [i for i in range(n) if i not in meal_set]  # hotel + real POIs
 
     days_count = constraints.travel_days
-    day_start = constraints.day_start_min or DAY_START_MIN
-    day_end = constraints.day_end_min or DAY_END_MIN
-    day_available = day_end - day_start
+    day_starts, day_ends = _daily_boundaries(constraints)
+    day_available = [end - start for start, end in zip(day_starts, day_ends, strict=True)]
     total_budget = constraints.total_budget or float("inf")
     day_budget = total_budget / days_count if total_budget != float("inf") else float("inf")
     max_transit = constraints.max_transit_minutes
@@ -368,8 +412,16 @@ def _cpsat_solve(
     durations = [p.duration_minutes for p in pois]
     costs = [int(p.ticket_price) for p in pois]
     walks = [p.walk_intensity for p in pois]
-    open_times = [_time_to_minutes(p.open_time) for p in pois]
-    close_times = [_time_to_minutes(p.close_time) for p in pois]
+    open_times = {
+        (d, i): _poi_window_on_day(p, constraints, d)[0]
+        for d in range(days_count)
+        for i, p in enumerate(pois)
+    }
+    close_times = {
+        (d, i): _poi_window_on_day(p, constraints, d)[1]
+        for d in range(days_count)
+        for i, p in enumerate(pois)
+    }
 
     # Decision variables
     X: dict[tuple[int, int, int], cp_model.IntVar] = {}
@@ -392,7 +444,7 @@ def _cpsat_solve(
             return 0
         return _buf + (_peak_pad if pois[j].is_peak else 0)
 
-    M_time = max(close_times)
+    M_time = max([*close_times.values(), *day_ends])
     # Big-M for the commute time-propagation constraints. It must dominate the
     # largest possible value of (A[i] + duration[i] + travel) so that a *deselected*
     # arc (X == 0) leaves A[j] unconstrained. Using only max(dist)+max(duration)
@@ -400,12 +452,12 @@ def _cpsat_solve(
     # imposed impossible bounds and the whole model went infeasible (the second
     # reason "CP-SAT" silently fell back to greedy on every request).
     _max_travel = max((max(row) for row in dist), default=0)
-    M_travel = day_end + max(durations) + _max_travel + _buf + _peak_pad + 1
+    M_travel = max(day_ends) + max(durations) + _max_travel + _buf + _peak_pad + 1
 
     for d in range(days_count):
         for i in range(n):
             V[(d, i)] = model.NewBoolVar(f"V_{d}_{i}")
-            A[(d, i)] = model.NewIntVar(0, day_end, f"A_{d}_{i}")
+            A[(d, i)] = model.NewIntVar(0, max(day_ends), f"A_{d}_{i}")
         # X arcs only between routed nodes (hotel + real POIs); meals never route.
         for i in route_nodes:
             for j in route_nodes:
@@ -439,7 +491,7 @@ def _cpsat_solve(
     # Hotel is start/end each day
     for d in range(days_count):
         model.Add(V[(d, 0)] == 1)
-        model.Add(A[(d, 0)] == day_start)
+        model.Add(A[(d, 0)] == day_starts[d])
 
     # Constraint 2b: each real POI visited at most once
     for i in range(1, n):
@@ -456,6 +508,39 @@ def _cpsat_solve(
                 break
     for i in must_indices:
         model.Add(sum(V[(d, i)] for d in range(days_count)) == 1)
+
+    # User reservations and discovered fixed events are hard day/time constraints.
+    # ReAct may discover these facts, but only the solver is allowed to place them.
+    poi_index_by_id = {poi.id: index for index, poi in enumerate(pois)}
+    for reservation in constraints.user_reservations:
+        index = poi_index_by_id.get(reservation.poi_id)
+        if index is None or index == 0:
+            continue
+        target_day: int | None = None
+        if reservation.date and constraints.trip_start_date:
+            try:
+                normalized = re.sub(r"[年/.]", "-", str(reservation.date)).replace("月", "-")
+                normalized = normalized.replace("日", "")
+                target_day = (
+                    date.fromisoformat(normalized) - date.fromisoformat(constraints.trip_start_date)
+                ).days
+            except ValueError:
+                target_day = None
+        if target_day is not None and 0 <= target_day < days_count:
+            for day_index in range(days_count):
+                model.Add(V[(day_index, index)] == int(day_index == target_day))
+        else:
+            model.Add(sum(V[(day_index, index)] for day_index in range(days_count)) == 1)
+        if reservation.start_time:
+            fixed_start = _time_to_minutes(reservation.start_time)
+            for day_index in range(days_count):
+                model.Add(A[(day_index, index)] == fixed_start).OnlyEnforceIf(V[(day_index, index)])
+        if reservation.end_time:
+            fixed_end = _time_to_minutes(reservation.end_time)
+            for day_index in range(days_count):
+                model.Add(A[(day_index, index)] + durations[index] <= fixed_end).OnlyEnforceIf(
+                    V[(day_index, index)]
+                )
 
     # Full-day landmarks (theme parks etc.) occupy essentially the whole day, so
     # their open hours overlap the lunch window — a separate lunch node cannot
@@ -550,11 +635,23 @@ def _cpsat_solve(
                 if d < len(day_weekdays) and day_weekdays[d] in closed:
                     model.Add(V[(d, i)] == 0)
 
+    # Constraint 2h: source-backed one-off closures use exact trip dates instead
+    # of approximating them as recurring weekday closures.
+    for i in range(1, n):
+        closed_dates = set(pois[i].closed_dates or [])
+        if not closed_dates:
+            continue
+        for d in range(days_count):
+            if _trip_day_date(constraints, d) in closed_dates:
+                model.Add(V[(d, i)] == 0)
+
     # Constraint 3: conditional time windows
     for d in range(days_count):
         for i in range(1, n):
-            model.Add(A[(d, i)] >= open_times[i] - M_time * (1 - V[(d, i)]))
-            model.Add(A[(d, i)] + durations[i] <= close_times[i] + M_time * (1 - V[(d, i)]))
+            model.Add(A[(d, i)] >= day_starts[d] - M_time * (1 - V[(d, i)]))
+            model.Add(A[(d, i)] + durations[i] <= day_ends[d] + M_time * (1 - V[(d, i)]))
+            model.Add(A[(d, i)] >= open_times[(d, i)] - M_time * (1 - V[(d, i)]))
+            model.Add(A[(d, i)] + durations[i] <= close_times[(d, i)] + M_time * (1 - V[(d, i)]))
             model.Add(A[(d, i)] <= M_time * V[(d, i)])
 
     # Constraint 4: exact commute propagation (bidirectional)
@@ -600,14 +697,14 @@ def _cpsat_solve(
                 if i != j
             )
             + rest_day
-            <= day_available
+            <= day_available[d]
         )
 
     # Constraint 5b: one-thing-at-a-time per day. Meals are no longer in the routing
     # circuit, so nothing else stops a meal's time block overlapping a sightseeing
     # block. Optional intervals (present iff V) + AddNoOverlap force the meal into a
     # real gap in the day — between attractions — exactly where you'd stop to eat.
-    _big_end = day_end + max(durations) + 1
+    _big_end = max(day_ends) + max(durations) + 1
     for d in range(days_count):
         intervals = []
         for i in range(1, n):
@@ -837,6 +934,9 @@ def _cpsat_solve(
         )
         try:
             import json as _json
+            import os as _os
+            import stat as _stat
+            import tempfile as _tempfile
             import time as _time
 
             dump = {
@@ -846,15 +946,30 @@ def _cpsat_solve(
                 "constraints": constraints.model_dump(),
                 "pois": [p.model_dump() for p in pois],
             }
-            path = f"/tmp/vrp_infeasible_{int(_time.time())}.json"
-            with open(path, "w") as fh:
+            if not settings.debug:
+                raise RuntimeError("diagnostic dumps are disabled outside debug mode")
+            with _tempfile.NamedTemporaryFile(
+                mode="w",
+                prefix=f"travelagent-vrp-{int(_time.time())}-",
+                suffix=".json",
+                encoding="utf-8",
+                delete=False,
+            ) as fh:
+                path = fh.name
                 _json.dump(dump, fh, ensure_ascii=False, default=str)
+            _os.chmod(path, _stat.S_IRUSR | _stat.S_IWUSR)
             logger.warning("Dumped infeasible request to %s", path)
         except Exception as _exc:  # pragma: no cover - diagnostic only
             logger.warning("Failed to dump infeasible request: %s", _exc)
-        return _greedy_solve(pois, constraints, dist, tc, walk_limits)
+        return (
+            _greedy_solve(pois, constraints, dist, tc, walk_limits),
+            solver.StatusName(status),
+        )
 
-    return _extract_schedule(pois, constraints, dist, tc, V, A, X, DC, DW, solver, status)
+    return (
+        _extract_schedule(pois, constraints, dist, tc, V, A, X, DC, DW, solver, status),
+        solver.StatusName(status),
+    )
 
 
 def _greedy_solve(
@@ -867,9 +982,7 @@ def _greedy_solve(
     """Greedy heuristic fallback."""
     n = len(pois)
     days_count = constraints.travel_days
-    day_start = constraints.day_start_min or DAY_START_MIN
-    day_end = constraints.day_end_min or DAY_END_MIN
-    day_available = day_end - day_start
+    day_starts, day_ends = _daily_boundaries(constraints)
     total_budget = constraints.total_budget or float("inf")
     day_budget = total_budget / days_count if total_budget != float("inf") else float("inf")
     max_transit = constraints.max_transit_minutes
@@ -928,6 +1041,9 @@ def _greedy_solve(
     used_redundant: set[str] = set()
 
     for d in range(days_count):
+        day_start = day_starts[d]
+        day_end = day_ends[d]
+        day_available = day_end - day_start
         activities: list[ActivityOutput] = []
         day_poi_indices: list[int] = []  # real attractions placed today (remote check)
         current_idx = 0  # start from hotel
@@ -984,9 +1100,18 @@ def _greedy_solve(
             mi = day_meals[0]
             win_start = _to_min(pois[mi].open_time, 0)
             win_end = _to_min(pois[mi].close_time, day_end)
-            # Window opens only after the attraction ends, or stays open past it:
-            # in both cases we can safely eat later.
-            if win_start > proj_end or win_end >= proj_end:
+            # If the attraction finishes before the window closes, this meal can
+            # still be placed afterwards. But when the *next* dining window
+            # opens before that attraction finishes, eating the current meal at
+            # the last possible moment can make lunch and dinner consecutive.
+            # Place the current meal first in that case so an attraction remains
+            # between the two dining blocks.
+            next_window_opens = (
+                _to_min(pois[day_meals[1]].open_time, day_end)
+                if len(day_meals) > 1
+                else day_end + 1
+            )
+            if win_start > proj_end or (win_end >= proj_end and next_window_opens > proj_end):
                 return False
             m_start = max(current_time, win_start)
             if m_start > win_end or m_start + pois[mi].duration_minutes > day_end:
@@ -1030,13 +1155,14 @@ def _greedy_solve(
                     and _day_weekdays[d] in poi.closed_weekdays
                 ):
                     continue
+                if _trip_day_date(constraints, d) in set(poi.closed_dates or []):
+                    continue
                 duration = poi.duration_minutes
                 extra = _g_arc_extra(current_idx, i)
                 arr = current_time + travel + extra
                 # #5 honour opening hours: an evening-only POI (夜景, open>=16:00)
                 # cannot start before it opens — wait, then check it still fits.
-                open_min = _to_min(poi.open_time, day_start)
-                close_min = _to_min(poi.close_time, day_end)
+                open_min, close_min = _poi_window_on_day(poi, constraints, d)
                 start = max(arr, open_min)
                 if start + duration > close_min or start + duration > day_end:
                     continue
@@ -1066,7 +1192,7 @@ def _greedy_solve(
             # and drop the meal, eat first (waiting for the window) and re-select.
             _b_extra = _g_arc_extra(current_idx, best)
             _b_arr = current_time + dist[current_idx][best] + _b_extra
-            _b_start = max(_b_arr, _to_min(pois[best].open_time, day_start))
+            _b_start = max(_b_arr, _poi_window_on_day(pois[best], constraints, d)[0])
             proj_end = _b_start + pois[best].duration_minutes
             if _place_meal_if_missed(proj_end):
                 continue
@@ -1075,7 +1201,7 @@ def _greedy_solve(
             travel = dist[current_idx][i]
             extra = _g_arc_extra(current_idx, i)
             arr = current_time + travel + extra
-            start = max(arr, _to_min(pois[i].open_time, day_start))
+            start = max(arr, _poi_window_on_day(pois[i], constraints, d)[0])
             end = start + pois[i].duration_minutes
             leg_tc = tc[current_idx][i]
 

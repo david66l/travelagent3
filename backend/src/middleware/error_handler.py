@@ -37,7 +37,7 @@ def setup_exception_handlers(app: FastAPI) -> None:
     async def handle_validation_exception(request: Request, exc: RequestValidationError):
         """Handle FastAPI/Pydantic validation errors."""
         return error_response(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             code="VALIDATION_ERROR",
             message="Request validation failed",
             details=exc.errors(),

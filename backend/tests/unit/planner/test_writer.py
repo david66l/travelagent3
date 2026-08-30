@@ -194,6 +194,46 @@ class TestWriterDecoration:
         assert len(reasons) > 0
 
     @pytest.mark.asyncio
+    async def test_rejects_invented_child_audience_claim(self, monkeypatch):
+        profile = UserProfile(
+            destination="南京",
+            travel_days=1,
+            interests=["历史文化"],
+            has_children=False,
+        )
+        itinerary = [
+            DayPlan(
+                day_number=1,
+                activities=[Activity(poi_name="南京欢乐谷", category="attraction")],
+            )
+        ]
+        mock = AsyncMock()
+        mock.json_chat = AsyncMock(
+            return_value={
+                "days": [
+                    {
+                        "day_number": 1,
+                        "theme": "亲子欢乐时光",
+                        "activities": [
+                            {
+                                "poi_name": "南京欢乐谷",
+                                "recommendation_reason": "大型主题乐园，特别适合带孩子游玩",
+                                "tags": ["亲子", "乐园"],
+                            }
+                        ],
+                    }
+                ]
+            }
+        )
+        monkeypatch.setattr("planner.core.writer.llm", mock)
+
+        enriched, _ = await enrich(itinerary, profile)
+
+        reason = enriched[0].activities[0].recommendation_reason or ""
+        assert "带孩子" not in reason
+        assert "亲子" not in (enriched[0].theme or "")
+
+    @pytest.mark.asyncio
     async def test_proposal_includes_destination(self, itinerary, profile_shanghai, monkeypatch):
         _mock_llm_enrich(monkeypatch)
         _mock_llm_theme(monkeypatch)

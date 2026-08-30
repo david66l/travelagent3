@@ -6,6 +6,7 @@ from uuid import UUID
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.clock import utc_now_naive
 from models import Conversation
 from repositories.v1.base import BaseRepository
 
@@ -54,22 +55,18 @@ class ConversationRepository(BaseRepository[Conversation]):
 
     async def archive(self, conversation_id: UUID) -> int:
         """Archive a conversation."""
-        from datetime import datetime
-
         result = await self.db.execute(
             update(Conversation)
             .where(Conversation.id == conversation_id)
-            .values(status="archived", archived_at=datetime.utcnow())
+            .values(status="archived", archived_at=utc_now_naive())
         )
         return result.rowcount
 
     async def batch_archive(self, conversation_ids: Sequence[UUID]) -> int:
         """Archive multiple conversations."""
-        from datetime import datetime
-
         result = await self.db.execute(
             update(Conversation)
             .where(Conversation.id.in_(conversation_ids))
-            .values(status="archived", archived_at=datetime.utcnow())
+            .values(status="archived", archived_at=utc_now_naive())
         )
         return result.rowcount

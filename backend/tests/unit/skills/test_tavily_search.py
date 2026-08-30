@@ -60,8 +60,8 @@ class TestTavilySearchSkill:
         client.__aexit__ = AsyncMock(return_value=False)
 
         with patch("httpx.AsyncClient", return_value=client):
-            results = await self.skill.search("test")
-            assert results == []
+            with pytest.raises(Exception, match="timeout"):
+                await self.skill.search("test")
 
     @pytest.mark.asyncio
     async def test_search_multiple(self):

@@ -32,6 +32,11 @@ class POIInput(BaseModel):
     # typically close Monday. Applied only when the trip's real dates are known
     # (ConstraintsInput.day_weekdays); empty = open every day.
     closed_weekdays: list[int] = Field(default_factory=list)
+    # Source-backed live evidence may override normal hours for one date or mark a
+    # temporary closure. Keys use ISO dates; values are (open, close) HH:MM pairs.
+    closed_dates: list[str] = Field(default_factory=list)
+    date_opening_hours: dict[str, tuple[str, str]] = Field(default_factory=dict)
+    availability_evidence_urls: list[str] = Field(default_factory=list)
 
 
 class ReservationInput(BaseModel):
@@ -57,6 +62,7 @@ class ConstraintsInput(BaseModel):
     """User constraints and preferences."""
 
     travel_days: int = 1
+    trip_start_date: str | None = None
     # Real weekday of each travel day (0=Mon … 6=Sun), length == travel_days.
     # Derived from the trip start date by the caller. Empty = dates unknown, so
     # weekday-closure constraints are skipped (we never guess which day is Monday).
@@ -66,6 +72,10 @@ class ConstraintsInput(BaseModel):
     # is actually usable; an 18:00 cutoff makes evening dining impossible and
     # forces meals into mid-afternoon gaps.
     day_end_min: int = 21 * 60
+    # Inbound/outbound transport evidence narrows only the affected travel day.
+    # Empty lists preserve the normal scalar boundaries.
+    daily_start_minutes: list[int] = Field(default_factory=list)
+    daily_end_minutes: list[int] = Field(default_factory=list)
     max_transit_minutes: int = 120
     max_walk_km: int = 8
     total_budget: float = 0.0  # 0 means unlimited
@@ -73,6 +83,7 @@ class ConstraintsInput(BaseModel):
     rest_day: int = 60
     interests: list[str] = Field(default_factory=list)
     must_visit: list[str] = Field(default_factory=list)
+    must_not_visit: list[str] = Field(default_factory=list)
     user_reservations: list[ReservationInput] = Field(default_factory=list)
     epsilon_config: EpsilonConfig = Field(default_factory=EpsilonConfig)
 

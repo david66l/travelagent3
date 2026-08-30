@@ -1668,14 +1668,29 @@ TravelAgent2/
 
 ## 24. 当前状态声明
 
-截至本文档编写时：
+截至 2026-08-13，本项目已经从“只有改造设计”推进到可运行、可训练、可评测的工程基线，但尚未完成线上灰度：
 
-- TravelAgent2 的在线工程、LangGraph、工具层和确定性 VRP/CP-SAT 基础已存在；
-- 当前工具选择仍主要是固定编排或代码构建，不是已训练策略模型的自主决策；
-- 本地模型接入能力存在，但尚未完成面向 Agent Policy 的真实 SFT；
-- `ml/training/train_lora.py` 当前为占位流水线，不代表已训练 LoRA；
-- GRPO 环境、Reward、训练和对比实验尚未实现；
-- 本 SPEC 只定义融合目标和实施契约，不代表上述未完成能力已经交付。
+- API 模式的默认主链已经采用有界 Agent Loop，保留确定性求解、Validator、fallback 和原前端输出契约；
+- Goal Ledger、Task DAG、Controller/Scheduler/Verifier、幂等动作、预算、恢复和轨迹记录已落地，并具备 deterministic/shadow/agent 三种运行方式；
+- 线上工具契约、快照训练环境、SFT 样本和 GRPO 环境已经统一，4500 条中文课程场景通过清洗并完成 train/validation/test 隔离；
+- Qwen2.5-3B 已完成真实 QLoRA SFT 和轨迹级 Agentic GRPO-B0。候选 GRPO checkpoint 通过逐任务、逐样本配对的小集与扩大集两级晋升门；
+- 32 个盲测任务、128 次 rollout 中，Base / SFT / SFT+GRPO 的成功率分别为 60.16% / 80.47% / 82.81%，原始 rollout、Reward 分量和失败案例均已保留；
+- 后端已支持通过配置在 API Policy 与本地 checkpoint 之间切换，实际 checkpoint 已在 GPU 环境通过 App 使用的 `run_agent_branch`，得到硬约束通过且可供用户确认的行程草案；默认仍为 API，不会无意改变当前 App 行为；
+- 后端单测 924 项、前端 production build 和 4 项 Playwright 端到端测试已通过。
+
+各 Phase 的真实状态如下：
+
+| Phase | 状态 | 已有证据 | 尚欠验收 |
+|---|---|---|---|
+| 0 基线与契约 | 完成 | 固定评测、Feature Flag、版本化 Schema | 无阻塞项 |
+| 1 工具环境与 Validator | 完成 | 双适配器、Guarded Executor、求解/校验测试 | 继续扩大真实城市快照覆盖 |
+| 2 Agent Loop MVP | 工程完成 | Agent/Shadow E2E、Verifier、恢复、fallback | 仍需生产时长的持续稳定性观测 |
+| 3 数据工程 | 基线完成 | 4500 条清洗场景、分层切分、回放与数据版本 | 需要持续补充真实 shadow 分布，合成集不能替代线上分布 |
+| 4 SFT | 受控基线完成 | 可加载 3B adapter、Base/SFT 配对报告 | 尚未注册 MLflow；训练规模仍属于工程受控实验 |
+| 5 GRPO | B0 基线完成 | 有状态环境、六类 Reward、非零方差训练、双层晋升门 | GRPO-B1、逐轮信用对照、完整 Reward 消融尚未完成 |
+| 6 上线 | 部分完成 | 真实 Shadow 双跑、自动 fallback、本地 checkpoint App 分支实跑 | 完整 HTTP/UI 部署、时延/成本验收、5% 灰度和回退演练尚未完成 |
+
+因此当前 checkpoint 的准确状态是“离线合格候选，线上未发布”。当前结果只支持“多轮环境中的轨迹级 GRPO 工程基线”，不宣称已经解决 Long-Horizon credit assignment，也不把 Reward 分量对照冒充完整消融实验。
 
 后续每完成一个 Phase，应在本节和对应验收清单中更新真实状态，并附测试或实验结果。
 
@@ -1765,3 +1780,23 @@ TravelAgent2/
 核心依据包括 GRPO、DeepSeek-R1、ReTool、RAGEN、turn-level reward、Tool Zero、Agent Lightning、MUA-RL、Demystifying Agentic RL 和 AT²PO。论文在数学、搜索、通用工具等任务上的结果不得直接外推到旅行规划；所有架构选择都必须由第 14 节实验矩阵在 TravelAgent2 快照环境中重新验证。
 
 Long-Horizon Agent Loop 的核心依据包括 ReAct、Reflexion、TravelPlanner、LATS、Plan-and-Act、ACON、DeepPlanning、TravelBench、TripTide 和 MUSE。采用的是经本项目约束后的组合设计，不声称完整复现任何单篇论文；其中 ACON 仍是预印本，相关压缩结论必须单独做回归对照。
+
+---
+
+## 29. Qwen3 教师—学生蒸馏与效率后训练路线
+
+阶段 18 证明 Qwen3-8B zero-shot 已在纯模板课程上饱和，继续扩大同分布 SFT 不产生新增成功且增加延迟。后续训练主线因此调整为“难例驱动、效率对齐和教师—学生蒸馏”，不再以增加 synthetic epoch 为目标。
+
+正式纳入以下阶段：
+
+1. 阶段 19：真实 vLLM HTTP 性能剖析，冻结常规、真实/Shadow 难例和对抗 holdout；
+2. 阶段 20：使用 Qwen3-8B 生成并由环境/Verifier 筛选难例教师轨迹和偏好对；
+3. 阶段 21：将高频工具策略蒸馏到 Qwen3-4B，Qwen3-1.7B 仅作速度下限对照；
+4. 阶段 22：通过 DPO/ORPO 优化输出长度、重复调用和无效澄清；
+5. 阶段 23：通过有状态 GRPO 联合优化任务成功与 Token、工具轮数等稳定成本代理；
+6. 阶段 24：部署确定性 4B/8B Router，学生门禁失败时升级到 8B，最终仍可回退确定性流程；
+7. 阶段 25：完成 Base、蒸馏 SFT、偏好优化、GRPO、8B 和 Router 的统一消融与灰度验收。
+
+完整的目标、数据契约、阶段产物、晋升门、止损条件和算力约束见 `docs/Qwen3_教师学生蒸馏与效率后训练_阶段19-25计划.md`。
+
+该路线的成功定义是：在冻结 holdout 上保持任务成功率和硬约束，通过蒸馏与路由显著减少 Token、工具轮数和延迟。若某一训练阶段只有 loss/Reward 改善而真实 rollout 无改善，该 checkpoint 必须拒绝，且不得进入下一阶段。

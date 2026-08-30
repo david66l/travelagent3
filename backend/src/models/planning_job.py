@@ -1,8 +1,6 @@
 """Planning job models for async task execution."""
 
 import uuid
-from datetime import datetime
-
 from sqlalchemy import (
     Column,
     String,
@@ -12,11 +10,13 @@ from sqlalchemy import (
     JSON,
     BigInteger,
     ForeignKey,
+    UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
 from core.database import Base
+from core.clock import utc_now_naive
 
 
 class PlanningJob(Base):
@@ -31,6 +31,13 @@ class PlanningJob(Base):
     """
 
     __tablename__ = "planning_jobs"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_uuid",
+            "idempotency_key",
+            name="uq_planning_jobs_user_idempotency_key",
+        ),
+    )
 
     id = Column(
         String(36),
@@ -42,6 +49,7 @@ class PlanningJob(Base):
     session_id = Column(String(64), nullable=True, index=True)
     user_id = Column(String(64), nullable=True, index=True)
     user_input = Column(Text, nullable=True)
+    idempotency_key = Column(String(128), nullable=True)
 
     # PRD-aligned identifiers
     user_uuid = Column(
@@ -110,11 +118,11 @@ class PlanningJob(Base):
     user_feedback = Column(JSON, default=dict)
     version = Column(Integer, default=1)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now_naive)
     updated_at = Column(
         DateTime,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        default=utc_now_naive,
+        onupdate=utc_now_naive,
     )
     completed_at = Column(DateTime, nullable=True)
 
@@ -153,6 +161,6 @@ class PlanningJobEvent(Base):
     )  # started / completed / failed / cancelled (legacy)
     payload = Column(JSON, nullable=True)
     error = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now_naive)
 
     job = relationship("PlanningJob", back_populates="events")

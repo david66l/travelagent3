@@ -95,6 +95,7 @@ class ChatMessageRequest(BaseModel):
     action: str = "chat"
     change: Optional[dict] = None
     external_event: Optional[dict] = None
+    approval: Optional[dict] = None
 
 
 class PlanningJobResponse(BaseModel):

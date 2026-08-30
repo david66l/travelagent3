@@ -1,6 +1,15 @@
 """Global test fixtures and monkeypatches."""
 
+import hashlib
+import os
 from unittest.mock import AsyncMock, MagicMock
+
+# Test semantics must not depend on a developer's deployment .env. ReAct is
+# covered by explicit mode tests; historical corpus/replay fixtures use the
+# policy-driven DAG and JSON protocol by design.
+os.environ["AGENTIC_EXECUTION_MODE"] = "policy_driven"
+os.environ["AGENTIC_POLICY_PROTOCOL"] = "json"
+os.environ["JWT_SECRET"] = hashlib.sha256(b"travel-agent-test-suite").hexdigest()
 
 import pytest
 import pytest_asyncio

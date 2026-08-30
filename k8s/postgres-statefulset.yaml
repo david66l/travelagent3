@@ -8,6 +8,10 @@ kind: StatefulSet
 metadata:
   name: postgres
   namespace: travel-agent
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+    ignore-check.kube-linter.io/no-read-only-root-fs: >-
+      PostgreSQL and pg_basebackup must write runtime state under PGDATA.
   labels:
     app: postgres
     tier: datastore
@@ -23,6 +27,9 @@ spec:
         app: postgres
         tier: datastore
     spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       affinity:
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -45,7 +52,7 @@ spec:
                 topologyKey: topology.kubernetes.io/zone
       initContainers:
         - name: init-replica
-          image: postgres:16-alpine
+          image: pgvector/pgvector@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b
           env:
             - name: POSTGRES_USER
               value: "travelagent"
@@ -87,11 +94,20 @@ spec:
               if [ ! -s "/var/lib/postgresql/data/PG_VERSION" ]; then
                 echo "Cloning primary via pg_basebackup..."
                 rm -rf /var/lib/postgresql/data/*
-                PGPASSWORD="$POSTGRES_PASSWORD" pg_basebackup \
+                # Create the physical slot idempotently using the primary's
+                # admin credential, then stream with the least-privileged
+                # replication role. Do not pass -W in non-interactive pods.
+                PGPASSWORD="$POSTGRES_PASSWORD" psql \
+                  -h postgres-0.postgres \
+                  -U "$POSTGRES_USER" \
+                  -d "$POSTGRES_DB" \
+                  -v ON_ERROR_STOP=1 \
+                  -c "SELECT pg_create_physical_replication_slot('replica_${ORDINAL}') WHERE NOT EXISTS (SELECT 1 FROM pg_replication_slots WHERE slot_name = 'replica_${ORDINAL}');"
+                PGPASSWORD="$POSTGRES_REPLICATION_PASSWORD" pg_basebackup \
                   -h postgres-0.postgres \
                   -D /var/lib/postgresql/data \
-                  -U "$POSTGRES_USER" \
-                  -v -P -W \
+                  -U replicator \
+                  -v -P \
                   --wal-method=stream \
                   --write-recovery-conf \
                   --slot=replica_${ORDINAL} \
@@ -110,9 +126,16 @@ spec:
             limits:
               cpu: 500m
               memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 999
+            capabilities:
+              drop:
+                - ALL
       containers:
         - name: postgres
-          image: postgres:16-alpine
+          image: pgvector/pgvector@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b
           ports:
             - name: postgres
               containerPort: 5432
@@ -223,6 +246,8 @@ kind: ConfigMap
 metadata:
   name: postgres-init-config
   namespace: travel-agent
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
 data:
   01-replication.sh: |
     #!/bin/bash

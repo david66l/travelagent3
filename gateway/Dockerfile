@@ -3,7 +3,7 @@
 # Image: ghcr.io/travelagent/travel-agent-gateway:latest
 
 # ── Build stage ──
-FROM golang:1.23-alpine AS build
+FROM golang:1.26-alpine AS build
 
 WORKDIR /src
 
@@ -17,10 +17,11 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /gateway ./cmd/gateway
 
 # ── Production stage ──
-FROM alpine:3.20
+FROM alpine:3.23
 
 # Install CA certificates for TLS upstream calls
-RUN apk add --no-cache ca-certificates wget && \
+RUN apk upgrade --no-cache && \
+    apk add --no-cache ca-certificates && \
     addgroup -g 10001 -S appgroup && \
     adduser -u 10001 -S appuser -G appgroup
 

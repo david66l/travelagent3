@@ -21,9 +21,9 @@ from tools.tool_definitions import TOOL_NAME_TO_MODEL
 
 
 SFT_DATASET_SCHEMA_VERSION = "agent-policy-sft.v2"
-_PHONE = re.compile(r"(?<!\d)(?:\+?86[- ]?)?1[3-9]\d{9}(?!\d)")
+_PHONE = re.compile(r"(?<![A-Za-z0-9])(?:\+?86[- ]?)?1[3-9]\d{9}(?![A-Za-z0-9])")
 _EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
-_ID_CARD = re.compile(r"(?<!\d)\d{17}[\dXx](?!\d)")
+_ID_CARD = re.compile(r"(?<![A-Za-z0-9])\d{17}[\dXx](?![A-Za-z0-9])")
 _PROTECTED_ARGUMENTS = {
     "constraints",
     "facts",
@@ -32,6 +32,20 @@ _PROTECTED_ARGUMENTS = {
     "dist_matrix",
     "tc_matrix",
     "amap_minutes",
+}
+_GENERATIVE_ARGUMENTS = {
+    "abort": {"reason"},
+    "ask_user": {"question"},
+    "propose_tradeoff": {"options", "reason"},
+    "retrieve_city_knowledge": {"topic"},
+    "retry_solve": {"reason"},
+    "search_current_info": {"query"},
+    "search_pois": {"keywords"},
+}
+_SCHEMA_ENUM_ARGUMENTS = {
+    "info_type",
+    "mode",
+    "strategy",
 }
 
 EpisodeSource = Literal["teacher", "shadow", "production", "synthetic"]
@@ -63,6 +77,7 @@ class SFTToolCall(BaseModel):
 class SFTMessage(BaseModel):
     role: Literal["system", "user", "assistant", "tool"]
     content: str | None = None
+    name: str | None = None
     tool_calls: list[SFTToolCall] = Field(default_factory=list)
 
 
@@ -107,6 +122,9 @@ class DatasetManifest(BaseModel):
     environment_versions: list[str]
     policy_versions: list[str]
     split_group_overlap: bool
+    excluded_policy_steps: int = 0
+    excluded_duplicate_policy_steps: int = 0
+    shared_trajectory_snapshots: int = 0
 
 
 class DatasetBuildResult(BaseModel):
@@ -151,6 +169,16 @@ class SFTDatasetBuilder:
             split = self._split_for_group(group)
             split_groups[split].add(group)
             episode_examples = self._examples(candidate, split, quality_label)
+            if not episode_examples:
+                reviews.append(
+                    EpisodeReview(
+                        scenario_id=candidate.scenario_id,
+                        trajectory_id=candidate.episode.trajectory_id,
+                        accepted=False,
+                        rejection_codes=["L3_NO_VERIFIED_POLICY_DECISION"],
+                    )
+                )
+                continue
             examples.extend(episode_examples)
             reviews.append(
                 EpisodeReview(
@@ -199,9 +227,13 @@ class SFTDatasetBuilder:
             errors.append("L1_UNFINALIZED_EPISODE")
         if _contains_pii(episode.model_dump(mode="json")):
             errors.append("L1_PII_DETECTED")
+        if _contains_unicode_replacement(episode.model_dump(mode="json")):
+            errors.append("L1_TEXT_ENCODING_CORRUPT")
 
         signatures: dict[str, list[bool]] = {}
         for step in episode.steps:
+            if step.action.decision_source == "controller":
+                continue
             action = step.action.action
             if action not in step.context.allowed_actions:
                 errors.append("L2_ACTION_NOT_ALLOWED")
@@ -218,13 +250,18 @@ class SFTDatasetBuilder:
                         errors.append("L2_TOOL_CALL_ID_MISSING")
                     if observation.schema_version != episode.observation_schema_version:
                         errors.append("L2_OBSERVATION_SCHEMA_MISMATCH")
-                signature = _canonical({"action": action, "arguments": step.action.arguments})
+                signature = _canonical(
+                    {
+                        "goal_version": step.context.goal_version,
+                        "plan_version": step.context.plan_version,
+                        "action": action,
+                        "arguments": step.action.arguments,
+                    }
+                )
                 outcomes = signatures.setdefault(signature, [])
                 outcomes.append(any(observation.ok for observation in step.observations))
 
         for outcomes in signatures.values():
-            if len(outcomes) > 1 and any(outcomes[:-1]):
-                errors.append("L2_DUPLICATE_SUCCESSFUL_CALL")
             if len(outcomes) > self.max_exact_retries + 1:
                 errors.append("L2_EXCESSIVE_IDENTICAL_RETRIES")
 
@@ -283,6 +320,13 @@ class SFTDatasetBuilder:
             and last_action.action in {"abort", "propose_tradeoff"}
         ):
             return "safe_termination"
+        if (
+            episode.termination_reason == "awaiting_user"
+            and last_action
+            and last_action.action == "propose_tradeoff"
+            and _tradeoff_context_grounded(episode.steps[-1].context)
+        ):
+            return "safe_termination"
         return None
 
     @staticmethod
@@ -310,7 +354,17 @@ class SFTDatasetBuilder:
         quality_label: QualityLabel,
     ) -> list[SFTExample]:
         result: list[SFTExample] = []
+        seen_successful_calls: set[str] = set()
         for step in candidate.episode.steps:
+            if step.action.decision_source == "controller":
+                continue
+            if not _step_verified_success(step):
+                continue
+            signature = _policy_step_signature(step)
+            if step.action.action not in NO_TOOL_ACTIONS:
+                if signature in seen_successful_calls:
+                    continue
+                seen_successful_calls.add(signature)
             context_json = json.dumps(
                 policy_prompt_payload(step.context),
                 ensure_ascii=False,
@@ -319,7 +373,11 @@ class SFTDatasetBuilder:
             )
             result.append(
                 SFTExample(
-                    example_id=f"{candidate.episode.trajectory_id}:{step.step_index}",
+                    example_id=(
+                        f"{candidate.scenario_id}:"
+                        f"{(candidate.episode.content_hash or 'unfinalized')[:12]}:"
+                        f"{step.step_index}"
+                    ),
                     scenario_id=candidate.scenario_id,
                     trajectory_id=candidate.episode.trajectory_id,
                     step_index=step.step_index,
@@ -352,11 +410,13 @@ class SFTDatasetBuilder:
     @staticmethod
     def _assert_unique_ids(candidates: list[EpisodeCandidate]) -> None:
         scenario_ids = [item.scenario_id for item in candidates]
-        trajectory_ids = [item.episode.trajectory_id for item in candidates]
         if len(scenario_ids) != len(set(scenario_ids)):
             raise ValueError("duplicate scenario_id in candidate set")
-        if len(trajectory_ids) != len(set(trajectory_ids)):
-            raise ValueError("duplicate trajectory_id in candidate set")
+        episode_snapshot_ids = [
+            (item.episode.trajectory_id, item.episode.content_hash) for item in candidates
+        ]
+        if len(episode_snapshot_ids) != len(set(episode_snapshot_ids)):
+            raise ValueError("duplicate episode snapshot in candidate set")
 
     @staticmethod
     def _manifest(
@@ -371,7 +431,26 @@ class SFTDatasetBuilder:
             "candidates": sorted(
                 (item.scenario_id, item.episode.content_hash) for item in candidates
             ),
-            "examples": sorted(item.example_id for item in examples),
+            # Dataset identity must also change when the model-visible projection,
+            # tool schema, or target changes while the source episode stays fixed.
+            # Hashing IDs alone made context-compaction releases indistinguishable.
+            "examples": sorted(
+                (
+                    item.example_id,
+                    _sha256(
+                        _canonical(
+                            {
+                                "messages": [
+                                    message.model_dump(mode="json")
+                                    for message in item.messages
+                                ],
+                                "tools": item.tools,
+                            }
+                        )
+                    ),
+                )
+                for item in examples
+            ),
         }
         return DatasetManifest(
             dataset_version="sft-" + _sha256(_canonical(version_payload))[:16],
@@ -398,6 +477,20 @@ class SFTDatasetBuilder:
                 {f"{item.episode.policy_name}:{item.episode.policy_version}" for item in candidates}
             ),
             split_group_overlap=overlap,
+            excluded_policy_steps=sum(
+                1
+                for candidate in candidates
+                for step in candidate.episode.steps
+                if step.action.decision_source != "controller" and not _step_verified_success(step)
+            ),
+            excluded_duplicate_policy_steps=sum(
+                _duplicate_verified_policy_steps(candidate.episode)
+                for candidate in candidates
+            ),
+            shared_trajectory_snapshots=(
+                len(candidates)
+                - len({item.episode.trajectory_id for item in candidates})
+            ),
         )
 
     @staticmethod
@@ -424,17 +517,110 @@ def _trusted_hydrated_fields(action: str) -> set[str]:
     return mapping.get(action, set())
 
 
+def _step_verified_success(step: Any) -> bool:
+    """Only imitate decisions that the environment actually verified."""
+    task_status = str((step.verification or {}).get("task_status") or "")
+    error_code = (step.verification or {}).get("error_code")
+    if task_status:
+        if task_status == "blocked" and step.action.action in {
+            "ask_user",
+            "finish",
+        }:
+            return True
+        if task_status == "blocked" and step.action.action == "propose_tradeoff":
+            return _tradeoff_context_grounded(step.context)
+        if (
+            task_status == "failed"
+            and step.action.action == "abort"
+            and step.context.capability.get("status") in {"infeasible", "unsafe", "missing_tool"}
+            and step.context.capability.get("actionable_alternatives") is False
+        ):
+            # ``abort`` is represented as a failed task transition so the
+            # loop cannot continue, but it is a verified successful policy
+            # decision when the controller proves that no alternative exists.
+            return True
+        if task_status in {"succeeded", "skipped"}:
+            return not error_code
+        if task_status == "ready" and step.action.action not in NO_TOOL_ACTIONS:
+            # ReAct research actions can succeed while leaving the enclosing
+            # evidence-gathering task ready for another tool decision. The
+            # action-level observations, not terminal task status, are the
+            # verifier signal for these intermediate decisions.
+            return (
+                not error_code
+                and bool(step.observations)
+                and all(observation.ok for observation in step.observations)
+            )
+        return False
+    # Backward-compatible teacher fixtures may use an explicit boolean.
+    return (step.verification or {}).get("passed") is True
+
+
+def _tradeoff_context_grounded(context: Any) -> bool:
+    capability = context.capability or {}
+    if capability.get("status") in {"infeasible", "unsafe", "missing_tool"}:
+        return True
+    current = context.current_subtask or {}
+    attempts = current.get("action_attempt_counts") or {}
+    verifier_attempts = int(attempts.get("finalize_research") or 0) + int(
+        attempts.get("validate_itinerary") or 0
+    )
+    evidence_attempts = sum(
+        int(attempts.get(action) or 0)
+        for action in {
+            "get_weather",
+            "retrieve_city_knowledge",
+            "search_current_info",
+            "search_pois",
+            "search_transport",
+        }
+    )
+    return verifier_attempts > 0 and evidence_attempts > 0
+
+
+def _policy_step_signature(step: Any) -> str:
+    return _canonical(
+        {
+            "goal_version": step.context.goal_version,
+            "plan_version": step.context.plan_version,
+            "action": step.action.action,
+            "arguments": step.action.arguments,
+        }
+    )
+
+
+def _duplicate_verified_policy_steps(episode: AgentEpisode) -> int:
+    seen: set[str] = set()
+    duplicates = 0
+    for step in episode.steps:
+        if (
+            step.action.decision_source == "controller"
+            or step.action.action in NO_TOOL_ACTIONS
+            or not _step_verified_success(step)
+        ):
+            continue
+        signature = _policy_step_signature(step)
+        if signature in seen:
+            duplicates += 1
+        else:
+            seen.add(signature)
+    return duplicates
+
+
 def _arguments_grounded(action: str, arguments: dict[str, Any], context: dict[str, Any]) -> bool:
     if not arguments:
         return True
     grounded = _canonical(context).casefold()
-    controller_constants = {"auto", "greedy", "cpsat"}
     for name, value in arguments.items():
-        if name in _trusted_hydrated_fields(action):
+        if (
+            name in _trusted_hydrated_fields(action)
+            or name in _GENERATIVE_ARGUMENTS.get(action, set())
+            or name in _SCHEMA_ENUM_ARGUMENTS
+        ):
             continue
         for leaf in _argument_leaves(value):
             normalized = str(leaf).strip().casefold()
-            if normalized and normalized not in controller_constants and normalized not in grounded:
+            if normalized and normalized not in grounded:
                 return False
     return True
 
@@ -455,6 +641,14 @@ def _contains_pii(value: Any) -> bool:
     if isinstance(value, str):
         return bool(_PHONE.search(value) or _EMAIL.search(value) or _ID_CARD.search(value))
     return False
+
+
+def _contains_unicode_replacement(value: Any) -> bool:
+    if isinstance(value, dict):
+        return any(_contains_unicode_replacement(item) for item in value.values())
+    if isinstance(value, (list, tuple)):
+        return any(_contains_unicode_replacement(item) for item in value)
+    return isinstance(value, str) and "\ufffd" in value
 
 
 def _canonical(value: Any) -> str:

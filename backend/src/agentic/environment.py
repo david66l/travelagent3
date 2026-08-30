@@ -45,6 +45,8 @@ class SnapshotToolResponse(BaseModel):
     fallback_reason: str | None = None
     latency_ms: int = Field(default=0, ge=0)
     expected_arguments: dict[str, Any] = Field(default_factory=dict)
+    argument_match_mode: Literal["exact", "context_tolerant_keywords"] = "exact"
+    ignored_keyword_values: list[str] = Field(default_factory=list)
     error_code: str | None = None
     retryable: bool = False
 
@@ -75,6 +77,10 @@ class SnapshotToolExecutor:
     def __init__(self, snapshot: EnvironmentSnapshot) -> None:
         self.snapshot = snapshot.model_copy(deep=True)
         self.call_counts: dict[str, int] = {}
+        # Contracted responses are selected by arguments rather than snapshot
+        # position.  Separate consumed indices preserve retry sequences when
+        # several responses intentionally share the same arguments.
+        self._consumed_response_indices: dict[str, set[int]] = {}
         self.guard = ToolGuard(mode="enforce", max_calls=64)
 
     async def execute(
@@ -131,23 +137,58 @@ class SnapshotToolExecutor:
         arguments: dict[str, Any],
         tool_call_id: str,
     ) -> tuple[ToolResult, ObservationEnvelope]:
-        index = self.call_counts.get(name, 0)
-        self.call_counts[name] = index + 1
+        call_index = self.call_counts.get(name, 0)
+        self.call_counts[name] = call_index + 1
         responses = self.snapshot.tool_responses.get(name) or []
-        if index >= len(responses):
+        consumed = self._consumed_response_indices.setdefault(name, set())
+        available = [index for index in range(len(responses)) if index not in consumed]
+        if not available:
             return self._failure(
                 name,
                 tool_call_id,
                 "SNAPSHOT_RESPONSE_EXHAUSTED",
-                f"no snapshot response {index} for {name}",
+                f"no snapshot response {call_index} for {name}",
                 retryable=False,
             )
-        response = responses[index]
-        mismatches = {
-            key: {"expected": value, "actual": arguments.get(key)}
-            for key, value in response.expected_arguments.items()
-            if arguments.get(key) != value
-        }
+
+        matched_index = next(
+            (
+                index
+                for index in available
+                if responses[index].expected_arguments
+                and self._arguments_match(arguments, responses[index], responses)
+            ),
+            None,
+        )
+        if matched_index is None:
+            # Backward compatibility for old snapshots that did not declare an
+            # argument contract: they keep their original sequential meaning.
+            matched_index = next(
+                (index for index in available if not responses[index].expected_arguments),
+                None,
+            )
+        if matched_index is None:
+            expected = [responses[index].expected_arguments for index in available]
+            return self._failure(
+                name,
+                tool_call_id,
+                "SNAPSHOT_ARGUMENT_MISMATCH",
+                "tool arguments do not match any unused snapshot response",
+                retryable=False,
+                details={"actual": arguments, "expected_any": expected},
+            )
+
+        consumed.add(matched_index)
+        response = responses[matched_index]
+        mismatches = (
+            {}
+            if self._arguments_match(arguments, response, responses)
+            else {
+                key: {"expected": value, "actual": arguments.get(key)}
+                for key, value in response.expected_arguments.items()
+                if arguments.get(key) != value
+            }
+        )
         if mismatches:
             return self._failure(
                 name,
@@ -183,6 +224,37 @@ class SnapshotToolExecutor:
                 environment_version=self.snapshot.environment_version,
             )
         return result, observation
+
+    @staticmethod
+    def _arguments_match(
+        arguments: dict[str, Any],
+        response: SnapshotToolResponse,
+        responses: list[SnapshotToolResponse],
+    ) -> bool:
+        expected = response.expected_arguments
+        if response.argument_match_mode == "exact":
+            return all(arguments.get(key) == value for key, value in expected.items())
+
+        # A frozen search snapshot cannot enumerate every harmless context
+        # token a real provider accepts, such as the trusted destination. Only
+        # explicitly declared context values may be ignored; arbitrary extra
+        # keywords remain a mismatch.
+        expected_keywords = expected.get("keywords")
+        actual_keywords = arguments.get("keywords")
+        if not isinstance(expected_keywords, list) or not isinstance(actual_keywords, list):
+            return False
+        ignored_keywords = {
+            keyword
+            for candidate in responses
+            if candidate.argument_match_mode == "context_tolerant_keywords"
+            for keyword in candidate.ignored_keyword_values
+        }
+        projected = [keyword for keyword in actual_keywords if str(keyword) not in ignored_keywords]
+        if projected != expected_keywords:
+            return False
+        return all(
+            arguments.get(key) == value for key, value in expected.items() if key != "keywords"
+        )
 
     @staticmethod
     def _failure(

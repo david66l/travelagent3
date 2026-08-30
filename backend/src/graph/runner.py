@@ -58,12 +58,56 @@ def _is_confirm_pause(snapshot: Any) -> bool:
     return False
 
 
+def _is_agent_failure(state: dict[str, Any]) -> bool:
+    """Return whether the checkpoint represents a terminal Agent failure."""
+    return bool(
+        state.get("agent_status") == "failed"
+        or state.get("next_action") == "agent_error"
+        or state.get("stage") in {"agent_failed", "agent_postcheck_failed"}
+    )
+
+
+def _agent_failure_event(state: dict[str, Any]) -> dict[str, Any]:
+    """Project a durable Agent failure without misreporting it as a final plan."""
+    reason = str(state.get("termination_reason") or "AGENT_EXECUTION_FAILED")
+    error = str(
+        state.get("agent_error")
+        or state.get("error_message")
+        or f"Agent stopped before producing a verified itinerary: {reason}"
+    )
+    return {
+        "type": "error",
+        "stage": "agent_failed",
+        "payload": {
+            "error": error,
+            "error_type": reason,
+            "retryable": False,
+        },
+    }
+
+
+def _invalid_confirmation_reason(state: dict[str, Any]) -> str | None:
+    """Reject confirmation pauses that do not contain a verified draft."""
+    itinerary = state.get("itinerary")
+    if not isinstance(itinerary, list) or not itinerary:
+        return "confirmation checkpoint does not contain an itinerary"
+    if state.get("policy_mode") == "agent":
+        validation = state.get("validation_report") or {}
+        if state.get("agent_status") != "awaiting_confirmation":
+            return "Agent is not in awaiting_confirmation state"
+        if validation.get("hard_pass") is not True:
+            return "Agent itinerary did not pass deterministic hard validation"
+    return None
+
+
 async def run_graph_turn(
     session_id: str,
     user_id: str,
     user_input: str,
     messages: list[dict[str, Any]] | None = None,
     attachments: list[dict[str, Any]] | None = None,
+    profile: dict[str, Any] | None = None,
+    user_role: str = "guest",
 ) -> dict[str, Any]:
     """Run one complete graph turn and return the final state.
 
@@ -73,6 +117,9 @@ async def run_graph_turn(
     sm = SessionManager()
     state = await sm.create(session_id, user_id, user_input, messages, attachments)
     state["session_id"] = session_id
+    state["user_role"] = user_role
+    if profile:
+        state["profile"] = profile
 
     graph = await get_graph()
     t_start = time.monotonic()
@@ -153,6 +200,7 @@ async def stream_graph_events(
     messages: list[dict[str, Any]] | None = None,
     attachments: list[dict[str, Any]] | None = None,
     profile: dict[str, Any] | None = None,
+    user_role: str = "guest",
     slots: dict[str, Any] | None = None,
     conversation_state: dict[str, Any] | None = None,
     action: str = "chat",
@@ -186,13 +234,191 @@ async def stream_graph_events(
         logger.debug("aget_state failed for %s: %s", session_id, exc)
         snapshot = None
     is_paused = _is_confirm_pause(snapshot)
+    snapshot_values = dict(snapshot.values) if snapshot and snapshot.values else {}
     graph_input: Any
 
-    if action in ("confirm", "modify", "reject") and is_paused:
+    # Celery uses at-least-once delivery. If a worker committed a graph
+    # checkpoint and crashed before acknowledging the broker message, replay the
+    # already committed outcome for the same job instead of starting a second
+    # user turn or trying to resume a terminal episode.
+    if job_id and action == "chat" and snapshot_values.get("job_id") == job_id:
+        if _is_agent_failure(snapshot_values):
+            yield _agent_failure_event(snapshot_values)
+            return
+        if is_paused:
+            invalid_reason = _invalid_confirmation_reason(snapshot_values)
+            if invalid_reason:
+                yield {
+                    "type": "error",
+                    "stage": "invalid_confirmation_checkpoint",
+                    "payload": {
+                        "error": invalid_reason,
+                        "error_type": "INVALID_CONFIRMATION_CHECKPOINT",
+                        "retryable": False,
+                    },
+                }
+                return
+            from graph.approval import public_approval
+
+            yield {
+                "type": "awaiting_confirm",
+                "stage": "draft_ready",
+                "payload": {
+                    "itinerary": snapshot_values.get("itinerary"),
+                    "warnings": snapshot_values.get("warnings", []),
+                    "pending_approval": public_approval(snapshot_values.get("pending_approval")),
+                },
+            }
+            return
+        if (
+            snapshot_values.get("agent_status") == "awaiting_information"
+            or snapshot_values.get("next_action") == "clarify"
+        ):
+            yield {
+                "type": "clarify",
+                "stage": str(snapshot_values.get("stage") or "gathering"),
+                "payload": snapshot_values,
+            }
+            return
+        if snapshot_values.get("stage") in {"completed", "memory_updated"} or snapshot_values.get(
+            "booking_results"
+        ):
+            result = _extract_result(snapshot_values)
+            yield {
+                "type": "final",
+                "stage": result.get("stage", "completed"),
+                "payload": result,
+            }
+            return
+        if snapshot_values.get("agent_status") in {
+            "initialized",
+            "running",
+        } and snapshot_values.get("agent_ledger"):
+            graph_input = Command(
+                goto="agent_loop",
+                update={
+                    "job_id": job_id,
+                    "agent_status": "running",
+                    "next_action": "agent_continue",
+                    "stage": "agent_resumed_after_redelivery",
+                },
+            )
+        else:
+            yield {
+                "type": "error",
+                "stage": "job_replay_state_invalid",
+                "payload": {
+                    "error": "The durable graph checkpoint cannot be safely resumed.",
+                    "error_type": "JOB_REPLAY_STATE_INVALID",
+                    "retryable": False,
+                },
+            }
+            return
+
+    elif (
+        action == "chat"
+        and snapshot_values.get("policy_mode") == "agent"
+        and snapshot_values.get("agent_status") == "awaiting_revision_reason"
+        and snapshot_values.get("agent_ledger")
+    ):
+        from agentic.runtime import revise_agent_ledger
+
+        revised_ledger = await revise_agent_ledger(
+            snapshot_values["agent_ledger"], revision_reason=user_input
+        )
+        graph_input = Command(
+            goto="agent_loop",
+            update={
+                "user_input": user_input,
+                "messages": messages or snapshot_values.get("messages") or [],
+                "agent_ledger": revised_ledger.model_dump(mode="json"),
+                "agent_status": "running",
+                "termination_reason": None,
+                "next_action": "agent_continue",
+                "stage": "revision_resumed",
+            },
+        )
+    elif (
+        action == "chat"
+        and snapshot_values.get("policy_mode") == "agent"
+        and snapshot_values.get("agent_status") == "awaiting_information"
+        and snapshot_values.get("agent_ledger")
+    ):
+        from agentic.runtime import resume_agent_ledger
+        from agentic.state import AgentLedgerState
+
+        blocked_ledger = AgentLedgerState(**snapshot_values["agent_ledger"])
+        blocked_task = next(
+            (task for task in blocked_ledger.task_graph.tasks if task.status == "blocked"),
+            None,
+        )
+        if blocked_task is None:
+            yield {
+                "type": "error",
+                "stage": "agent_resume_failed",
+                "payload": {
+                    "error": "Agent状态显示正在等待信息，但没有找到对应的阻塞任务。",
+                    "error_type": "AgentResumeStateError",
+                },
+            }
+            return
+        expected_keys = list(blocked_task.success_criteria.get("required_fact_keys") or [])
+        current_fact_keys = {
+            fact.key
+            for fact in blocked_ledger.facts.values()
+            if fact.goal_version == blocked_ledger.goal.goal_version
+            and fact.plan_version == blocked_ledger.task_graph.plan_version
+        }
+        unanswered_keys = [key for key in expected_keys if key not in current_fact_keys]
+        fact_key = (
+            unanswered_keys[0]
+            if unanswered_keys
+            else (expected_keys[0] if expected_keys else f"user_response.{blocked_task.task_id}")
+        )
+        resumed_ledger = resume_agent_ledger(
+            blocked_ledger,
+            task_id=blocked_task.task_id,
+            user_value=user_input,
+            fact_key=fact_key,
+        )
+        graph_input = Command(
+            goto="agent_loop",
+            update={
+                "user_input": user_input,
+                "messages": messages or snapshot_values.get("messages") or [],
+                "agent_ledger": resumed_ledger.model_dump(mode="json"),
+                "agent_status": "running",
+                "termination_reason": None,
+                "next_action": "agent_continue",
+                "stage": "agent_resumed",
+            },
+        )
+        logger.info("Agent clarification resumed for %s task=%s", session_id, blocked_task.task_id)
+    elif action in ("confirm", "modify", "reject") and is_paused:
+        from graph.approval import ApprovalValidationError, validate_pending_approval
+
+        payload = action_payload or {}
+        try:
+            validate_pending_approval(
+                snapshot_values,
+                payload.get("approval"),
+                action=action,
+                user_id=user_id,
+            )
+        except ApprovalValidationError as exc:
+            yield {
+                "type": "error",
+                "stage": "approval_rejected",
+                "payload": {"error": str(exc), "error_type": exc.code},
+            }
+            return
         resume_value: dict[str, Any] = {"action": action}
         if action == "modify":
             payload = action_payload or {}
             resume_value["change"] = payload.get("change") or payload
+        elif action == "reject":
+            payload = action_payload or {}
+            resume_value["reason"] = payload.get("reason")
         graph_input = Command(resume=resume_value)
         logger.info("Graph resume for %s: action=%s", session_id, action)
     elif action in ("confirm", "modify", "reject"):
@@ -211,6 +437,23 @@ async def stream_graph_events(
                 },
             }
             return
+        from graph.approval import ApprovalValidationError, validate_pending_approval
+
+        payload = action_payload or {}
+        try:
+            validate_pending_approval(
+                values,
+                payload.get("approval"),
+                action=action,
+                user_id=user_id,
+            )
+        except ApprovalValidationError as exc:
+            yield {
+                "type": "error",
+                "stage": "approval_rejected",
+                "payload": {"error": str(exc), "error_type": exc.code},
+            }
+            return
         if action == "modify":
             payload = action_payload or {}
             graph_input = Command(
@@ -221,14 +464,65 @@ async def stream_graph_events(
                 },
             )
         elif action == "reject":
-            graph_input = Command(
-                goto="plan",
-                update={"confirm_decision": None, "stage": "rejected"},
-            )
+            reason = str((action_payload or {}).get("reason") or "").strip()
+            if values.get("policy_mode") == "agent" and values.get("agent_ledger"):
+                if reason:
+                    from agentic.runtime import revise_agent_ledger
+
+                    revised = await revise_agent_ledger(
+                        values["agent_ledger"], revision_reason=reason
+                    )
+                    graph_input = Command(
+                        goto="agent_loop",
+                        update={
+                            "confirm_decision": "reject_with_reason",
+                            "agent_ledger": revised.model_dump(mode="json"),
+                            "agent_status": "running",
+                            "stage": "revision_resumed",
+                        },
+                    )
+                else:
+                    graph_input = Command(
+                        goto="output",
+                        update={
+                            "confirm_decision": "reject_needs_reason",
+                            "agent_status": "awaiting_revision_reason",
+                            "next_action": "clarify",
+                            "clarification_questions": [
+                                "这版行程哪里不合适？例如太赶、预算过高、景点不喜欢或交通不方便。"
+                            ],
+                            "stage": "awaiting_revision_reason",
+                        },
+                    )
+            else:
+                graph_input = Command(
+                    goto="plan",
+                    update={"confirm_decision": None, "stage": "rejected"},
+                )
         else:
+            update: dict[str, Any] = {
+                "confirm_decision": "confirm",
+                "next_action": "enrich",
+            }
+            if (
+                values.get("policy_mode") == "agent"
+                and values.get("agent_status") == "awaiting_confirmation"
+                and values.get("agent_ledger")
+            ):
+                from agentic.runtime import confirm_agent_ledger
+
+                ledger, completion = confirm_agent_ledger(values["agent_ledger"])
+                update.update(
+                    {
+                        "agent_ledger": ledger.model_dump(mode="json"),
+                        "agent_status": "finished",
+                        "termination_reason": "validated_finish",
+                        "completion_decision": completion.model_dump(mode="json"),
+                    }
+                )
             graph_input = Command(
                 goto="tool_call",
-                update={"confirm_decision": "confirm", "next_action": "enrich"},
+                update=update,
             )
         logger.warning(
             "Checkpoint for %s did not expose confirm interrupt; continued action=%s from draft",
@@ -268,11 +562,15 @@ async def stream_graph_events(
         else:
             state = await sm.create(session_id, user_id, user_input, messages, attachments)
         state["session_id"] = session_id
+        state["user_role"] = user_role
         if job_id:
             state["job_id"] = job_id  # enables output-node token streaming
 
         if conversation_state:
             state["_conversation_state"] = conversation_state
+            state["user_role"] = conversation_state.get("user_role") or state.get(
+                "user_role", "guest"
+            )
             state["profile"] = (
                 conversation_state.get("profile") or profile or state.get("profile") or {}
             )
@@ -320,7 +618,7 @@ async def stream_graph_events(
         async for event in graph.astream_events(
             graph_input,
             _build_graph_config(session_id),
-            version="v1",
+            version="v2",
         ):
             kind = event.get("event")
             name = event.get("name", "")
@@ -367,11 +665,24 @@ async def stream_graph_events(
                     if isinstance(output, dict):
                         output_state = output
                     if isinstance(output, dict) and output.get("next_action") == "clarify":
+                        # Consumers intentionally stop after the clarify event.
+                        # Persist the full checkpoint before yielding so closing
+                        # this async generator cannot leave hot memory at the
+                        # stale pre-graph "created" state.
+                        current = await graph.aget_state(config)
+                        current_values = dict(current.values) if current and current.values else {}
+                        current_values.update(output)
+                        await sm.save(session_id, current_values)
                         yield {
                             "type": "clarify",
                             "stage": output.get("stage", "gathering"),
                             "payload": output,
                         }
+                        return
+                    if isinstance(output, dict) and output.get("next_action") == "agent_error":
+                        # The node output is only a state patch. Wait for the
+                        # durable checkpoint below so the error includes the
+                        # authoritative termination reason and policy failure.
                         continue
                     msg = {}
                     if isinstance(output, dict) and output.get("messages"):
@@ -441,17 +752,51 @@ async def stream_graph_events(
         yield {
             "type": "error",
             "stage": "error",
-            "payload": {"error": str(exc), "error_type": type(exc).__name__},
+            "payload": {
+                "error": str(exc),
+                "error_type": type(exc).__name__,
+                "retryable": isinstance(exc, (TimeoutError, ConnectionError, OSError)),
+            },
         }
+        return
 
     # If the graph paused at the confirmation interrupt, signal the client to
     # confirm/modify instead of emitting a final result.
     try:
         paused = await graph.aget_state(config)
         if _is_confirm_pause(paused):
+            from graph.approval import public_approval
+
             vals = dict(paused.values) if paused.values else {}
             await sm.save(session_id, vals)
+            if _is_agent_failure(vals):
+                yield _agent_failure_event(vals)
+                return
+            invalid_reason = _invalid_confirmation_reason(vals)
+            if invalid_reason:
+                yield {
+                    "type": "error",
+                    "stage": "invalid_confirmation_checkpoint",
+                    "payload": {
+                        "error": invalid_reason,
+                        "error_type": "INVALID_CONFIRMATION_CHECKPOINT",
+                        "retryable": False,
+                    },
+                }
+                return
             elapsed_ms = int((time.monotonic() - t_start) * 1000)
+            if vals.get("policy_mode") == "shadow":
+                try:
+                    from agentic.shadow import record_deterministic_shadow_result
+
+                    await record_deterministic_shadow_result(vals, latency_ms=elapsed_ms)
+                except Exception as exc:
+                    # Evaluation must never change the user-visible planning result.
+                    logger.warning(
+                        "Could not record deterministic shadow scenario for %s: %s",
+                        session_id,
+                        exc,
+                    )
             if _LOCAL_TRACE_ENABLED:
                 try:
                     _save_local(
@@ -470,6 +815,7 @@ async def stream_graph_events(
                 "payload": {
                     "itinerary": vals.get("itinerary"),
                     "warnings": vals.get("warnings", []),
+                    "pending_approval": public_approval(vals.get("pending_approval")),
                 },
             }
             return
@@ -487,6 +833,9 @@ async def stream_graph_events(
             # tool_results, booking_results or the gathered profile.
             final_state = dict(checkpoint.values)
             await sm.save(session_id, final_state)
+            if _is_agent_failure(final_state):
+                yield _agent_failure_event(final_state)
+                return
             result = _extract_result(final_state)
 
             # Save local trace
@@ -507,13 +856,32 @@ async def stream_graph_events(
         elif output_state:
             final_state = dict(output_state)
             await sm.save(session_id, final_state)
+            if _is_agent_failure(final_state):
+                yield _agent_failure_event(final_state)
+                return
             result = _extract_result(final_state)
             yield {"type": "final", "stage": result.get("stage", "completed"), "payload": result}
         else:
-            yield {"type": "final", "stage": "completed", "payload": {}}
+            yield {
+                "type": "error",
+                "stage": "graph_result_missing",
+                "payload": {
+                    "error": "Graph ended without a durable terminal result.",
+                    "error_type": "GRAPH_RESULT_MISSING",
+                    "retryable": False,
+                },
+            }
     except Exception as exc:
         logger.warning("Failed to read final checkpoint for %s: %s", session_id, exc)
-        yield {"type": "final", "stage": "completed", "payload": {}}
+        yield {
+            "type": "error",
+            "stage": "checkpoint_read_failed",
+            "payload": {
+                "error": str(exc),
+                "error_type": type(exc).__name__,
+                "retryable": True,
+            },
+        }
 
 
 def _extract_result(state: dict[str, Any]) -> dict[str, Any]:
@@ -543,6 +911,11 @@ def _extract_result(state: dict[str, Any]) -> dict[str, Any]:
         "booking_results": state.get("booking_results"),
         "budget_breakdown": state.get("budget_breakdown"),
         "warnings": state.get("warnings", []),
+        "agent_status": state.get("agent_status"),
+        "termination_reason": state.get("termination_reason"),
+        "agent_error": state.get("agent_error"),
+        "agent_policy_routing": state.get("agent_policy_routing"),
+        "pending_approval": state.get("pending_approval"),
     }
 
 
@@ -560,13 +933,14 @@ class GraphRunner:
         profile: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Run one turn and return the final result."""
-        # TODO: propagate profile/slots to run_graph_turn when needed
         return await run_graph_turn(
             session_id=session_id,
             user_id=user_id,
             user_input=user_input,
             messages=messages,
             attachments=None,
+            profile=profile,
+            user_role=user_role,
         )
 
     async def stream(
@@ -587,6 +961,7 @@ class GraphRunner:
             messages=messages,
             attachments=None,
             profile=profile,
+            user_role=user_role,
         ):
             yield event
 

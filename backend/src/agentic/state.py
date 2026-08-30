@@ -46,6 +46,11 @@ class BudgetExceeded(StateTransitionError):
 class GoalCapability(BaseModel):
     status: CapabilityStatus = "solvable"
     evidence: list[str] = Field(default_factory=list)
+    # ``None`` preserves compatibility with historical trajectories whose
+    # feasibility contract did not distinguish a negotiable conflict from a
+    # hard stop.  New data must set this explicitly for non-solvable goals.
+    actionable_alternatives: bool | None = None
+    alternatives: list[str] = Field(default_factory=list)
 
 
 class GoalLedger(BaseModel):
@@ -146,6 +151,7 @@ class ArtifactRecord(BaseModel):
     evidence_refs: list[str] = Field(default_factory=list)
     goal_version: int = Field(ge=1)
     plan_version: int = Field(ge=1)
+    expires_at: datetime | None = None
     created_at: datetime = Field(default_factory=_now)
 
 
@@ -158,6 +164,26 @@ class FailureRecord(BaseModel):
     retryable: bool = False
     evidence_refs: list[str] = Field(default_factory=list)
     attempted_strategy: str | None = None
+    attempted_arguments: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=_now)
+
+
+class DecisionRecord(BaseModel):
+    """Compact controller-owned history for online loop decisions.
+
+    The policy sees this bounded projection instead of replaying an ever-growing
+    chat transcript.  ``observation_signature`` lets the controller detect a
+    successful-looking tool call that returned exactly the same evidence and
+    would otherwise create an infinite search loop.
+    """
+
+    task_id: str
+    action_id: str
+    action: str
+    arguments: dict[str, Any] = Field(default_factory=dict)
+    outcome_status: Literal["completed", "failed", "awaiting_user"]
+    observation_signature: str | None = None
+    progress_made: bool = True
     created_at: datetime = Field(default_factory=_now)
 
 
@@ -175,8 +201,8 @@ class PlanVersion(BaseModel):
 class BudgetLedger(BaseModel):
     model_config = {"frozen": True}
 
-    max_episode_steps: int = Field(default=16, ge=1)
-    max_tool_calls: int = Field(default=16, ge=0)
+    max_episode_steps: int = Field(default=24, ge=1)
+    max_tool_calls: int = Field(default=24, ge=0)
     max_solver_calls: int = Field(default=3, ge=0)
     max_tokens: int = Field(default=32_000, ge=0)
     timeout_ms: int = Field(default=120_000, ge=1)
@@ -231,6 +257,7 @@ class AgentLedgerState(BaseModel):
     facts: dict[str, FactRecord] = Field(default_factory=dict)
     artifacts: dict[str, ArtifactRecord] = Field(default_factory=dict)
     failures: list[FailureRecord] = Field(default_factory=list)
+    decision_history: list[DecisionRecord] = Field(default_factory=list)
     plan_versions: list[PlanVersion] = Field(default_factory=list)
     budget: BudgetLedger = Field(default_factory=BudgetLedger)
     current_task_id: str | None = None

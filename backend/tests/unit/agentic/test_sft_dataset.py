@@ -2,6 +2,8 @@
 
 from datetime import UTC, datetime
 
+import pytest
+
 from agentic.loop import PolicyAction, PolicyContext
 from agentic.observations import ObservationEnvelope
 from agentic.sft_dataset import EpisodeCandidate, SFTDatasetBuilder
@@ -137,7 +139,17 @@ def test_pii_and_policy_supplied_trusted_payload_are_rejected():
     assert "L2_POLICY_SUPPLIED_PROTECTED_ARGUMENT" in codes
 
 
-def test_unfinalized_or_ungrounded_episode_is_rejected():
+def test_unicode_replacement_character_is_rejected():
+    candidate = _candidate("broken-text", "trajectory-broken-text")
+    candidate.episode.initial_state["note"] = "broken � city"
+
+    result = SFTDatasetBuilder().build([candidate])
+
+    assert result.manifest.accepted_episodes == 0
+    assert "L1_TEXT_ENCODING_CORRUPT" in result.reviews[0].rejection_codes
+
+
+def test_unfinalized_or_schema_invalid_episode_is_rejected():
     unfinalized = _candidate("unfinalized", "trajectory-unfinalized")
     unfinalized.episode.content_hash = None
     ungrounded = _candidate("ungrounded", "trajectory-ungrounded")
@@ -147,10 +159,50 @@ def test_unfinalized_or_ungrounded_episode_is_rejected():
 
     codes = {code for review in result.reviews for code in review.rejection_codes}
     assert "L1_UNFINALIZED_EPISODE" in codes
-    assert "L2_ARGUMENT_NOT_GROUNDED" in codes
+    assert "L2_POLICY_ARGUMENT_INVALID" in codes
 
 
-def test_missing_tool_observation_and_successful_duplicate_are_rejected():
+def test_composed_search_text_is_allowed_but_structured_date_must_be_grounded():
+    composed = _candidate("composed", "trajectory-composed")
+    composed.episode.steps[0].task_id = "retrieve_city_knowledge"
+    composed.episode.steps[0].context = _context(
+        composed.episode.trajectory_id,
+        "retrieve_city_knowledge",
+        "retrieve_city_knowledge",
+    )
+    composed.episode.steps[0].action = PolicyAction(
+        action_id="composed-search",
+        action="retrieve_city_knowledge",
+        arguments={"topic": "Shanghai history museum"},
+    )
+    composed.episode.steps[0].observations[0].tool = "retrieve_city_knowledge"
+    composed.episode.steps[0].observations[0].tool_call_id = "composed-search"
+    composed.episode.content_hash = episode_content_hash(composed.episode)
+
+    hallucinated_date = _candidate("date", "trajectory-date")
+    hallucinated_date.episode.steps[0].task_id = "get_weather"
+    hallucinated_date.episode.steps[0].context = _context(
+        hallucinated_date.episode.trajectory_id,
+        "get_weather",
+        "get_weather",
+    )
+    hallucinated_date.episode.steps[0].action = PolicyAction(
+        action_id="weather-date",
+        action="get_weather",
+        arguments={"date": "2099-01-01"},
+    )
+    hallucinated_date.episode.steps[0].observations[0].tool = "get_weather"
+    hallucinated_date.episode.steps[0].observations[0].tool_call_id = "weather-date"
+    hallucinated_date.episode.content_hash = episode_content_hash(hallucinated_date.episode)
+
+    result = SFTDatasetBuilder().build([composed, hallucinated_date])
+
+    reviews = {review.scenario_id: review for review in result.reviews}
+    assert reviews["composed"].accepted is True
+    assert "L2_ARGUMENT_NOT_GROUNDED" in reviews["date"].rejection_codes
+
+
+def test_missing_observation_is_rejected_and_duplicate_target_is_skipped():
     missing = _candidate("missing", "trajectory-missing")
     missing.episode.steps[0].observations = []
     duplicate = _candidate("duplicate", "trajectory-duplicate")
@@ -158,12 +210,62 @@ def test_missing_tool_observation_and_successful_duplicate_are_rejected():
     extra.step_index = 1
     duplicate.episode.steps.insert(1, extra)
     duplicate.episode.steps[2].step_index = 2
+    duplicate.episode.content_hash = episode_content_hash(duplicate.episode)
 
     result = SFTDatasetBuilder().build([missing, duplicate])
 
-    codes = {code for review in result.reviews for code in review.rejection_codes}
-    assert "L2_TOOL_OBSERVATION_MISSING" in codes
-    assert "L2_DUPLICATE_SUCCESSFUL_CALL" in codes
+    reviews = {review.scenario_id: review for review in result.reviews}
+    assert "L2_TOOL_OBSERVATION_MISSING" in reviews["missing"].rejection_codes
+    assert reviews["duplicate"].accepted is True
+    assert reviews["duplicate"].example_count == 2
+    assert result.manifest.excluded_duplicate_policy_steps == 1
+
+
+def test_repeated_successful_call_after_goal_revision_is_not_a_duplicate():
+    candidate = _candidate()
+    revised = candidate.episode.steps[0].model_copy(deep=True)
+    revised.step_index = 2
+    revised.context.goal_version = 2
+    revised.context.plan_version = 2
+    revised.action.action_id = "call-revised"
+    revised.observations[0].tool_call_id = "call-revised"
+    candidate.episode.steps.append(revised)
+    candidate.episode.content_hash = episode_content_hash(candidate.episode)
+
+    result = SFTDatasetBuilder().build([candidate])
+
+    assert result.manifest.accepted_episodes == 1
+    assert result.manifest.exported_examples == 3
+
+
+def test_revision_snapshots_can_share_a_conversation_trajectory_id():
+    initial = _candidate("initial", "trajectory-revised")
+    revised = initial.model_copy(deep=True)
+    revised.scenario_id = "revised"
+    extra = revised.episode.steps[0].model_copy(deep=True)
+    extra.step_index = 2
+    extra.context.goal_version = 2
+    extra.context.plan_version = 2
+    extra.action.action_id = "call-revised"
+    extra.observations[0].tool_call_id = "call-revised"
+    revised.episode.steps.append(extra)
+    revised.episode.content_hash = episode_content_hash(revised.episode)
+
+    result = SFTDatasetBuilder().build([initial, revised])
+
+    assert result.manifest.candidate_episodes == 2
+    assert result.manifest.shared_trajectory_snapshots == 1
+    assert result.manifest.exported_examples == 5
+    assert len({item.example_id for item in result.examples}) == 5
+
+
+def test_exact_duplicate_episode_snapshots_are_rejected():
+    first = _candidate("first", "trajectory-conflict")
+    second = first.model_copy(deep=True)
+    second.scenario_id = "second"
+
+    with pytest.raises(ValueError, match="duplicate episode snapshot"):
+        SFTDatasetBuilder().build([first, second])
 
 
 def test_group_split_keeps_template_city_and_production_user_isolated():
@@ -211,3 +313,117 @@ def test_export_writes_manifest_reviews_and_all_splits(tmp_path):
     assert (tmp_path / "train.jsonl").exists()
     assert (tmp_path / "validation.jsonl").exists()
     assert (tmp_path / "test.jsonl").exists()
+
+
+def test_dataset_version_changes_when_model_visible_projection_changes():
+    candidate = _candidate()
+    builder = SFTDatasetBuilder()
+    result = builder.build([candidate])
+    changed_examples = [item.model_copy(deep=True) for item in result.examples]
+    changed_examples[0].messages[0].content += "\nA new policy rule."
+
+    changed_manifest = builder._manifest(
+        [candidate],
+        result.reviews,
+        changed_examples,
+        overlap=False,
+    )
+
+    assert changed_manifest.dataset_version != result.manifest.dataset_version
+
+
+def test_failed_policy_decision_is_not_imitation_target():
+    candidate = _candidate()
+    candidate.episode.steps[0].verification = {"task_status": "ready", "error_code": "TIMEOUT"}
+    candidate.episode.content_hash = episode_content_hash(candidate.episode)
+
+    result = SFTDatasetBuilder().build([candidate])
+
+    assert result.manifest.accepted_episodes == 1
+    assert result.manifest.exported_examples == 1
+    assert result.manifest.excluded_policy_steps == 1
+    assert result.examples[0].step_index == 1
+
+
+def test_successful_intermediate_react_action_is_an_imitation_target():
+    candidate = _candidate()
+    candidate.episode.steps[0].verification = {
+        "task_status": "ready",
+        "error_code": None,
+    }
+    candidate.episode.content_hash = episode_content_hash(candidate.episode)
+
+    result = SFTDatasetBuilder().build([candidate])
+
+    assert result.manifest.accepted_episodes == 1
+    assert result.manifest.exported_examples == 2
+    assert result.examples[0].step_index == 0
+
+
+def test_verified_finish_waiting_for_confirmation_is_an_imitation_target():
+    candidate = _candidate()
+    finish = candidate.episode.steps[-1].model_copy(deep=True)
+    finish.step_index = 2
+    finish.task_id = "await_confirmation"
+    finish.context = _context(
+        candidate.episode.trajectory_id,
+        "await_confirmation",
+        "finish",
+    )
+    finish.action = PolicyAction(action_id="finish", action="finish", arguments={})
+    finish.observations = []
+    finish.verification = {"task_status": "blocked", "error_code": None}
+    finish.state_before_hash = "before-finish"
+    finish.state_after_hash = "after-finish"
+    candidate.episode.steps.append(finish)
+    candidate.episode.content_hash = episode_content_hash(candidate.episode)
+
+    result = SFTDatasetBuilder().build([candidate])
+
+    assert result.manifest.accepted_episodes == 1
+    assert result.manifest.exported_examples == 3
+    assert result.examples[-1].messages[-1].tool_calls[0].function.name == "finish"
+
+
+def test_evidence_exhausted_tradeoff_is_a_safe_termination_target():
+    candidate = _candidate()
+    tradeoff = candidate.episode.steps[-1].model_copy(deep=True)
+    tradeoff.step_index = 2
+    tradeoff.task_id = "research_evidence"
+    tradeoff.context = _context(
+        candidate.episode.trajectory_id,
+        "research_evidence",
+        "propose_tradeoff",
+    )
+    tradeoff.context.current_subtask["action_attempt_counts"] = {
+        "search_current_info": 2,
+        "finalize_research": 1,
+    }
+    tradeoff.action = PolicyAction(
+        action_id="tradeoff",
+        action="propose_tradeoff",
+        arguments={"reason": "Evidence is insufficient", "options": ["Change date"]},
+    )
+    tradeoff.observations = []
+    tradeoff.verification = {"task_status": "blocked", "error_code": None}
+    candidate.episode.steps.append(tradeoff)
+    candidate.episode.final_state["artifacts"] = {}
+    candidate.episode.content_hash = episode_content_hash(candidate.episode)
+
+    result = SFTDatasetBuilder().build([candidate])
+
+    assert result.manifest.accepted_episodes == 1
+    assert result.reviews[0].quality_label == "safe_termination"
+    assert result.examples[-1].messages[-1].tool_calls[0].function.name == "propose_tradeoff"
+
+
+def test_episode_with_only_controller_or_failed_policy_steps_is_rejected():
+    candidate = _candidate()
+    for step in candidate.episode.steps:
+        step.verification = {"task_status": "failed"}
+    candidate.episode.content_hash = episode_content_hash(candidate.episode)
+
+    result = SFTDatasetBuilder().build([candidate])
+
+    assert result.manifest.accepted_episodes == 0
+    assert result.reviews[0].rejection_codes == ["L3_NO_VERIFIED_POLICY_DECISION"]

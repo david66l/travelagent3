@@ -8,7 +8,7 @@ for online gates, offline evaluation and reward computation.
 from __future__ import annotations
 
 from collections import Counter
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from statistics import pstdev
 from typing import Any
 
@@ -51,6 +51,21 @@ def _minutes(value: Any) -> int | None:
 
 def _activity_key(activity: dict[str, Any]) -> str:
     return str(activity.get("poi_id") or activity.get("poi_name") or "").strip()
+
+
+def _identity(value: Any) -> str:
+    return "".join(str(value or "").strip().lower().split())
+
+
+def _iso_date(value: Any) -> date | None:
+    if not value:
+        return None
+    normalized = str(value).strip().replace("年", "-").replace("月", "-").replace("日", "")
+    normalized = normalized.replace("/", "-").replace(".", "-")
+    try:
+        return date.fromisoformat(normalized)
+    except ValueError:
+        return None
 
 
 def _facts_by_key(facts: dict[str, Any] | list[dict[str, Any]] | None) -> dict[str, dict]:
@@ -104,10 +119,15 @@ class ItineraryValidator:
                 )
             )
 
-        day_start = int(config.get("day_start_min") or 8 * 60)
-        day_end = int(config.get("day_end_min") or 21 * 60)
+        default_day_start = int(config.get("day_start_min") or 8 * 60)
+        default_day_end = int(config.get("day_end_min") or 21 * 60)
+        daily_starts = [int(value) for value in config.get("daily_start_minutes") or []]
+        daily_ends = [int(value) for value in config.get("daily_end_minutes") or []]
+        trip_start = _iso_date(config.get("trip_start_date"))
         all_poi_keys: list[str] = []
         scheduled_keys: set[str] = set()
+        scheduled_identities: set[str] = set()
+        scheduled_records: dict[str, dict[str, Any]] = {}
         total_transit = 0
         total_cost = 0.0
         daily_loads: list[float] = []
@@ -118,11 +138,27 @@ class ItineraryValidator:
 
         for fallback_day_number, day in enumerate(itinerary, 1):
             day_number = int(day.get("day_number") or fallback_day_number)
+            day_index = max(0, day_number - 1)
+            day_start = (
+                daily_starts[day_index]
+                if day_index < len(daily_starts) and daily_starts[day_index] > 0
+                else default_day_start
+            )
+            day_end = (
+                daily_ends[day_index]
+                if day_index < len(daily_ends) and daily_ends[day_index] > 0
+                else default_day_end
+            )
+            actual_day_date = _iso_date(day.get("date"))
+            if actual_day_date is None and trip_start is not None:
+                actual_day_date = trip_start + timedelta(days=day_index)
             activities = [a for a in day.get("activities", []) if isinstance(a, dict)]
             intervals: list[tuple[int, int, dict[str, Any]]] = []
             computed_day_cost = 0.0
             day_transit = int(day.get("total_transit_time_min") or 0)
             day_load = float(day.get("total_walking_minutes") or 0)
+            dining_activities = 0
+            previous_dining_end: int | None = None
 
             for activity in activities:
                 poi_name = str(activity.get("poi_name") or "").strip()
@@ -133,6 +169,27 @@ class ItineraryValidator:
 
                 start = _minutes(activity.get("start_time"))
                 end = _minutes(activity.get("end_time"))
+                if category in {"restaurant", "meal"}:
+                    dining_activities += 1
+                    # Lunch and dinner can legitimately be adjacent in the
+                    # activity list when several hours of free time separate
+                    # them. Only flag overlapping or nearly back-to-back meals.
+                    if (
+                        previous_dining_end is not None
+                        and start is not None
+                        and start - previous_dining_end < 60
+                    ):
+                        violations.append(
+                            ConstraintViolation(
+                                code="CONSECUTIVE_DINING_ACTIVITIES",
+                                message="同一天不能紧接着安排多个餐饮活动",
+                                day_number=day_number,
+                                poi_id=poi_id,
+                                poi_name=poi_name or None,
+                            )
+                        )
+                    if end is not None:
+                        previous_dining_end = end
                 if start is None or end is None or end <= start:
                     violations.append(
                         ConstraintViolation(
@@ -156,8 +213,17 @@ class ItineraryValidator:
                                 details={"start": start, "end": end},
                             )
                         )
-                    open_min = _minutes(fact.get("open_time") or activity.get("open_time"))
-                    close_min = _minutes(fact.get("close_time") or activity.get("close_time"))
+                    date_hours = {}
+                    if actual_day_date is not None:
+                        date_hours = (fact.get("date_opening_hours") or {}).get(
+                            actual_day_date.isoformat()
+                        ) or {}
+                    if isinstance(date_hours, (list, tuple)) and len(date_hours) == 2:
+                        open_min = _minutes(date_hours[0])
+                        close_min = _minutes(date_hours[1])
+                    else:
+                        open_min = _minutes(fact.get("open_time") or activity.get("open_time"))
+                        close_min = _minutes(fact.get("close_time") or activity.get("close_time"))
                     if (
                         open_min is not None
                         and close_min is not None
@@ -173,11 +239,8 @@ class ItineraryValidator:
                             )
                         )
 
-                if fact.get("closed_weekdays") and day.get("date"):
-                    try:
-                        weekday = date.fromisoformat(str(day["date"])).weekday()
-                    except ValueError:
-                        weekday = None
+                if fact.get("closed_weekdays") and actual_day_date is not None:
+                    weekday = actual_day_date.weekday()
                     if weekday is not None and weekday in fact["closed_weekdays"]:
                         violations.append(
                             ConstraintViolation(
@@ -188,6 +251,19 @@ class ItineraryValidator:
                                 poi_name=poi_name,
                             )
                         )
+
+                if actual_day_date is not None and actual_day_date.isoformat() in set(
+                    fact.get("closed_dates") or []
+                ):
+                    violations.append(
+                        ConstraintViolation(
+                            code="POI_CLOSED_ON_DATE",
+                            message=f"{poi_name} 在计划日期临时闭馆",
+                            day_number=day_number,
+                            poi_id=poi_id,
+                            poi_name=poi_name,
+                        )
+                    )
 
                 if fact.get("reservation_required") and fact.get("reservation_available") is False:
                     violations.append(
@@ -202,6 +278,17 @@ class ItineraryValidator:
 
                 if key:
                     scheduled_keys.add(key)
+                    scheduled_identities.update(
+                        identity
+                        for identity in (_identity(poi_id), _identity(poi_name))
+                        if identity
+                    )
+                    scheduled_records[key] = {
+                        "day_number": day_number,
+                        "start": start,
+                        "end": end,
+                        "poi_name": poi_name,
+                    }
                 if key and category not in _NON_POI_CATEGORIES and poi_name not in _GENERIC_NAMES:
                     all_poi_keys.append(key)
                 if category:
@@ -246,6 +333,19 @@ class ItineraryValidator:
                         details={"actual": day_transit, "limit": max_transit},
                     )
                 )
+            max_meals = int(config.get("meals_per_day") or 0)
+            if max_meals and dining_activities > max_meals:
+                violations.append(
+                    ConstraintViolation(
+                        code="TOO_MANY_DINING_ACTIVITIES",
+                        message=(
+                            f"第 {day_number} 天安排了 {dining_activities} 个餐饮活动，"
+                            f"超过上限 {max_meals}"
+                        ),
+                        day_number=day_number,
+                        details={"actual": dining_activities, "limit": max_meals},
+                    )
+                )
             total_transit += day_transit
             total_cost += float(day.get("total_cost") or computed_day_cost)
             daily_loads.append(day_load)
@@ -270,6 +370,66 @@ class ItineraryValidator:
                     poi_id=key,
                 )
             )
+
+        for forbidden in config.get("must_not_visit") or []:
+            forbidden_identity = _identity(forbidden)
+            if forbidden_identity and any(
+                forbidden_identity in actual or actual in forbidden_identity
+                for actual in scheduled_identities
+            ):
+                violations.append(
+                    ConstraintViolation(
+                        code="MUST_NOT_VISIT_PRESENT",
+                        message=f"禁去 POI 被安排：{forbidden}",
+                        poi_name=str(forbidden),
+                    )
+                )
+
+        for reservation in config.get("user_reservations") or []:
+            if not isinstance(reservation, dict) or not reservation.get("poi_id"):
+                continue
+            poi_id = str(reservation["poi_id"])
+            scheduled = scheduled_records.get(poi_id)
+            if scheduled is None:
+                continue  # MUST_VISIT_MISSING above is the canonical absence error.
+            expected_date = _iso_date(reservation.get("date"))
+            if trip_start is not None and expected_date is not None:
+                actual_date = trip_start + timedelta(days=int(scheduled["day_number"]) - 1)
+                if actual_date != expected_date:
+                    violations.append(
+                        ConstraintViolation(
+                            code="FIXED_EVENT_DATE_MISMATCH",
+                            message=f"固定活动 {scheduled['poi_name']} 被安排到了错误日期",
+                            day_number=int(scheduled["day_number"]),
+                            poi_id=poi_id,
+                            details={
+                                "actual": actual_date.isoformat(),
+                                "expected": expected_date.isoformat(),
+                            },
+                        )
+                    )
+            expected_start = _minutes(reservation.get("start_time"))
+            if expected_start is not None and scheduled.get("start") != expected_start:
+                violations.append(
+                    ConstraintViolation(
+                        code="FIXED_EVENT_TIME_MISMATCH",
+                        message=f"固定活动 {scheduled['poi_name']} 的开始时间被改变",
+                        day_number=int(scheduled["day_number"]),
+                        poi_id=poi_id,
+                        details={"actual": scheduled.get("start"), "expected": expected_start},
+                    )
+                )
+            expected_end = _minutes(reservation.get("end_time"))
+            if expected_end is not None and int(scheduled.get("end") or 0) > expected_end:
+                violations.append(
+                    ConstraintViolation(
+                        code="FIXED_EVENT_END_EXCEEDED",
+                        message=f"固定活动 {scheduled['poi_name']} 超过已知结束时间",
+                        day_number=int(scheduled["day_number"]),
+                        poi_id=poi_id,
+                        details={"actual": scheduled.get("end"), "expected": expected_end},
+                    )
+                )
 
         budget = float(config.get("total_budget") or config.get("budget_range") or 0)
         budget_error_rate = max(0.0, (total_cost - budget) / budget) if budget else 0.0

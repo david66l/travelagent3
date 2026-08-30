@@ -6,12 +6,15 @@ kind: Service
 metadata:
   name: redis
   namespace: travel-agent
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
   labels:
     app: redis
     tier: datastore
 spec:
   type: ClusterIP
   clusterIP: None
+  publishNotReadyAddresses: true
   selector:
     app: redis
   ports:
@@ -27,6 +30,8 @@ kind: Service
 metadata:
   name: redis-cluster
   namespace: travel-agent
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
   labels:
     app: redis
     tier: datastore

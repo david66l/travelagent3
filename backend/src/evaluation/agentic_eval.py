@@ -38,6 +38,15 @@ class EvaluationRun(BaseModel):
     soft_score: float = Field(default=0, ge=0, le=1)
     termination_reason: str | None = None
     hard_violation_codes: list[str] = Field(default_factory=list)
+    policy_decisions: int = Field(default=0, ge=0)
+    policy_route_calls: int = Field(default=0, ge=0)
+    student_route_calls: int = Field(default=0, ge=0)
+    teacher_route_calls: int = Field(default=0, ge=0)
+    policy_route_fallbacks: int = Field(default=0, ge=0)
+    route_family_counts: dict[str, int] = Field(default_factory=dict)
+    policy_shadow_calls: int = Field(default=0, ge=0)
+    policy_shadow_failures: int = Field(default=0, ge=0)
+    policy_shadow_action_divergences: int = Field(default=0, ge=0)
 
 
 class ModeSummary(BaseModel):
@@ -56,6 +65,17 @@ class ModeSummary(BaseModel):
     mean_soft_score: float
     termination_reasons: dict[str, int] = Field(default_factory=dict)
     violation_codes: dict[str, int] = Field(default_factory=dict)
+    policy_decisions: int = 0
+    policy_route_calls: int = 0
+    student_route_calls: int = 0
+    teacher_route_calls: int = 0
+    policy_route_trace_rate: float = 1.0
+    teacher_route_share: float = 0.0
+    policy_route_fallback_rate: float = 0.0
+    route_family_counts: dict[str, int] = Field(default_factory=dict)
+    policy_shadow_calls: int = 0
+    policy_shadow_failure_rate: float = 0.0
+    policy_shadow_action_divergence_rate: float = 0.0
 
 
 class MetricDelta(BaseModel):
@@ -82,6 +102,9 @@ class ReleaseGateConfig(BaseModel):
     maximum_validated_draft_regression: float = Field(default=0.0, ge=0, le=1)
     maximum_p95_latency_ratio: float = Field(default=1.50, ge=1)
     maximum_mean_tool_calls: float = Field(default=16, ge=0)
+    minimum_routed_policy_decisions: int = Field(default=1, ge=0)
+    minimum_policy_route_trace_rate: float = Field(default=1.0, ge=0, le=1)
+    maximum_policy_route_fallback_rate: float = Field(default=0.02, ge=0, le=1)
 
 
 class GateCheck(BaseModel):
@@ -198,6 +221,23 @@ class AgenticEvaluator:
 
         actions = [step.action.action for step in parsed.steps]
         observations = [item for step in parsed.steps for item in step.observations]
+        policy_decisions = sum(step.action.decision_source == "policy" for step in parsed.steps)
+        route_traces = [
+            step.action.route_trace for step in parsed.steps if step.action.route_trace is not None
+        ]
+        student_route_calls = sum(trace.executed_target == "student" for trace in route_traces)
+        teacher_route_calls = sum(trace.executed_target == "teacher" for trace in route_traces)
+        shadow_steps = [step for step in parsed.steps if step.action.shadow_trace is not None]
+        shadow_failures = sum(
+            step.action.shadow_trace is not None and step.action.shadow_trace.status == "failed"
+            for step in shadow_steps
+        )
+        shadow_divergences = sum(
+            step.action.shadow_trace is not None
+            and step.action.shadow_trace.status == "completed"
+            and step.action.shadow_trace.action != step.action.action
+            for step in shadow_steps
+        )
         latency_ms = _elapsed_ms(parsed.created_at, parsed.completed_at)
         termination_reason = parsed.termination_reason
         is_fallback = parsed.status == "failed" or bool(
@@ -223,6 +263,15 @@ class AgenticEvaluator:
                 for item in (report or {}).get("hard_violations", [])
                 if item.get("code")
             ],
+            policy_decisions=policy_decisions,
+            policy_route_calls=len(route_traces),
+            student_route_calls=student_route_calls,
+            teacher_route_calls=teacher_route_calls,
+            policy_route_fallbacks=sum(trace.fallback_used for trace in route_traces),
+            route_family_counts=_counts([trace.family for trace in route_traces]),
+            policy_shadow_calls=len(shadow_steps),
+            policy_shadow_failures=shadow_failures,
+            policy_shadow_action_divergences=shadow_divergences,
         )
 
     def compare(
@@ -355,6 +404,18 @@ def _counts(values: list[str]) -> dict[str, int]:
 
 
 def _summarize(runs: list[EvaluationRun], mode: EvalMode) -> ModeSummary:
+    policy_decisions = sum(run.policy_decisions for run in runs)
+    policy_route_calls = sum(run.policy_route_calls for run in runs)
+    student_route_calls = sum(run.student_route_calls for run in runs)
+    teacher_route_calls = sum(run.teacher_route_calls for run in runs)
+    policy_route_fallbacks = sum(run.policy_route_fallbacks for run in runs)
+    policy_shadow_calls = sum(run.policy_shadow_calls for run in runs)
+    policy_shadow_failures = sum(run.policy_shadow_failures for run in runs)
+    policy_shadow_action_divergences = sum(run.policy_shadow_action_divergences for run in runs)
+    family_counts: dict[str, int] = {}
+    for run in runs:
+        for family, count in run.route_family_counts.items():
+            family_counts[family] = family_counts.get(family, 0) + count
     return ModeSummary(
         mode=mode,
         scenarios=len(runs),
@@ -371,6 +432,27 @@ def _summarize(runs: list[EvaluationRun], mode: EvalMode) -> ModeSummary:
         mean_soft_score=fmean(run.soft_score for run in runs),
         termination_reasons=_counts([run.termination_reason or "unknown" for run in runs]),
         violation_codes=_counts([code for run in runs for code in run.hard_violation_codes]),
+        policy_decisions=policy_decisions,
+        policy_route_calls=policy_route_calls,
+        student_route_calls=student_route_calls,
+        teacher_route_calls=teacher_route_calls,
+        policy_route_trace_rate=(
+            policy_route_calls / policy_decisions if policy_decisions else 1.0
+        ),
+        teacher_route_share=(
+            teacher_route_calls / policy_route_calls if policy_route_calls else 0.0
+        ),
+        policy_route_fallback_rate=(
+            policy_route_fallbacks / policy_route_calls if policy_route_calls else 0.0
+        ),
+        route_family_counts=dict(sorted(family_counts.items())),
+        policy_shadow_calls=policy_shadow_calls,
+        policy_shadow_failure_rate=(
+            policy_shadow_failures / policy_shadow_calls if policy_shadow_calls else 0.0
+        ),
+        policy_shadow_action_divergence_rate=(
+            policy_shadow_action_divergences / policy_shadow_calls if policy_shadow_calls else 0.0
+        ),
     )
 
 
@@ -445,5 +527,23 @@ def _release_checks(
             passed=agent.mean_tool_calls <= config.maximum_mean_tool_calls,
             actual=agent.mean_tool_calls,
             expected=f"<= {config.maximum_mean_tool_calls}",
+        ),
+        GateCheck(
+            code="MINIMUM_ROUTED_POLICY_DECISIONS",
+            passed=agent.policy_route_calls >= config.minimum_routed_policy_decisions,
+            actual=agent.policy_route_calls,
+            expected=f">= {config.minimum_routed_policy_decisions}",
+        ),
+        GateCheck(
+            code="POLICY_ROUTE_TRACE_RATE",
+            passed=agent.policy_route_trace_rate >= config.minimum_policy_route_trace_rate,
+            actual=agent.policy_route_trace_rate,
+            expected=f">= {config.minimum_policy_route_trace_rate}",
+        ),
+        GateCheck(
+            code="POLICY_ROUTE_FALLBACK_RATE",
+            passed=(agent.policy_route_fallback_rate <= config.maximum_policy_route_fallback_rate),
+            actual=agent.policy_route_fallback_rate,
+            expected=f"<= {config.maximum_policy_route_fallback_rate}",
         ),
     ]

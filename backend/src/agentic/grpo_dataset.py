@@ -103,6 +103,8 @@ class GRPODatasetBuilder:
                     rollout.reward.turn_rewards,
                     strict=True,
                 ):
+                    if step.action.decision_source == "controller":
+                        continue
                     context = json.dumps(
                         policy_prompt_payload(step.context),
                         ensure_ascii=False,

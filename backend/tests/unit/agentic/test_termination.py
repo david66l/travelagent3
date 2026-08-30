@@ -81,7 +81,7 @@ def test_enforce_rejects_expired_facts_and_stale_validation():
         value="sunny",
         observation_ref="obs-1",
         goal_version=1,
-        plan_version=1,
+        plan_version=2,
         source="api",
         confidence=1,
         expires_at=datetime.now(UTC) - timedelta(seconds=1),
@@ -101,6 +101,46 @@ def test_enforce_rejects_expired_facts_and_stale_validation():
         "FACTS_EXPIRED",
         "STALE_VALIDATION_ARTIFACT",
     }
+
+
+def test_enforce_ignores_expired_evidence_from_an_old_plan():
+    ledger = _ledger(plan_version=2)
+    ledger.facts["old-weather"] = FactRecord(
+        fact_id="old-weather",
+        key="weather",
+        value="rain",
+        observation_ref="obs-old",
+        goal_version=1,
+        plan_version=1,
+        source="api",
+        confidence=1,
+        expires_at=datetime.now(UTC) - timedelta(seconds=1),
+    )
+
+    decision = CompletionGuard(mode="enforce").evaluate(
+        {"hard_pass": True, "hard_violations": []}, ledger=ledger
+    )
+
+    assert "FACTS_EXPIRED" not in {block.code for block in decision.blocks}
+
+
+def test_enforce_rejects_expired_artifacts():
+    ledger = _ledger()
+    ledger.artifacts["expired-weather"] = ArtifactRecord(
+        artifact_id="expired-weather",
+        artifact_type="weather_snapshot",
+        payload={"days": []},
+        goal_version=1,
+        plan_version=1,
+        expires_at=datetime.now(UTC) - timedelta(seconds=1),
+    )
+
+    decision = CompletionGuard(mode="enforce").evaluate(
+        {"hard_pass": True, "hard_violations": []}, ledger=ledger
+    )
+
+    assert decision.allowed is False
+    assert "ARTIFACTS_EXPIRED" in {block.code for block in decision.blocks}
 
 
 def test_enforce_accepts_closed_current_ledger():

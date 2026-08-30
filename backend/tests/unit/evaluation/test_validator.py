@@ -103,3 +103,89 @@ def test_empty_itinerary_never_passes() -> None:
 
     assert report.hard_pass is False
     assert report.hard_violations[0].code == "EMPTY_ITINERARY"
+
+
+def test_validator_rejects_forbidden_poi_by_name_alias() -> None:
+    itinerary = [
+        {
+            "day_number": 1,
+            "activities": [
+                {
+                    "poi_id": "bund-1",
+                    "poi_name": "上海外滩观景区",
+                    "category": "attraction",
+                    "start_time": "09:00",
+                    "end_time": "11:00",
+                }
+            ],
+        }
+    ]
+
+    report = ItineraryValidator().validate(
+        itinerary,
+        {"travel_days": 1, "must_not_visit": ["外滩"]},
+    )
+
+    assert report.hard_pass is False
+    assert any(v.code == "MUST_NOT_VISIT_PRESENT" for v in report.hard_violations)
+
+
+def test_validator_rejects_consecutive_and_excessive_restaurants() -> None:
+    itinerary = _valid_itinerary()
+    itinerary[0]["activities"] = [
+        {
+            "poi_name": f"Restaurant {index}",
+            "category": "restaurant",
+            "start_time": f"{8 + index * 2:02d}:00",
+            "end_time": f"{10 + index * 2:02d}:00",
+        }
+        for index in range(3)
+    ]
+
+    report = ItineraryValidator().validate(
+        itinerary,
+        constraints={"travel_days": 1, "include_restaurant": True, "meals_per_day": 2},
+    )
+
+    codes = {violation.code for violation in report.hard_violations}
+    assert "CONSECUTIVE_DINING_ACTIVITIES" in codes
+    assert "TOO_MANY_DINING_ACTIVITIES" in codes
+    assert report.hard_pass is False
+
+
+def test_validator_checks_live_date_hours_and_transport_day_boundaries() -> None:
+    report = ItineraryValidator().validate(
+        [
+            {
+                "day_number": 1,
+                "activities": [
+                    {
+                        "poi_id": "museum",
+                        "poi_name": "博物馆",
+                        "category": "attraction",
+                        "start_time": "12:00",
+                        "end_time": "13:00",
+                    }
+                ],
+            }
+        ],
+        constraints={
+            "travel_days": 1,
+            "trip_start_date": "2026-09-01",
+            "daily_start_minutes": [13 * 60],
+            "daily_end_minutes": [17 * 60],
+        },
+        facts=[
+            {
+                "id": "museum",
+                "name": "博物馆",
+                "open_time": "08:00",
+                "close_time": "18:00",
+                "date_opening_hours": {"2026-09-01": [14 * 60, 16 * 60]},
+            }
+        ],
+    )
+
+    codes = {item.code for item in report.hard_violations}
+    assert "DAY_TIME_BOUNDARY_EXCEEDED" in codes
+    assert "POI_CLOSED_DURING_VISIT" in codes

@@ -2,7 +2,9 @@
 # Topology: 3 masters + 3 replicas (PRD §4.7.6)
 # - Headless Service "redis" provides stable pod DNS: redis-0.redis, redis-1.redis, ...
 # - ClusterIP Service "redis-cluster" is the client seed endpoint.
-# - Init container bootstraps the cluster once all 6 pods are ready.
+# - A separate idempotent Sync-hook Job bootstraps the cluster after all six
+#   Redis processes are reachable.  Bootstrap cannot run as an initContainer:
+#   doing so prevents the Redis processes it waits for from ever starting.
 #
 # Persistence:
 # - AOF everysec + RDB snapshots (mixed mode)
@@ -12,6 +14,8 @@ kind: StatefulSet
 metadata:
   name: redis
   namespace: travel-agent
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
   labels:
     app: redis
     tier: datastore
@@ -30,6 +34,9 @@ spec:
         prometheus.io/scrape: "true"
         prometheus.io/port: "6379"
     spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       # Ensure master/replica pairs don't land on the same node
       affinity:
         podAntiAffinity:
@@ -51,57 +58,9 @@ spec:
                       values:
                         - redis
                 topologyKey: topology.kubernetes.io/zone
-      initContainers:
-        - name: cluster-bootstrap
-          image: redis:7-alpine
-          command:
-            - /bin/sh
-            - -c
-            - |
-              set -e
-              # Wait until all 6 pods have an IP
-              EXPECTED=6
-              while true; do
-                READY=0
-                for i in 0 1 2 3 4 5; do
-                  if nslookup "redis-${i}.redis" >/dev/null 2>&1; then
-                    READY=$((READY+1))
-                  fi
-                done
-                if [ "$READY" -ge "$EXPECTED" ]; then
-                  break
-                fi
-                echo "Waiting for Redis pods: $READY/$EXPECTED"
-                sleep 2
-              done
-
-              # Build cluster endpoint list
-              NODES=""
-              for i in 0 1 2 3 4 5; do
-                NODES="${NODES} redis-${i}.redis:6379"
-              done
-
-              # Check if cluster is already configured
-              FIRST_NODE=$(echo $NODES | awk '{print $1}')
-              if redis-cli -h "$FIRST_NODE" cluster info 2>/dev/null | grep -q "cluster_state:ok"; then
-                echo "Redis cluster already healthy."
-                exit 0
-              fi
-
-              # Create cluster with 1 replica per master
-              echo "Creating Redis cluster..."
-              redis-cli --cluster create ${NODES} --cluster-replicas 1 --cluster-yes
-              echo "Redis cluster created."
-          resources:
-            requests:
-              cpu: 100m
-              memory: 64Mi
-            limits:
-              cpu: 200m
-              memory: 128Mi
       containers:
         - name: redis
-          image: redis:7-alpine
+          image: redis@sha256:e7723ff73d963f5cc6d9c4643ea3d989527a402a319239054e9472a7fb9219a2
           command:
             - redis-server
           args:

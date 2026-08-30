@@ -63,7 +63,6 @@ def main():
     start = time.time()
     with requests.get(stream_url, headers=headers, stream=True, timeout=120) as r:
         r.raise_for_status()
-        buffer = []
         for line in r.iter_lines(decode_unicode=True):
             if not line:
                 continue
@@ -83,13 +82,17 @@ def main():
                     print(f"  stage: {event.get('stage')} ({event.get('event_id')})")
                 elif etype in ("message", "final"):
                     payload = event.get("payload", event)
-                    itinerary = payload.get("itinerary") or payload.get("itinerary_final") or itinerary
+                    itinerary = (
+                        payload.get("itinerary") or payload.get("itinerary_final") or itinerary
+                    )
                     output_pdf_url = payload.get("output_pdf_url") or output_pdf_url
                     output_excel_url = payload.get("output_excel_url") or output_excel_url
                     final_text += payload.get("content", "")
                 elif etype == "completed":
                     payload = event.get("payload", {})
-                    itinerary = payload.get("itinerary") or payload.get("itinerary_final") or itinerary
+                    itinerary = (
+                        payload.get("itinerary") or payload.get("itinerary_final") or itinerary
+                    )
                     output_pdf_url = payload.get("output_pdf_url") or output_pdf_url
                     output_excel_url = payload.get("output_excel_url") or output_excel_url
                     final_text += payload.get("proposal_text", "")
@@ -119,7 +122,9 @@ def main():
         acts = day.get("activities", [])
         print(f"  Day {day.get('day_number')}: {len(acts)} activities")
         for a in acts:
-            print(f"    {a.get('start_time','')} - {a.get('end_time','')} {a.get('poi_name','')}")
+            print(
+                f"    {a.get('start_time', '')} - {a.get('end_time', '')} {a.get('poi_name', '')}"
+            )
     if total_activities == 0:
         print("FAIL: no activities in itinerary")
         sys.exit(1)

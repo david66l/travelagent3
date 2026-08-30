@@ -25,6 +25,34 @@ async def test_vllm_enabled_uses_vllm_base_url():
                 assert client.client.base_url == "http://vllm:8000/v1/"
 
 
+def test_explicit_vllm_endpoint_supports_split_student_teacher_services():
+    client = LLMClient(
+        base_url="http://vllm-teacher:8002/v1",
+        api_key="test-key",
+        using_vllm=True,
+    )
+
+    assert client._using_vllm is True
+    assert client.client.base_url == "http://vllm-teacher:8002/v1/"
+
+
+@pytest.mark.asyncio
+async def test_agent_policy_state_bypasses_generic_middle_truncation():
+    client = LLMClient()
+    state_json = '{"artifact":"' + "x" * 3000 + '","tail":"must-remain"}'
+    messages = [
+        {"role": "system", "content": "policy"},
+        {"role": "user", "content": state_json},
+    ]
+
+    with patch("core.llm_client.is_cost_circuit_active", new=AsyncMock(return_value=False)):
+        with patch("core.llm_client.select_model", return_value="policy-model"):
+            _, prepared, _ = await client._prepare_request(messages, "agent_policy")
+
+    assert prepared == messages
+    assert prepared[1]["content"].endswith('"tail":"must-remain"}')
+
+
 @pytest.mark.asyncio
 async def test_create_completion_retries_on_vllm_503():
     client = LLMClient()
@@ -168,11 +196,45 @@ async def test_native_tool_call_returns_one_parsed_function_and_usage():
         [{"role": "user", "content": "state"}],
         [{"type": "function", "function": {"name": "get_weather", "parameters": {}}}],
         model_override="local-agent-policy",
+        seed=73421,
     )
 
     assert result == {"action": "get_weather", "arguments": {"date": "2026-08-12"}}
     assert client.last_token_usage == 29
+    assert client.last_request_metrics is not None
+    assert client.last_request_metrics.model == "local-agent-policy"
+    assert client.last_request_metrics.prompt_tokens == 20
+    assert client.last_request_metrics.completion_tokens == 9
+    assert client.last_request_metrics.backend == "cloud-openai-compatible"
     request = client._create_completion.await_args.kwargs
     assert request["model"] == "local-agent-policy"
     assert request["tool_choice"] == "required"
     assert request["parallel_tool_calls"] is False
+    assert request["seed"] == 73421
+
+
+@pytest.mark.asyncio
+async def test_vllm_tool_call_disables_qwen_thinking_template():
+    client = LLMClient()
+    client._using_vllm = True
+    client._prepare_request = AsyncMock(
+        return_value=("qwen3-policy", [{"role": "user", "content": "state"}], "free")
+    )
+    response = MagicMock()
+    response.choices = [MagicMock()]
+    response.choices[0].message.tool_calls = [MagicMock()]
+    response.choices[0].message.tool_calls[0].function.name = "ask_user"
+    response.choices[0].message.tool_calls[0].function.arguments = "{}"
+    response.usage.total_tokens = 5
+    client._create_completion = AsyncMock(return_value=response)
+
+    await client.tool_call(
+        [{"role": "user", "content": "state"}],
+        [{"type": "function", "function": {"name": "ask_user", "parameters": {}}}],
+    )
+
+    request = client._create_completion.await_args.kwargs
+    assert request["extra_body"] == {"chat_template_kwargs": {"enable_thinking": False}}
+    assert client.last_request_metrics is not None
+    assert client.last_request_metrics.backend == "vllm"
+    assert client.last_request_metrics.thinking_mode == "disabled"

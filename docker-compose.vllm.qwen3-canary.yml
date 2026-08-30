@@ -1,0 +1,30 @@
+# Qwen3-8B zero-shot canary. Layer this after docker-compose.vllm.yml.
+# This intentionally registers no LoRA: Qwen2.5 adapters are incompatible.
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.vllm.yml \
+#     -f docker-compose.vllm.qwen3-canary.yml --profile vllm up -d vllm
+
+services:
+  vllm:
+    image: vllm/vllm-openai:v0.9.2
+    command:
+      - --model
+      - Qwen/Qwen3-8B
+      - --served-model-name
+      - travel-policy-qwen3-8b-base
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "8000"
+      - --max-model-len
+      - "8192"
+      - --gpu-memory-utilization
+      - "0.85"
+      - --dtype
+      - half
+      - --enable-prefix-caching
+      - --enable-auto-tool-choice
+      - --tool-call-parser
+      - hermes
+    environment:
+      VLLM_ENFORCE_STRICT_TOOL_CALLING: "true"

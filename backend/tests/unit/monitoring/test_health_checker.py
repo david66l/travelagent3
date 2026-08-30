@@ -135,7 +135,17 @@ class TestCheckWeather:
 
 
 class TestCheckVllm:
+    @pytest.mark.asyncio
+    async def test_disabled_is_not_reported_unhealthy(self, checker, monkeypatch):
+        monkeypatch.setattr(health_checker.settings, "vllm_enabled", False)
+        monkeypatch.setattr(health_checker.settings, "vllm_base_url", "http://vllm:8000/v1")
+
+        result = await checker.check_vllm()
+
+        assert result["status"] == "unknown"
+
     async def test_healthy(self, checker, mock_http_get, monkeypatch):
+        monkeypatch.setattr(health_checker.settings, "vllm_enabled", True)
         monkeypatch.setattr(health_checker.settings, "vllm_base_url", "http://vllm:8000/v1")
         _configure_http_get(mock_http_get)
 
@@ -146,6 +156,7 @@ class TestCheckVllm:
         assert result["error"] is None
 
     async def test_unhealthy_on_bad_status(self, checker, mock_http_get, monkeypatch):
+        monkeypatch.setattr(health_checker.settings, "vllm_enabled", True)
         monkeypatch.setattr(health_checker.settings, "vllm_base_url", "http://vllm:8000/v1")
         _configure_http_get(mock_http_get, vllm_status=503)
 

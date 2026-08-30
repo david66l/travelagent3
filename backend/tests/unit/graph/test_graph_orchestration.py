@@ -83,22 +83,39 @@ def test_router_after_profile_writeback():
     assert route_after_profile({"policy_mode": "agent"}) == "agent_loop"
 
 
-def test_router_after_agent_loop_uses_draft_or_falls_back():
+def test_router_after_agent_loop_checkpoints_or_stops_without_legacy_fallback():
     assert (
         route_after_agent_loop({"agent_status": "awaiting_confirmation", "itinerary": [{}]})
         == "output"
     )
     assert route_after_agent_loop({"agent_status": "awaiting_information"}) == "output"
-    assert route_after_agent_loop({"agent_status": "fallback"}) == [
-        "retrieve",
-        "weather_check",
-    ]
+    assert route_after_agent_loop({"agent_status": "running"}) == "agent_loop"
+    assert route_after_agent_loop({"agent_status": "failed"}) == "output"
 
 
 def test_router_after_confirm_gate():
     assert route_after_confirm_gate({"confirm_decision": "confirm"}) == "tool_call"
     assert route_after_confirm_gate({"confirm_decision": "modify"}) == "apply_single_change"
     assert route_after_confirm_gate({"confirm_decision": None}) == "plan"
+    assert route_after_confirm_gate({"confirm_decision": "reject_needs_reason"}) == "output"
+    assert route_after_confirm_gate({"confirm_decision": "reject_with_reason"}) == "agent_loop"
+
+
+@pytest.mark.asyncio
+async def test_agent_rejection_without_reason_asks_before_replanning():
+    from graph.nodes import confirm_gate_node
+
+    state = {
+        "policy_mode": "agent",
+        "agent_ledger": {"present": True},
+        "itinerary": [{"day_number": 1, "activities": []}],
+    }
+    with patch("langgraph.types.interrupt", return_value={"action": "reject"}):
+        result = await confirm_gate_node(state)
+
+    assert result["agent_status"] == "awaiting_revision_reason"
+    assert result["next_action"] == "clarify"
+    assert result["clarification_questions"]
 
 
 @pytest.mark.asyncio
@@ -130,6 +147,25 @@ async def test_agent_confirmation_closes_global_completion_gate():
     assert result["completion_decision"]["allowed"] is True
 
 
+@pytest.mark.asyncio
+async def test_fallback_draft_confirmation_does_not_close_failed_agent_ledger():
+    from graph.nodes import confirm_gate_node
+
+    state = {
+        "policy_mode": "agent",
+        "agent_status": "fallback",
+        "agent_ledger": {"not": "a valid ledger"},
+        "itinerary": [{"day_number": 1, "activities": []}],
+    }
+
+    with patch("langgraph.types.interrupt", return_value={"action": "confirm"}):
+        result = await confirm_gate_node(state)
+
+    assert result["confirm_decision"] == "confirm"
+    assert result["next_action"] == "enrich"
+    assert "agent_ledger" not in result
+
+
 def test_router_after_apply_change():
     assert route_after_apply_change({"next_action": "planner"}) == "plan"
     assert route_after_apply_change({"next_action": "fact_check"}) == "factcheck"
@@ -146,7 +182,23 @@ def test_router_after_factcheck_is_pure():
     assert route_after_factcheck(state) == "plan"
     assert state["loop_count"] == 0  # router must not mutate
     assert route_after_factcheck({"next_action": "factcheck_done"}) == "hallucination"
+    assert route_after_factcheck({"next_action": "agent_error"}) == "output"
     assert route_after_factcheck({"stage": "fact_check_done"}) == "hallucination"
+
+
+@pytest.mark.asyncio
+async def test_agent_post_confirmation_conflict_never_falls_back_to_legacy_planner():
+    from graph.nodes import factcheck_node
+
+    with patch(
+        "graph.node_impl._fact_check_async",
+        new=AsyncMock(return_value={"next_action": "planner", "warnings": ["price changed"]}),
+    ):
+        result = await factcheck_node({"policy_mode": "agent", "agent_status": "finished"})
+
+    assert result["next_action"] == "agent_error"
+    assert result["agent_status"] == "failed"
+    assert result["termination_reason"] == "POST_CONFIRMATION_FACT_CONFLICT"
 
 
 @pytest.mark.asyncio
@@ -264,9 +316,7 @@ async def test_remove_activity_recomputes_day_cost_and_invalidates_booking_budge
 
     result = await apply_single_change_node(state)
 
-    assert [a["poi_name"] for a in result["itinerary"][0]["activities"]] == [
-        "陕西历史博物馆"
-    ]
+    assert [a["poi_name"] for a in result["itinerary"][0]["activities"]] == ["陕西历史博物馆"]
     assert result["itinerary"][0]["total_cost"] == 109
     assert result["itinerary"][0]["transport_cost"] == 9
     assert result["budget_breakdown"] is None

@@ -5,7 +5,9 @@ from __future__ import annotations
 from agentic.state import GoalLedger, TaskGraph, TaskNode
 
 
-MANDATORY_GATE_TASKS = frozenset({"capability_check", "solve_itinerary", "validate_itinerary"})
+MANDATORY_GATE_TASKS = frozenset(
+    {"capability_check", "solve_itinerary", "validate_itinerary", "review_itinerary"}
+)
 
 
 class DefaultTaskGraphPlanner:
@@ -52,10 +54,25 @@ class DefaultTaskGraphPlanner:
                 ),
                 TaskNode(
                     task_id="search_candidates",
-                    goal="Find candidate places matching constraints and preferences",
+                    goal=(
+                        "Iteratively search and decide when grounded candidates are sufficient "
+                        "for planning"
+                    ),
                     depends_on=(first_dependency,),
-                    allowed_actions=("search_pois",),
-                    success_criteria={"required_fact_keys": ["candidate_poi_ids"]},
+                    allowed_actions=(
+                        "accept_candidates",
+                        "search_pois",
+                        "ask_user",
+                        "propose_tradeoff",
+                        "abort",
+                    ),
+                    success_criteria={
+                        "required_fact_keys": ["candidate_poi_ids"],
+                        "required_artifact_types": ["candidate_selection"],
+                        "min_candidate_count": 1,
+                        "decision_loop": True,
+                    },
+                    max_attempts=5,
                     invalidates_on=(
                         "destination_changed",
                         "travel_dates_changed",
@@ -98,19 +115,39 @@ class DefaultTaskGraphPlanner:
                 ),
                 TaskNode(
                     task_id="validate_itinerary",
-                    goal="Programmatically verify all hard constraints",
+                    goal="Programmatically compute all hard-constraint verification evidence",
                     depends_on=("solve_itinerary",),
                     allowed_actions=("validate_itinerary",),
                     success_criteria={
                         "required_artifact_types": ["validation_report"],
-                        "require_hard_pass": True,
                     },
                     invalidates_on=("goal_changed", "solver_result_changed"),
                 ),
                 TaskNode(
+                    task_id="review_itinerary",
+                    goal=(
+                        "Inspect verifier evidence and either accept the itinerary or choose a "
+                        "bounded repair, clarification, tradeoff, or safe stop"
+                    ),
+                    depends_on=("validate_itinerary",),
+                    allowed_actions=(
+                        "accept_itinerary",
+                        "retry_solve",
+                        "search_pois",
+                        "ask_user",
+                        "propose_tradeoff",
+                        "abort",
+                    ),
+                    success_criteria={
+                        "required_artifact_types": ["verified_itinerary_acceptance"],
+                    },
+                    max_attempts=4,
+                    invalidates_on=("goal_changed", "validation_result_changed"),
+                ),
+                TaskNode(
                     task_id="compose_draft",
                     goal="Compose the user-facing draft from verified artifacts",
-                    depends_on=("validate_itinerary",),
+                    depends_on=("review_itinerary",),
                     allowed_actions=("compose_draft",),
                     success_criteria={"required_artifact_types": ["itinerary_draft"]},
                     invalidates_on=("goal_changed", "validation_result_changed"),

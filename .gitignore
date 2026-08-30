@@ -3,14 +3,23 @@ __pycache__/
 *.egg-info/
 .pytest_cache/
 *.tsbuildinfo
+# Local runtime configuration. Only the placeholder template is versioned.
 .env
-.env.local
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+k8s/secrets/
+k8s/secret.local.yaml
 models/
 celerybeat-*
 *.db-shm
 *.db-wal
 logs/
-.env
+artifacts/backups/
 *.egg
 dist/
 build/
@@ -37,3 +46,14 @@ ml/agentic/datasets/build/
 ml/agentic/artifacts/
 ml/agentic/datasets/rollout-groups*.jsonl
 ml/agentic/datasets/build-grpo/
+
+# Large local training/result bundles and model weights stay in artifact storage.
+*.tgz
+artifacts/
+ml/agentic/checkpoints/
+ml/agentic/reports/
+# Generated datasets are reproducible from scripts; keep only the tracked README.
+ml/agentic/datasets/*/
+ml/agentic/checkpoints/**/adapter_model.safetensors
+ml/agentic/checkpoints/**/checkpoint-*/
+ml/agentic/checkpoints/**/ref/

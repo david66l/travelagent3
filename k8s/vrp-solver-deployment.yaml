@@ -24,11 +24,14 @@ spec:
         prometheus.io/port: "8001"
         prometheus.io/path: "/metrics"
     spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: vrp-solver
-          image: ghcr.io/travelagent/travel-agent-backend:latest
-          imagePullPolicy: Always
-          command: ["uv", "run", "python", "-m", "vrp_solver_service.main"]
+          image: ghcr.io/travelagent/travel-agent-backend:git-sha-required
+          imagePullPolicy: IfNotPresent
+          command: ["python", "-m", "vrp_solver_service.main"]
           ports:
             - name: http
               containerPort: 8001
@@ -83,7 +86,7 @@ spec:
           securityContext:
             allowPrivilegeEscalation: false
             runAsNonRoot: true
-            runAsUser: 1000
+            runAsUser: 999
             readOnlyRootFilesystem: true
             capabilities:
               drop:

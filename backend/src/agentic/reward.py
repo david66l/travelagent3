@@ -22,7 +22,7 @@ REWARD_SCHEMA_VERSION = "agent-reward.v1"
 
 
 class RewardConfig(BaseModel):
-    config_version: str = "hierarchical-b0.v1"
+    config_version: str = "hierarchical-b0.v2"
     task_weight: float = Field(default=0.40, ge=0, le=1)
     constraint_weight: float = Field(default=0.40, ge=0, le=1)
     format_weight: float = Field(default=0.04, ge=0, le=1)
@@ -79,6 +79,9 @@ class TurnReward(BaseModel):
     efficiency: float = Field(ge=-1, le=1)
     information_gain: bool = False
     duplicate_call: bool = False
+    validity: Literal["invalid", "external_failure", "valid"] = "valid"
+    future_credit_eligible: bool = True
+    policy_repair_attempts: int = Field(default=0, ge=0)
     signals: list[str] = Field(default_factory=list)
 
 
@@ -151,6 +154,25 @@ class HierarchicalRewardEngine:
         hard_failed_finish = _requested_finish(parsed) and not bool(
             report and report.get("hard_pass")
         )
+        capability_status = str(
+            ((parsed.final_state or parsed.initial_state).get("goal") or {})
+            .get("capability", {})
+            .get("status", "")
+        )
+        capability_termination_mismatch = bool(
+            capability_status in {"infeasible", "unsafe", "missing_tool"}
+            and terminal_kind != "safe_termination"
+        )
+        termination_action_mismatch = _termination_action_mismatch(parsed)
+        termination_contract_reasons = _termination_contract_reasons(parsed)
+        termination_argument_mismatch = _termination_argument_mismatch(parsed)
+        needs_user_action_mismatch = any(
+            step.action.decision_source != "controller"
+            and step.action.action == "capability_check"
+            and str(step.context.capability.get("status") or "") == "needs_user"
+            and bool(step.context.missing_information)
+            for step in parsed.steps
+        )
 
         if unsafe_reasons:
             gate_status: Literal["passed", "unsafe", "hard_constraint_failed", "task_failed"] = (
@@ -159,6 +181,18 @@ class HierarchicalRewardEngine:
             total = self.config.unsafe_reward
         elif hard_failed_finish:
             gate_status = "hard_constraint_failed"
+            total = min(
+                self.config.hard_failure_cap,
+                terminal_reward + process_reward + quality_reward,
+            )
+        elif (
+            capability_termination_mismatch
+            or termination_action_mismatch
+            or termination_contract_reasons
+            or termination_argument_mismatch
+            or needs_user_action_mismatch
+        ):
+            gate_status = "task_failed"
             total = min(
                 self.config.hard_failure_cap,
                 terminal_reward + process_reward + quality_reward,
@@ -179,7 +213,24 @@ class HierarchicalRewardEngine:
             trajectory_id=parsed.trajectory_id,
             reward_config_version=self.config.config_version,
             gate_status=gate_status,
-            gate_reasons=sorted(set(unsafe_reasons)),
+            gate_reasons=sorted(
+                set(
+                    unsafe_reasons
+                    + (
+                        ["NEEDS_USER_CAPABILITY_CHECK_MISMATCH"]
+                        if needs_user_action_mismatch
+                        else []
+                    )
+                    + (
+                        ["CAPABILITY_TERMINATION_MISMATCH"]
+                        if capability_termination_mismatch
+                        else []
+                    )
+                    + (["TERMINATION_ACTION_MISMATCH"] if termination_action_mismatch else [])
+                    + termination_contract_reasons
+                    + (["TERMINATION_ARGUMENT_MISMATCH"] if termination_argument_mismatch else [])
+                )
+            ),
             components=components,
             terminal_reward=round(terminal_reward, 6),
             process_reward=round(process_reward, 6),
@@ -193,10 +244,115 @@ class HierarchicalRewardEngine:
                 "fallback_observations": sum(item.is_fallback for item in observations),
                 "duplicate_calls": duplicate_count,
                 "information_gain_steps": sum(item.information_gain for item in turn_rewards),
+                "invalid_model_steps": sum(item.validity == "invalid" for item in turn_rewards),
+                "external_failure_steps": sum(
+                    item.validity == "external_failure" for item in turn_rewards
+                ),
+                "future_credit_eligible_steps": sum(
+                    item.future_credit_eligible for item in turn_rewards
+                ),
+                "policy_repair_attempts": sum(item.policy_repair_attempts for item in turn_rewards),
+                "repaired_decision_steps": sum(
+                    item.policy_repair_attempts > 0 for item in turn_rewards
+                ),
                 "hard_pass": bool(report and report.get("hard_pass")),
+                "capability_termination_mismatch": capability_termination_mismatch,
+                "termination_action_mismatch": termination_action_mismatch,
+                "termination_contract_incomplete": bool(termination_contract_reasons),
+                "termination_argument_mismatch": termination_argument_mismatch,
+                "needs_user_action_mismatch": needs_user_action_mismatch,
                 "quality_drives_training": self.config.quality_weight > 0,
             },
         )
+
+
+def _termination_action_mismatch(episode: AgentEpisode) -> bool:
+    """Reject abort/tradeoff choices that contradict the visible capability contract."""
+    goal = (episode.final_state or episode.initial_state).get("goal") or {}
+    capability = goal.get("capability") or {}
+    if capability.get("status") not in {"infeasible", "unsafe", "missing_tool"}:
+        return False
+    actionable = capability.get("actionable_alternatives")
+    if actionable is None or not episode.steps:
+        return False
+    action = episode.steps[-1].action.action
+    return bool(
+        (actionable is True and action == "abort")
+        or (actionable is False and action == "propose_tradeoff")
+    )
+
+
+def _termination_contract_reasons(episode: AgentEpisode) -> list[str]:
+    """Fail closed when a terminal decision lacks a complete visible contract."""
+    goal = (episode.final_state or episode.initial_state).get("goal") or {}
+    capability = goal.get("capability") or {}
+    status = capability.get("status")
+    if status not in {"infeasible", "unsafe", "missing_tool"}:
+        return []
+
+    reasons: list[str] = []
+    actionable = capability.get("actionable_alternatives")
+    evidence = _nonempty_strings(capability.get("evidence"))
+    alternatives = _nonempty_strings(capability.get("alternatives"))
+    if not isinstance(actionable, bool):
+        reasons.append("TERMINATION_CONTRACT_ACTIONABLE_FLAG_MISSING")
+    if not evidence:
+        reasons.append("TERMINATION_CONTRACT_EVIDENCE_EMPTY")
+    if actionable is True and not alternatives:
+        reasons.append("TERMINATION_CONTRACT_ALTERNATIVES_EMPTY")
+    if actionable is False and alternatives:
+        reasons.append("TERMINATION_CONTRACT_NONACTIONABLE_ALTERNATIVES_PRESENT")
+
+    if episode.steps:
+        visible = episode.steps[-1].context.capability
+        for key in ("status", "actionable_alternatives", "evidence", "alternatives"):
+            if _canonical(visible.get(key)) != _canonical(capability.get(key)):
+                reasons.append("TERMINATION_CONTRACT_CONTEXT_STATE_MISMATCH")
+                break
+    return reasons
+
+
+def _termination_argument_mismatch(episode: AgentEpisode) -> bool:
+    if not episode.steps:
+        return False
+    step = episode.steps[-1]
+    if step.action.action not in {"abort", "propose_tradeoff"}:
+        return False
+    return not _termination_arguments_grounded(
+        step.action.action,
+        step.action.arguments,
+        step.context.capability,
+    )
+
+
+def _termination_arguments_grounded(
+    action: str,
+    arguments: dict[str, Any],
+    capability: dict[str, Any],
+) -> bool:
+    """Verify that terminal text is copied from the model-visible capability evidence."""
+    evidence = _nonempty_strings(capability.get("evidence"))
+    reason = str(arguments.get("reason") or "").strip()
+    if not reason or not _matches_any_grounded_phrase(reason, evidence):
+        return False
+    if action == "abort":
+        return True
+
+    alternatives = _nonempty_strings(capability.get("alternatives"))
+    options = _nonempty_strings(arguments.get("options"))
+    if not alternatives or not options:
+        return False
+    matched_alternatives = {
+        index
+        for index, alternative in enumerate(alternatives)
+        if any(_grounded_phrase_match(option, alternative) for option in options)
+    }
+    every_option_grounded = all(
+        any(_grounded_phrase_match(option, alternative) for alternative in alternatives)
+        for option in options
+    )
+    minimum_coverage = min(2, len(alternatives))
+    return every_option_grounded and len(matched_alternatives) >= minimum_coverage
 
 
 def _turn_rewards(episode: AgentEpisode, terminal_kind: str) -> list[TurnReward]:
@@ -228,6 +384,8 @@ def _turn_rewards(episode: AgentEpisode, terminal_kind: str) -> list[TurnReward]
             signals.append("TOOL_FAILED")
         if not information_gain:
             signals.append("NO_INFORMATION_GAIN")
+        if step.action.repair_attempts:
+            signals.append("POLICY_SELF_REPAIRED")
 
         if not action_valid:
             tool_score = -1.0
@@ -241,16 +399,37 @@ def _turn_rewards(episode: AgentEpisode, terminal_kind: str) -> list[TurnReward]
             tool_score = 0.0
 
         protected = bool(set(step.action.arguments) & _protected_arguments())
-        grounded = (
-            True
-            if not is_tool
-            else _arguments_grounded(step.action.arguments, step.context.model_dump(mode="json"))
-        )
+        if action in {"abort", "propose_tradeoff"}:
+            grounded = _termination_arguments_grounded(
+                action,
+                step.action.arguments,
+                step.context.capability,
+            )
+        elif not is_tool:
+            grounded = True
+        else:
+            grounded = _arguments_grounded(
+                step.action.arguments,
+                step.context.model_dump(mode="json"),
+            )
         grounding_score = -1.0 if protected or not grounded else 1.0
         if protected:
             signals.append("PROTECTED_ARGUMENT_FORGERY")
         elif not grounded:
             signals.append("ARGUMENT_NOT_GROUNDED")
+
+        validity = _turn_validity(
+            step,
+            is_tool=is_tool,
+            action_valid=action_valid,
+            observations_valid=observations_valid,
+            protected=protected,
+            grounded=grounded,
+        )
+        if validity == "invalid":
+            signals.append("INVALID_MODEL_ACTION")
+        elif validity == "external_failure":
+            signals.append("EXTERNAL_FAILURE")
 
         if not successful_terminal:
             efficiency = 0.0
@@ -268,10 +447,61 @@ def _turn_rewards(episode: AgentEpisode, terminal_kind: str) -> list[TurnReward]
                 efficiency=efficiency,
                 information_gain=information_gain,
                 duplicate_call=duplicate,
+                validity=validity,
+                future_credit_eligible=validity == "valid",
+                policy_repair_attempts=step.action.repair_attempts,
                 signals=signals,
             )
         )
     return rewards
+
+
+_POLICY_CAUSED_ERROR_CODES = frozenset(
+    {
+        "ACTION_NOT_ALLOWED",
+        "ARGUMENT_NOT_GROUNDED",
+        "ARGUMENT_VALIDATION_FAILED",
+        "INVALID_ARGUMENTS",
+        "INVALID_TOOL_ARGUMENTS",
+        "PROTECTED_ARGUMENT_FORGERY",
+        "SNAPSHOT_ARGUMENT_MISMATCH",
+        "TOOL_CALL_LIMIT_EXCEEDED",
+        "TOOL_NOT_ALLOWED",
+    }
+)
+
+
+def _turn_validity(
+    step: Any,
+    *,
+    is_tool: bool,
+    action_valid: bool,
+    observations_valid: bool,
+    protected: bool,
+    grounded: bool,
+) -> Literal["invalid", "external_failure", "valid"]:
+    """Classify policy responsibility separately from environment outcomes.
+
+    A syntactically/semantically invalid model decision is negative. A legal,
+    grounded call that merely encounters missing data, a timeout, or another
+    tool-side failure is neutral: it must not receive future success credit,
+    but the model is not blamed for infrastructure behavior either.
+    """
+    error_codes = {str(item.error.code) for item in step.observations if item.error is not None}
+    verification_code = str((step.verification or {}).get("error_code") or "")
+    if verification_code:
+        error_codes.add(verification_code)
+    if (
+        not action_valid
+        or protected
+        or not grounded
+        or (is_tool and not observations_valid)
+        or bool(error_codes & _POLICY_CAUSED_ERROR_CODES)
+    ):
+        return "invalid"
+    if is_tool and (any(not item.ok for item in step.observations) or bool(verification_code)):
+        return "external_failure"
+    return "valid"
 
 
 def _terminal_kind_and_report(episode: AgentEpisode) -> tuple[str, dict[str, Any] | None]:
@@ -417,6 +647,24 @@ def _arguments_grounded(arguments: dict[str, Any], context: dict[str, Any]) -> b
             if normalized and normalized not in constants and normalized not in grounded:
                 return False
     return True
+
+
+def _nonempty_strings(value: Any) -> list[str]:
+    if not isinstance(value, (list, tuple)):
+        return []
+    return [str(item).strip() for item in value if str(item).strip()]
+
+
+def _matches_any_grounded_phrase(value: str, candidates: list[str]) -> bool:
+    return any(_grounded_phrase_match(value, candidate) for candidate in candidates)
+
+
+def _grounded_phrase_match(left: str, right: str) -> bool:
+    normalized_left = "".join(char for char in left.casefold() if char.isalnum())
+    normalized_right = "".join(char for char in right.casefold() if char.isalnum())
+    if min(len(normalized_left), len(normalized_right)) < 3:
+        return False
+    return normalized_left in normalized_right or normalized_right in normalized_left
 
 
 def _leaves(value: Any) -> list[Any]:

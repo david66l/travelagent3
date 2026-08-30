@@ -1,29 +1,40 @@
 """SSE chat stream and message submission (PRD §7.3)."""
 
 import asyncio
+import hashlib
+import json
 import logging
+import re
 import time
 from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import StreamingResponse
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError
 
 from api.chat_runtime import (
+    create_chat_planning_job,
+    enqueue_planning_job,
     format_sse_event,
     manager,
-    process_chat_message,
     push_job_status,
     restore_session_state,
     schedule_disconnect_cleanup,
 )
-from api.deps import get_conversation_service, get_current_user
+from api.deps import (
+    get_conversation_service,
+    get_current_user,
+    get_db,
+    get_planning_job_repository,
+)
 from api.v1.schemas import ChatMessageRequest
 from perception import AttachmentParser, build_text_perception
 from core.database import async_session_maker
-from core.exceptions import NotFoundException, RateLimitException
+from core.exceptions import AppException, NotFoundException, RateLimitException
 from core.input_safety import validate_user_input
-from core.metrics import record_prompt_injection_blocked
+from core.metrics import record_chat_idempotency, record_prompt_injection_blocked
 from core.redis_client import redis_client
 from core.responses import success_response
 from core.settings import settings
@@ -38,6 +49,7 @@ logger = logging.getLogger(__name__)
 # Global singleton: PaddleOCR is expensive to initialize, so share one parser
 # across requests. Lazy-loading happens on first attachment parse.
 _attachment_parser = AttachmentParser()
+_IDEMPOTENCY_KEY_RE = re.compile(r"^[A-Za-z0-9._:-]{8,128}$")
 
 
 def get_attachment_parser() -> AttachmentParser:
@@ -47,6 +59,57 @@ def get_attachment_parser() -> AttachmentParser:
 
 def _session_id_for(conversation_id: UUID) -> str:
     return str(conversation_id)
+
+
+def _request_idempotency(request: Request, body: ChatMessageRequest) -> tuple[str | None, str]:
+    key = request.headers.get("Idempotency-Key")
+    if key and not _IDEMPOTENCY_KEY_RE.fullmatch(key):
+        raise AppException(
+            status_code=400,
+            code="INVALID_IDEMPOTENCY_KEY",
+            message="Idempotency-Key must be 8-128 URL-safe characters",
+        )
+    canonical = json.dumps(
+        body.model_dump(mode="json"),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return key, hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _assert_idempotency_match(job: object, fingerprint: str) -> None:
+    feedback = getattr(job, "user_feedback", None) or {}
+    if feedback.get("_idempotency_fingerprint") != fingerprint:
+        record_chat_idempotency("conflict")
+        raise AppException(
+            status_code=409,
+            code="IDEMPOTENCY_KEY_CONFLICT",
+            message="Idempotency-Key was already used for a different request",
+        )
+
+
+def _accepted_job_response(
+    *,
+    conversation_id: UUID,
+    job_id: str,
+    stream: bool,
+    replayed: bool,
+    action: str | None = None,
+    attachments_parsed: int | None = None,
+):
+    data: dict[str, object] = {
+        "conversation_id": str(conversation_id),
+        "job_id": job_id,
+        "status": "accepted",
+        "stream": stream,
+        "idempotent_replay": replayed,
+    }
+    if action is not None:
+        data["action"] = action
+    if attachments_parsed is not None:
+        data["attachments_parsed"] = attachments_parsed
+    return success_response(data=data, status_code=202)
 
 
 async def _ensure_conversation(
@@ -119,6 +182,18 @@ async def chat_stream(
     """SSE stream for chat events (stage / message / job / error / done)."""
     await _ensure_conversation(conversation_id, user, service)
     session_id = _session_id_for(conversation_id)
+    if job_id:
+        async with async_session_maker() as db:
+            job = await PlanningJobRepository(db).get(job_id)
+            belongs_to_conversation = bool(
+                job
+                and (job.session_id == session_id or str(job.conversation_id or "") == session_id)
+            )
+            belongs_to_user = bool(
+                job and (job.user_uuid == user.id or job.user_id == str(user.id))
+            )
+            if not belongs_to_conversation or not belongs_to_user:
+                raise NotFoundException("PlanningJob", job_id)
     sse_key = await _track_sse_connection(user.id, session_id, timeout)
 
     request_id = request.headers.get("X-Request-ID") or str(conversation_id)
@@ -202,16 +277,51 @@ async def chat_message(
     user: User = Depends(get_current_user),
     service: ConversationService = Depends(get_conversation_service),
     parser: AttachmentParser = Depends(get_attachment_parser),
+    repo: PlanningJobRepository = Depends(get_planning_job_repository),
+    db: AsyncSession = Depends(get_db),
 ):
     """Submit a user message; results are pushed on the SSE stream."""
     await _ensure_conversation(body.conversation_id, user, service)
     session_id = _session_id_for(body.conversation_id)
+    # A rollback expires ORM attributes even with expire_on_commit disabled.
+    # Keep primitive request identity values so an idempotency race never
+    # triggers implicit async I/O through ``user.id`` after rollback.
+    user_uuid = user.id
+    user_id = str(user_uuid)
+    user_role = user.role
+    idempotency_key, idempotency_fingerprint = _request_idempotency(request, body)
+
+    if idempotency_key:
+        existing = await repo.get_by_idempotency_key(user_uuid, idempotency_key)
+        if existing is not None:
+            _assert_idempotency_match(existing, idempotency_fingerprint)
+            record_chat_idempotency("replay")
+            return _accepted_job_response(
+                conversation_id=body.conversation_id,
+                job_id=str(existing.id),
+                stream=body.stream,
+                replayed=True,
+                action=body.action if body.action != "chat" else None,
+            )
+        await repo.acquire_idempotency_lock(user_uuid, idempotency_key)
+        existing = await repo.get_by_idempotency_key(user_uuid, idempotency_key)
+        if existing is not None:
+            _assert_idempotency_match(existing, idempotency_fingerprint)
+            record_chat_idempotency("race_replay")
+            await db.commit()
+            return _accepted_job_response(
+                conversation_id=body.conversation_id,
+                job_id=str(existing.id),
+                stream=body.stream,
+                replayed=True,
+                action=body.action if body.action != "chat" else None,
+            )
 
     # Unified rate / quota / cost guard.
     controller = RateLimitCostController()
     await controller.check_request_allowed(
-        str(user.id),
-        user.role,
+        user_id,
+        user_role,
         ip=request.client.host if request.client else None,
         concurrent_sse=False,
         estimated_tokens=0,
@@ -221,30 +331,64 @@ async def chat_message(
     # Button-driven; carry no new user text and bypass perception/safety.
     if body.action != "chat":
         if body.action == "modify":
-            action_payload: dict | None = {"change": body.change}
+            action_payload: dict | None = {
+                "change": body.change,
+                "approval": body.approval,
+            }
         elif body.action == "trip_event":
             action_payload = body.external_event or {}
+        elif body.action == "reject":
+            action_payload = {
+                "reason": (body.content or "").strip() or None,
+                "approval": body.approval,
+            }
+        elif body.action == "confirm":
+            action_payload = {"approval": body.approval}
         else:
             action_payload = None
-        asyncio.create_task(
-            process_chat_message(
-                session_id,
-                str(user.id),
-                body.content or "",
+        try:
+            job_id = await create_chat_planning_job(
+                repo,
+                session_id=session_id,
+                user_id=user_id,
+                user_uuid=user_uuid,
                 conversation_id=body.conversation_id,
-                user_role=user.role,
+                content=body.content or "",
+                user_role=user_role,
                 action=body.action,
                 action_payload=action_payload,
+                idempotency_key=idempotency_key,
+                idempotency_fingerprint=idempotency_fingerprint,
             )
-        )
-        return success_response(
-            data={
-                "conversation_id": str(body.conversation_id),
-                "status": "accepted",
-                "stream": body.stream,
-                "action": body.action,
-            },
-            status_code=202,
+            if job_id is None:
+                raise ValueError("Unable to create planning job")
+            await db.commit()
+        except IntegrityError:
+            await db.rollback()
+            if not idempotency_key:
+                raise
+            existing = await repo.get_by_idempotency_key(user_uuid, idempotency_key)
+            if existing is None:
+                raise
+            _assert_idempotency_match(existing, idempotency_fingerprint)
+            record_chat_idempotency("race_replay")
+            return _accepted_job_response(
+                conversation_id=body.conversation_id,
+                job_id=str(existing.id),
+                stream=body.stream,
+                replayed=True,
+                action=body.action,
+            )
+        # Commit before dispatch so a fast worker can see and claim the row.
+        if idempotency_key:
+            record_chat_idempotency("created")
+        enqueue_planning_job(job_id)
+        return _accepted_job_response(
+            conversation_id=body.conversation_id,
+            job_id=job_id,
+            stream=body.stream,
+            replayed=False,
+            action=body.action,
         )
 
     # --- Perception layer: unify text + attachments ---
@@ -275,23 +419,45 @@ async def chat_message(
     message_metadata = {"attachments_meta": attachment_metas} if attachment_metas else None
     await service.add_message(body.conversation_id, "user", user_input, metadata=message_metadata)
 
-    asyncio.create_task(
-        process_chat_message(
-            session_id,
-            str(user.id),
-            user_input,
+    try:
+        job_id = await create_chat_planning_job(
+            repo,
+            session_id=session_id,
+            user_id=user_id,
+            user_uuid=user_uuid,
             conversation_id=body.conversation_id,
-            user_role=user.role,
+            content=user_input,
+            user_role=user_role,
             attachments_meta=attachment_metas,
+            idempotency_key=idempotency_key,
+            idempotency_fingerprint=idempotency_fingerprint,
         )
-    )
+        if job_id is None:
+            raise ValueError("Unable to create planning job")
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        if not idempotency_key:
+            raise
+        existing = await repo.get_by_idempotency_key(user_uuid, idempotency_key)
+        if existing is None:
+            raise
+        _assert_idempotency_match(existing, idempotency_fingerprint)
+        record_chat_idempotency("race_replay")
+        return _accepted_job_response(
+            conversation_id=body.conversation_id,
+            job_id=str(existing.id),
+            stream=body.stream,
+            replayed=True,
+        )
+    if idempotency_key:
+        record_chat_idempotency("created")
+    enqueue_planning_job(job_id)
 
-    return success_response(
-        data={
-            "conversation_id": str(body.conversation_id),
-            "status": "accepted",
-            "stream": body.stream,
-            "attachments_parsed": len(attachment_metas),
-        },
-        status_code=202,
+    return _accepted_job_response(
+        conversation_id=body.conversation_id,
+        job_id=job_id,
+        stream=body.stream,
+        replayed=False,
+        attachments_parsed=len(attachment_metas),
     )

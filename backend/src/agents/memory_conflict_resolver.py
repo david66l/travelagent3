@@ -63,6 +63,17 @@ class MemoryConflictResolver:
             long_term.get("interests", []),
         )
 
+        # Trip-scoped positive and negative POI constraints must survive the
+        # recall layer. They are not interchangeable with broad interests.
+        resolved["must_visit"] = self._merge_lists(
+            short_term.get("must_visit", []),
+            long_term.get("must_visit", []),
+        )
+        resolved["must_not_visit"] = self._merge_lists(
+            short_term.get("must_not_visit", []),
+            long_term.get("must_not_visit", []),
+        )
+
         # Pace: short-term explicit wins.
         resolved["pace"] = short_term.get("pace") or long_term.get("pace") or "moderate"
 
@@ -76,6 +87,15 @@ class MemoryConflictResolver:
             if long_transport and long_transport != "any"
             else None
         )
+        for key in (
+            "budget_per_person",
+            "play_mode",
+            "fatigue_preference",
+            "include_restaurant",
+        ):
+            resolved[key] = (
+                short_term.get(key) if short_term.get(key) is not None else long_term.get(key)
+            )
 
         # Physical constraints: conservative merge.
         resolved["max_walk_minutes"] = self._min_constraint(
@@ -108,6 +128,19 @@ class MemoryConflictResolver:
                 resolved[key] = long_val
             else:
                 resolved[key] = None
+
+        # These fields describe the current task's tool/evidence needs. They are
+        # model outputs for this conversation, not durable user preferences, so
+        # pass them through without merging them into long-term memory.
+        for key in (
+            "intent_kind",
+            "event_query",
+            "transport_modes_requested",
+            "information_needs",
+            "current_info_queries",
+        ):
+            if key in short_term:
+                resolved[key] = short_term[key]
 
         return resolved
 

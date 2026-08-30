@@ -188,10 +188,39 @@ def _template_theme(day_activities: list[Activity]) -> str:
     return "精彩探索"
 
 
+def _audience_context(profile: UserProfile) -> str:
+    parts = [
+        f"出行类型：{profile.travelers_type or '普通游客'}",
+        f"同行儿童：{'有' if profile.has_children else '无'}",
+        f"同行老人：{'有' if profile.has_elderly else '无'}",
+    ]
+    if profile.travelers_count:
+        parts.append(f"同行人数：{profile.travelers_count}人")
+    return "；".join(parts)
+
+
+def _reason_conflicts_profile(reason: str, profile: UserProfile) -> bool:
+    """Reject prose that invents a traveler group absent from the profile."""
+    compact = _normalize_poi_name(reason)
+    traveler_type = _normalize_poi_name(profile.travelers_type)
+    child_trip = profile.has_children or any(term in traveler_type for term in ("亲子", "家庭"))
+    elderly_trip = profile.has_elderly or any(term in traveler_type for term in ("老人", "父母"))
+    if not child_trip and any(
+        term in compact
+        for term in ("适合带孩子", "适合带娃", "孩子同行", "亲子出行", "亲子游", "亲子")
+    ):
+        return True
+    if not elderly_trip and any(
+        term in compact for term in ("适合老人", "适合长辈", "老人同行", "带父母", "父母同行")
+    ):
+        return True
+    return False
+
+
 _GENERIC_DRAFT = {"推荐游览", "值得一游", "口碑推荐", "推荐去看看", "推荐"}
 
 
-def _prefill_day(day: DayPlan) -> set[str]:
+def _prefill_day(day: DayPlan, profile: UserProfile | None = None) -> set[str]:
     """Prefill template/draft reasons in place; return prefilled poi_names.
 
     Known POIs use their curated template; a draft that already carries a
@@ -203,8 +232,15 @@ def _prefill_day(day: DayPlan) -> set[str]:
         if act.poi_name in _REASON_TEMPLATES:
             act.recommendation_reason = _REASON_TEMPLATES[act.poi_name]
             prefilled.add(act.poi_name)
-        elif reason and not any(g in reason for g in _GENERIC_DRAFT) and len(reason) >= 4:
+        elif (
+            reason
+            and not any(g in reason for g in _GENERIC_DRAFT)
+            and len(reason) >= 4
+            and (profile is None or not _reason_conflicts_profile(reason, profile))
+        ):
             prefilled.add(act.poi_name)
+        elif reason and profile is not None and _reason_conflicts_profile(reason, profile):
+            act.recommendation_reason = None
     if prefilled:
         day.has_prefilled = True
     return prefilled
@@ -218,7 +254,7 @@ _ALL_DAYS_TIMEOUT = 45.0  # seconds — one call covers the whole trip
 
 _BUILD_ALL_DAYS_PROMPT = """请为以下多天行程生成每天的主题和每个景点的推荐语。
 
-用户画像：{travelers_type}，兴趣是{interests}，节奏偏好{pace}
+用户画像：{audience_context}；兴趣是{interests}；节奏偏好{pace}
 
 行程（共{n_days}天）：
 {days_block}
@@ -226,8 +262,9 @@ _BUILD_ALL_DAYS_PROMPT = """请为以下多天行程生成每天的主题和每�
 要求：
 1. 每天 theme：4-8个字的中文主题，概括当天行程特色
 2. 每个景点必须原样返回 poi_name，并给出 recommendation_reason（20-40字推荐语）和 tags（2-3个标签）
-3. 推荐语根据用户画像个性化——亲子游强调"适合带孩子"，情侣游强调"浪漫"，历史爱好者强调"文化底蕴"
-4. 仅输出 JSON，不要其他内容
+3. 只能使用画像中明确存在的同行人群；没有儿童时禁止写"带孩子/带娃/亲子游"，没有老人时禁止写"适合老人/带父母"
+4. 根据真实兴趣个性化，不能凭景点类型虚构用户身份或偏好
+5. 仅输出 JSON，不要其他内容
 
 返回 JSON 格式：
 {{"days": [
@@ -250,7 +287,6 @@ async def _llm_enrich_all_days(
     JSON dict, or None on failure so the caller can fall back to per-day batches.
     """
     interests = "、".join(profile.interests) if profile.interests else "无特殊偏好"
-    travelers_type = profile.travelers_type or "普通游客"
     pace = profile.pace or "适中"
 
     day_blocks: list[str] = []
@@ -273,7 +309,7 @@ async def _llm_enrich_all_days(
         return None
 
     prompt = _BUILD_ALL_DAYS_PROMPT.format(
-        travelers_type=travelers_type,
+        audience_context=_audience_context(profile),
         interests=interests,
         pace=pace,
         n_days=len(itinerary),
@@ -338,6 +374,7 @@ async def _enrich_all_days(
             d.get("theme"),
             d.get("activities", []),
             prefill_map.get(day.day_number, set()),
+            profile,
         )
     return True
 
@@ -350,7 +387,7 @@ _BATCH_ENRICHMENT_TIMEOUT = 30.0  # seconds — batch output is longer
 
 _BUILD_DAY_ENRICHMENT_PROMPT = """请为以下一日行程生成主题和每个景点的推荐语。
 
-用户画像：{travelers_type}，兴趣是{interests}，节奏偏好{pace}
+用户画像：{audience_context}；兴趣是{interests}；节奏偏好{pace}
 
 一日行程：
 {activities}
@@ -358,8 +395,9 @@ _BUILD_DAY_ENRICHMENT_PROMPT = """请为以下一日行程生成主题和每个�
 要求：
 1. theme: 4-8个字的中文主题名，能概括当天行程特色
 2. 每个景点必须原样返回 poi_name，并给出 recommendation_reason（20-40字推荐语）和 tags（2-3个标签）
-3. 推荐语根据用户画像个性化——比如亲子游强调"适合带孩子"，情侣游强调"浪漫"，历史爱好者强调"文化底蕴"
-4. 仅输出 JSON，不要其他内容
+3. 只能使用画像中明确存在的同行人群；没有儿童时禁止写"带孩子/带娃/亲子游"，没有老人时禁止写"适合老人/带父母"
+4. 根据真实兴趣个性化，不能凭景点类型虚构用户身份或偏好
+5. 仅输出 JSON，不要其他内容
 
 返回 JSON 格式：
 {{
@@ -387,7 +425,6 @@ async def _llm_enrich_day_batch(
         return None
 
     interests = "、".join(profile.interests) if profile.interests else "无特殊偏好"
-    travelers_type = profile.travelers_type or "普通游客"
     pace = profile.pace or "适中"
 
     activity_lines = []
@@ -398,7 +435,7 @@ async def _llm_enrich_day_batch(
         activity_lines.append(f"- {time_str} {act.poi_name} [{act.category}]")
 
     prompt = _BUILD_DAY_ENRICHMENT_PROMPT.format(
-        travelers_type=travelers_type,
+        audience_context=_audience_context(profile),
         interests=interests,
         pace=pace,
         activities="\n".join(activity_lines),
@@ -450,6 +487,7 @@ def _apply_day_result(
     theme: Any,
     raw_items: Any,
     skip_names: Optional[set[str]] = None,
+    profile: UserProfile | None = None,
 ) -> None:
     """Apply an LLM theme + activity items to a day in place.
 
@@ -461,7 +499,11 @@ def _apply_day_result(
     skip_names = skip_names or set()
 
     theme_str = str(theme or "").strip()
-    if theme_str and 2 <= len(theme_str) <= 12:
+    if (
+        theme_str
+        and 2 <= len(theme_str) <= 12
+        and (profile is None or not _reason_conflicts_profile(theme_str, profile))
+    ):
         day.theme = theme_str
 
     if not isinstance(raw_items, list):
@@ -472,7 +514,9 @@ def _apply_day_result(
         if not isinstance(item, dict):
             continue
         reason = str(item.get("recommendation_reason", "")).strip()
-        if any(p in reason for p in GENERIC_PATTERNS):
+        if any(p in reason for p in GENERIC_PATTERNS) or (
+            profile is not None and _reason_conflicts_profile(reason, profile)
+        ):
             poi_name = str(item.get("poi_name", "")).strip()
             item["recommendation_reason"] = _template_reason(
                 poi_name,
@@ -555,6 +599,7 @@ async def _enrich_day_batch(
         batch_result.get("theme"),
         batch_result.get("activities", []),
         skip_names,
+        profile,
     )
     # The batch call (+ template fallback for stragglers) fully handled the day;
     # returning True prevents a redundant second per-activity LLM pass.
@@ -571,12 +616,12 @@ _BUILD_ENRICHMENT_PROMPT = """请为以下景点写一句简短的中文推荐�
 
 景点：{poi_name}
 类型：{category}
-用户画像：{travelers_type}，兴趣是{interests}，节奏偏好{pace}
+用户画像：{audience_context}；兴趣是{interests}；节奏偏好{pace}
 
 要求：
 1. 仅输出一句推荐语（20-40字），不提价格或具体时间
-2. 根据用户画像个性化——比如亲子游强调"适合带孩子"，情侣游强调"浪漫"
-3. 如果该景点适合特定时间段（如夜景、早茶），可在推荐语中自然提及
+2. 只能使用画像中明确存在的同行人群，不能虚构儿童、老人或其他用户身份
+3. 根据用户真实兴趣个性化；如果适合特定时间段（如夜景、早茶），可自然提及
 
 返回 JSON 格式：
 {{"recommendation_reason": "...", "tags": ["标签1", "标签2"]}}"""
@@ -588,13 +633,12 @@ async def _llm_enrich_activity(
 ) -> Optional[tuple[str, list[str]]]:
     """Call LLM to enrich a single activity.  Returns (reason, tags) or None on failure."""
     interests = "、".join(profile.interests) if profile.interests else "无特殊偏好"
-    travelers_type = profile.travelers_type or "普通游客"
     pace = profile.pace or "适中"
 
     prompt = _BUILD_ENRICHMENT_PROMPT.format(
         poi_name=activity.poi_name,
         category=activity.category,
-        travelers_type=travelers_type,
+        audience_context=_audience_context(profile),
         interests=interests,
         pace=pace,
     )
@@ -614,7 +658,7 @@ async def _llm_enrich_activity(
         )
         reason = str(result.get("recommendation_reason", "")).strip()
         tags = list(result.get("tags", [])) if isinstance(result.get("tags"), list) else []
-        if not reason:
+        if not reason or _reason_conflicts_profile(reason, profile):
             return None
         return reason, tags
     except asyncio.TimeoutError:
@@ -703,7 +747,7 @@ async def enrich(
             return enriched, _build_proposal(enriched, profile)
 
         # P0: prefill known/draft POIs (no LLM) and record what each day still needs.
-        prefill_map = {day.day_number: _prefill_day(day) for day in enriched}
+        prefill_map = {day.day_number: _prefill_day(day, profile) for day in enriched}
         pending = [
             d for d in enriched if len(prefill_map.get(d.day_number, set())) < len(d.activities)
         ]
@@ -732,7 +776,7 @@ async def enrich(
 @traceable_step("planning/writer_enrich_day", run_type="chain")
 async def _enrich_one_day(day: DayPlan, profile: UserProfile) -> None:
     """Enrich a single day in place (per-day fallback when the all-days call fails)."""
-    prefilled = _prefill_day(day)
+    prefilled = _prefill_day(day, profile)
 
     # If every activity is prefilled, just generate a rule-based theme.
     if len(prefilled) == len(day.activities):

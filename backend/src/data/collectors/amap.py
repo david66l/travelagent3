@@ -19,6 +19,9 @@ logger = logging.getLogger(__name__)
 
 # 高德 POI 类型映射
 AMAP_TYPE_CATEGORY = {
+    "餐饮服务": "restaurant",
+    "住宿服务": "hotel",
+    "购物服务": "shopping",
     "风景名胜": "attraction",
     "公园广场": "attraction",
     "寺庙道观": "attraction",
@@ -61,7 +64,14 @@ class AmapCollector:
         self._key = api_key
         self._client = httpx.AsyncClient(timeout=10.0)
 
-    async def search_pois(self, city: str, keywords: str = "", types: str = "") -> list[RawPOI]:
+    async def search_pois(
+        self,
+        city: str,
+        keywords: str = "",
+        types: str = "",
+        *,
+        limit: int = 100,
+    ) -> list[RawPOI]:
         """搜索城市 POI。"""
         all_pois: list[RawPOI] = []
 
@@ -76,24 +86,30 @@ class AmapCollector:
         )
 
         for stype in search_types:
-            pois = await self._search_page(city, keywords, stype)
+            remaining = max(0, limit - len(all_pois))
+            if remaining == 0:
+                break
+            pois = await self._search_page(city, keywords, stype, limit=remaining)
             all_pois.extend(pois)
 
         return all_pois
 
-    async def _search_page(self, city: str, keywords: str, types: str) -> list[RawPOI]:
+    async def _search_page(
+        self, city: str, keywords: str, types: str, *, limit: int = 100
+    ) -> list[RawPOI]:
         """分页搜索 POI。"""
         pois: list[RawPOI] = []
         page = 1
+        page_size = min(20, max(1, limit))
 
-        while page <= 5:  # 最多 5 页，避免超量
+        while page <= 5 and len(pois) < limit:  # 最多 5 页，避免超量
             params = {
                 "key": self._key,
                 "keywords": keywords or "",
                 "types": types,
                 "city": city,
                 "citylimit": "true",
-                "offset": 20,
+                "offset": page_size,
                 "page": page,
                 "extensions": "all",
                 "output": "json",
@@ -111,10 +127,12 @@ class AmapCollector:
                     raw = self._normalize(city, poi)
                     if raw:
                         pois.append(raw)
+                        if len(pois) >= limit:
+                            break
 
                 # 检查是否还有下一页
                 total = int(data.get("count", 0))
-                if page * 20 >= total or page * 20 >= 100:
+                if page * page_size >= total or len(pois) >= limit:
                     break
                 page += 1
 
@@ -139,18 +157,25 @@ class AmapCollector:
             return None
 
         # 分类映射
-        amap_type = raw.get("type", "").split(";")[0] if raw.get("type") else ""
-        category = AMAP_TYPE_CATEGORY.get(amap_type, "attraction")
+        type_parts = [part.strip() for part in str(raw.get("type") or "").split(";") if part]
+        category = next(
+            (
+                normalized
+                for part in type_parts
+                for label, normalized in AMAP_TYPE_CATEGORY.items()
+                if part == label or label in part
+            ),
+            "attraction",
+        )
 
         # 地址
         address = raw.get("address", "")
 
         # 标签
         tags = []
-        type_parts = (raw.get("type") or "").split(";")
         for part in type_parts:
-            part = part.split("|")
-            tags.extend([t for t in part if t and t not in tags])
+            nested = part.split("|")
+            tags.extend([tag for tag in nested if tag and tag not in tags])
 
         # 门票（高德部分景点有返利价格字段）
         ticket_price = None

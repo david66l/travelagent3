@@ -113,7 +113,10 @@ class CompletionGuard:
         expired = [
             fact.fact_id
             for fact in state.facts.values()
-            if fact.expires_at is not None and fact.expires_at <= now
+            if fact.goal_version == state.goal.goal_version
+            and fact.plan_version == state.task_graph.plan_version
+            and fact.expires_at is not None
+            and fact.expires_at <= now
         ]
         if expired:
             blocks.append(
@@ -121,6 +124,23 @@ class CompletionGuard:
                     code="FACTS_EXPIRED",
                     message="one or more facts expired before completion",
                     details={"fact_ids": expired},
+                )
+            )
+
+        expired_artifacts = [
+            artifact.artifact_id
+            for artifact in state.artifacts.values()
+            if artifact.goal_version == state.goal.goal_version
+            and artifact.plan_version == state.task_graph.plan_version
+            and artifact.expires_at is not None
+            and artifact.expires_at <= now
+        ]
+        if expired_artifacts:
+            blocks.append(
+                CompletionBlock(
+                    code="ARTIFACTS_EXPIRED",
+                    message="one or more artifacts expired before completion",
+                    details={"artifact_ids": expired_artifacts},
                 )
             )
 

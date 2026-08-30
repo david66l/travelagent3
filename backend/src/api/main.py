@@ -10,6 +10,14 @@ from fastapi import FastAPI
 
 logger = logging.getLogger(__name__)
 
+# psycopg's async implementation does not support Windows' default Proactor
+# loop. Setting the policy before ``uvicorn.run`` makes ``python src/api/main.py``
+# a reproducible local entrypoint while leaving Linux containers unchanged.
+if sys.platform == "win32":
+    selector_policy = getattr(asyncio, "WindowsSelectorEventLoopPolicy", None)
+    if selector_policy is not None:
+        asyncio.set_event_loop_policy(selector_policy())
+
 # Ensure backend/src is on path (works regardless of project location)
 _src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _src_dir not in sys.path:
@@ -120,4 +128,8 @@ if __name__ == "__main__":
         host=settings.app_host,
         port=settings.app_port,
         reload=settings.debug,
+        # Uvicorn explicitly chooses Proactor on Windows unless its loop
+        # factory is disabled; psycopg async requires the Selector policy set
+        # above.
+        loop="none" if sys.platform == "win32" else "auto",
     )

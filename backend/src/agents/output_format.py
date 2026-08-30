@@ -18,6 +18,7 @@ from typing import Any
 from core.settings import settings
 
 logger = logging.getLogger(__name__)
+WILDCARD_BIND_HOST = "0.0.0.0"  # nosec B104
 
 # Output directories relative to project root.
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -53,7 +54,7 @@ class OutputFormatAgent:
             self.base_url = settings.public_app_url.rstrip("/")
         else:
             # 0.0.0.0 is fine for binding but not for client-side download URLs.
-            host = "localhost" if settings.app_host == "0.0.0.0" else settings.app_host
+            host = "localhost" if settings.app_host == WILDCARD_BIND_HOST else settings.app_host
             self.base_url = f"http://{host}:{settings.app_port}"
         _ensure_dirs()
 
@@ -289,6 +290,11 @@ class OutputFormatAgent:
             except Exception:
                 break  # client gone / queue full — stop, never break formatting
             await asyncio.sleep(0)  # flush this chunk before the next
+
+    async def stream_existing_markdown(self, text: str, on_token: Any = None) -> str:
+        """Progressively emit controller-rendered Markdown without rewriting facts."""
+        await self._stream_existing(text, on_token)
+        return text
 
     @staticmethod
     def _ensure_weasyprint_lib_path() -> None:

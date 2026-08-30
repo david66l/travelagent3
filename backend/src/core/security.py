@@ -6,8 +6,8 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import bcrypt
-from jose import JWTError, jwt
-from jose.exceptions import ExpiredSignatureError
+import jwt
+from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
 
 from core.exceptions import UnauthorizedException
 from core.redis_client import redis_client
@@ -89,7 +89,7 @@ def decode_token(token: str) -> dict[str, Any]:
         payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
     except ExpiredSignatureError as exc:
         raise UnauthorizedException("Token expired", code="TOKEN_EXPIRED") from exc
-    except JWTError as exc:
+    except InvalidTokenError as exc:
         raise UnauthorizedException("Invalid token", code="TOKEN_INVALID") from exc
 
     if "sub" not in payload or "type" not in payload:

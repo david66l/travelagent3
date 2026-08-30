@@ -3,36 +3,68 @@ kind: CronJob
 metadata:
   name: postgres-backup
   namespace: travel-agent
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
 spec:
   schedule: "0 3 * * *"
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 1800
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 1
   jobTemplate:
     spec:
       template:
+        metadata:
+          labels:
+            app: postgres-backup
         spec:
           restartPolicy: OnFailure
+          securityContext:
+            seccompProfile:
+              type: RuntimeDefault
+            fsGroup: 999
           containers:
             - name: backup
-              image: postgres:16-alpine
+              image: pgvector/pgvector@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b
               env:
                 - name: PGPASSWORD
                   valueFrom:
                     secretKeyRef:
                       name: travel-agent-secrets
                       key: POSTGRES_PASSWORD
-                      optional: true
               command:
                 - /bin/sh
                 - -c
                 - |
+                  set -eu
                   TS=$(date +%Y%m%d_%H%M%S)
-                  pg_dump -h postgres -U travelagent travel_agent \
-                    | gzip > /backup/travel_agent_${TS}.sql.gz
-                  echo "backup complete: travel_agent_${TS}.sql.gz"
+                  TMP="/backup/.travel_agent_${TS}.dump.tmp"
+                  FINAL="/backup/travel_agent_${TS}.dump"
+                  trap 'rm -f "$TMP"' EXIT
+                  pg_dump -h postgres -U travelagent -d travel_agent \
+                    --format=custom --file="$TMP"
+                  test -s "$TMP"
+                  mv "$TMP" "$FINAL"
+                  trap - EXIT
+                  echo "backup complete: travel_agent_${TS}.dump"
               volumeMounts:
                 - name: backup
                   mountPath: /backup
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+                limits:
+                  cpu: 500m
+                  memory: 512Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                runAsNonRoot: true
+                runAsUser: 999
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop:
+                    - ALL
           volumes:
             - name: backup
               persistentVolumeClaim:

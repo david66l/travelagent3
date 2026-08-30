@@ -190,11 +190,15 @@ export async function postChatMessage(
   token: string,
   fingerprint: string,
   conversationId: string,
-  content: string
-): Promise<void> {
+  content: string,
+  idempotencyKey: string
+): Promise<string> {
   const res = await fetch(`${API_URL}/api/v1/chat/message`, {
     method: "POST",
-    headers: authHeaders(token, fingerprint),
+    headers: {
+      ...authHeaders(token, fingerprint),
+      "Idempotency-Key": idempotencyKey,
+    },
     body: JSON.stringify({
       conversation_id: conversationId,
       content,
@@ -205,6 +209,12 @@ export async function postChatMessage(
     const text = await res.text();
     throw new Error(`Chat message failed: ${res.status} ${text}`);
   }
+  const json = await res.json();
+  const jobId = json.data?.job_id as string | undefined;
+  if (!jobId) {
+    throw new Error("Chat message response missing job_id");
+  }
+  return jobId;
 }
 
 export async function postChatAction(
@@ -212,11 +222,15 @@ export async function postChatAction(
   fingerprint: string,
   conversationId: string,
   action: "confirm" | "modify" | "reject" | "trip_event",
-  payload?: { change?: unknown; external_event?: unknown }
-): Promise<void> {
+  payload?: { change?: unknown; external_event?: unknown; approval?: unknown },
+  idempotencyKey: string = crypto.randomUUID()
+): Promise<string> {
   const res = await fetch(`${API_URL}/api/v1/chat/message`, {
     method: "POST",
-    headers: authHeaders(token, fingerprint),
+    headers: {
+      ...authHeaders(token, fingerprint),
+      "Idempotency-Key": idempotencyKey,
+    },
     body: JSON.stringify({
       conversation_id: conversationId,
       content: "",
@@ -224,12 +238,19 @@ export async function postChatAction(
       action,
       change: payload?.change,
       external_event: payload?.external_event,
+      approval: payload?.approval,
     }),
   });
   if (!res.ok && res.status !== 202) {
     const text = await res.text();
     throw new Error(`Chat action failed: ${res.status} ${text}`);
   }
+  const json = await res.json();
+  const jobId = json.data?.job_id as string | undefined;
+  if (!jobId) {
+    throw new Error("Chat action response missing job_id");
+  }
+  return jobId;
 }
 
 // --- Booking (mock backend, source="mock") -------------------------------

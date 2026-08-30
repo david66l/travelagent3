@@ -26,6 +26,14 @@ from schemas import IntentResult, ProfilePatch, UserProfile
 
 logger = logging.getLogger(__name__)
 
+_AGENT_SEMANTIC_FIELDS = (
+    "intent_kind",
+    "event_query",
+    "transport_modes_requested",
+    "information_needs",
+    "current_info_queries",
+)
+
 
 def entities_to_patch(entities: dict[str, Any]) -> ProfilePatch:
     """Convert flat ``user_entities`` into a ``ProfilePatch``."""
@@ -124,6 +132,27 @@ def slots_from_merged_profile(resolved: TravelSlots, flat: dict) -> TravelSlots:
     return TravelSlots(**data)
 
 
+def retain_agent_semantics_from_previous_turn(
+    current: TravelSlots,
+    previous: dict[str, Any] | None,
+) -> TravelSlots:
+    """Keep model-derived tool needs while the user is only filling another slot.
+
+    An explicitly emitted field (including an empty list) wins and can clear the
+    previous value. Only fields omitted from the model's JSON inherit the prior
+    turn, so a new intent is not accidentally contaminated by stale keywords or
+    controller guesses.
+    """
+    if not previous:
+        return current
+    data = current.model_dump()
+    explicit = current.model_fields_set
+    for field in _AGENT_SEMANTIC_FIELDS:
+        if field not in explicit and field in previous:
+            data[field] = previous[field]
+    return TravelSlots(**data)
+
+
 def slot_parse_output_to_intent_result(
     parsed: SlotParseOutput,
     resolved_slots: TravelSlots,
@@ -155,6 +184,7 @@ def slot_parse_output_to_intent_result(
         disambiguation_candidates=candidates,
         feasibility_report=feasibility,
         reasoning="Parsed by DemandParserAgent with profile recall and feasibility check.",
+        token_usage=parsed.token_usage,
     )
 
 
@@ -292,7 +322,11 @@ def _trace_build_intent_result(
     merged_flat: dict[str, Any],
 ) -> IntentResult:
     result = slot_parse_output_to_intent_result(parsed, merged_slots, inferred_slots, feasibility)
-    missing_required = DemandParserAgent.missing_from_profile(merged_flat)
+    # Agent-only semantics (for example an explicit train/flight request) are
+    # deliberately not persisted into the long-term profile.  They still have
+    # to participate in this turn's conditional required-field rules.
+    effective_turn_slots = {**merged_flat, **merged_slots.to_flat_dict()}
+    missing_required = DemandParserAgent.missing_from_profile(effective_turn_slots)
     if (
         parsed.disambiguation
         and parsed.disambiguation.get("has_ambiguity")
@@ -300,7 +334,9 @@ def _trace_build_intent_result(
     ):
         clarification_questions = [parsed.disambiguation["question"]]
     else:
-        clarification_questions = DemandParserAgent.build_clarification_questions(merged_flat)
+        clarification_questions = DemandParserAgent.build_clarification_questions(
+            effective_turn_slots
+        )
     if not feasibility["feasible"]:
         for issue in feasibility["issues"]:
             if issue not in clarification_questions:
@@ -332,7 +368,11 @@ async def process_user_turn(state: dict[str, Any], content: str) -> IntentResult
     user_profile = UserProfile(**profile_kwargs) if profile_kwargs else None
 
     parsed = await _trace_demand_parser(content, history, user_profile, flat)
-    current_slots = parsed.slots
+    current_slots = retain_agent_semantics_from_previous_turn(
+        parsed.slots,
+        state.get("slots"),
+    )
+    parsed.slots = current_slots
 
     recall_result = await _trace_profile_recall(state, current_slots)
 

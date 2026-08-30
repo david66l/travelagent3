@@ -127,6 +127,8 @@ class ThirdPartyHealthChecker:
     async def check_vllm(self) -> dict:
         """Probe the local vLLM inference server."""
         start = time.perf_counter()
+        if not settings.vllm_enabled:
+            return self._result("vllm", "unknown", int((time.perf_counter() - start) * 1000))
         base_url = settings.vllm_base_url.replace("/v1", "").rstrip("/")
         if not base_url:
             return self._result("vllm", "unknown", int((time.perf_counter() - start) * 1000))

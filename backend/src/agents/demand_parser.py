@@ -8,16 +8,34 @@ required slots and the disambiguation engine detects vague inputs.
 
 from __future__ import annotations
 
+import json
 import logging
 import re
-from typing import Optional
+from datetime import date
+from typing import Literal, Optional
+
+from pydantic import BaseModel, Field
 
 from agents.disambiguation import DisambiguationEngine
 from core.llm_client import llm
-from models.travel_slots import SlotParseOutput, TravelSlots
+from models.travel_slots import RevisionParseOutput, SlotParseOutput, TravelSlots
 from schemas import UserProfile
 
 logger = logging.getLogger(__name__)
+
+
+class IntercityTransportAudit(BaseModel):
+    """Focused semantic check for a conditional origin requirement."""
+
+    explicit_request: bool = False
+    modes: list[Literal["flight", "train", "bus", "ferry"]] = Field(default_factory=list)
+    confidence: float = Field(default=0.5, ge=0.0, le=1.0)
+
+
+_INTERCITY_TRANSPORT_AUDIT_PROMPT = """你只判断用户是否明确要求查询或乘坐城际班次，并输出 JSON。
+城际班次包括飞机、普通火车、高铁、长途汽车、轮渡；市内地铁、公交、出租车不算。
+若明确要求，explicit_request=true，并把方式映射为 flight/train/bus/ferry；
+若只是普通地说去某地旅行，explicit_request=false。不得根据目的地自行猜测。"""
 
 
 _DEMAND_PARSER_PROMPT = """你是旅行规划助手的槽位解析专家。分析用户输入，判断意图并提取结构化旅行需求。
@@ -31,15 +49,13 @@ _DEMAND_PARSER_PROMPT = """你是旅行规划助手的槽位解析专家。分�
 - view_history — 查看历史行程
 - chitchat — 闲聊/打招呼（如"你好"）
 
-## 规划必填槽位（8 项，缺一不可，缺则 missing_slots 列出并在 clarifying_question 中追问）
-1. origin — 出发城市
-2. destination — 目的地城市
-3. travel_dates — 出行日期原文（用户说了才填，如"明天"、"5月1日"；未提到必须为 null）
-4. travel_days — 旅行天数（整数）
-5. travelers_count — 出行人数（整数，未提到必须为 null，禁止默认为 1）
-6. has_elderly — 是否有老人同行：true / false（必须明确，未提到则 null 并追问）
-7. has_children — 是否有儿童：true / false（必须明确，未提到则 null 并追问）
-8. total_budget — 总预算（元，整数）
+## 用户必填槽位（只追问用户拥有、且当前任务确实必需的信息）
+1. destination — 目的地城市
+2. travel_days — 需要规划的旅行天数
+
+origin、travel_dates、travelers_count、has_elderly、has_children、total_budget 都应尽量提取，
+但普通行程缺少它们时不要阻塞。若用户明确要求查询航班/火车，后续 Agent 会按需追问
+origin；演出时间地点、天气和营业时间属于工具可发现事实，禁止让用户代替系统查询。
 
 ## 补充信息（有则提取，缺失不 blocking）
 - travel_companion（出行类型，可选）、interests, food_prefs, pace 等
@@ -55,21 +71,36 @@ _DEMAND_PARSER_PROMPT = """你是旅行规划助手的槽位解析专家。分�
         "travel_dates": null,
         "travel_days": null,
         "travelers_count": null,
+        "travel_companion": null,
+        "has_elderly": null,
         "has_children": null,
+        "has_pregnant": null,
+        "has_wheelchair": null,
         "total_budget": null,
         "interests": [],
         "food_prefs": [],
+        "food_taboos": [],
+        "must_visit": [],
+        "must_not_visit": [],
         "pace": null,
-        "travel_companion": null,
-        "has_elderly": null
+        "max_walk_minutes": null,
+        "max_transit_minutes": null,
+        "fatigue_preference": null,
+        "avoid_crowds": null,
+        "transport_preference": null,
+        "intent_kind": "itinerary",
+        "event_query": null,
+        "transport_modes_requested": [],
+        "information_needs": [],
+        "current_info_queries": []
     },
     "missing_slots": ["destination", "travel_days"],
-    "clarifying_question": "您需要把以下信息告诉我：出发城市、出行日期、玩几天、几个人、有没有带老人、有没有带小孩、预算多少。"
+    "clarifying_question": "您需要把以下信息告诉我：目的地、玩几天。"
 }
 
 ## 提取规则
 1. 先判断 intent；query_info / chitchat / update_preferences / view_history 时不填 missing_slots
-2. generate_itinerary / modify_itinerary：缺哪项就把字段名放进 missing_slots；clarifying_question 必须以「您需要把以下信息告诉我：」或「您需要把这个信息告诉我：」开头，一次性列出全部仍缺的必填项（用中文标签，顿号分隔，顺序：出发城市→目的地→出行日期→玩几天→几个人→有没有带老人→有没有带小孩→预算多少）
+2. generate_itinerary / modify_itinerary：只把 destination、travel_days 中缺失的字段放进 missing_slots；clarifying_question 一次性列出它们
 3. "女朋友/男朋友/情侣/夫妻" → travelers_count=2；可同时填 travel_companion=couple（可选，非必填）
 4. "带爸妈/父母/老人" → has_elderly=true；若明确人数则填 travelers_count
 5. "没有老人/不带父母/父母不去" → has_elderly=false
@@ -78,6 +109,23 @@ _DEMAND_PARSER_PROMPT = """你是旅行规划助手的槽位解析专家。分�
 8. "人均2000，4人" → total_budget=8000
 9. 当前用户画像里已有的字段视为已填，不要重复追问
 10. 不要编造未提及的信息；travel_companion 为可选字段，缺了不要追问
+11. 识别工具需求靠语义而不是字面关键词：
+    - 只有行程依赖具体演出、比赛、展览、节庆等具有确定日期/场地的公开活动时，intent_kind=event_trip，填写 event_query，information_needs 加 event
+    - 景点是否开放/营业不是 event：使用 opening_hours；询问临时闭馆使用 closure；intent_kind 保持 itinerary，event_query=null
+    - 花期、红叶、雪季等自然季节状态不是 event：使用 seasonal_activity；只有用户明确说的是某个节庆/展会时才使用 event
+    - 用户明确要求查询航班、火车、汽车或轮渡班次时，填写 transport_modes_requested，information_needs 加 transport；枚举值只能是 flight/train/bus/ferry，高铁也写 train
+    - “市内坐地铁/公交/出租车”等只是 transport_preference，不是城际班次查询：地铁/公交/公共交通=public，打车=taxi，步行=walk，租车自驾=rental_car，组合使用=mixed；不得填写 transport_modes_requested，也不得添加 information_needs=transport
+    - 天气、营业/闭馆、餐厅营业、季节状态等时效事实，分别加入 information_needs，并把要核实的完整问题写入 current_info_queries
+    - 用户需要寻找、推荐或安排餐厅时使用 restaurant；只有已经给出具体店名、仅核实该店营业时间时才使用 opening_hours
+    - pace 只能是 relaxed/moderate/intensive；“轻松/不要太赶”=relaxed，“紧凑/多安排几个地方”=intensive
+    - 只是表达交通偏好（如“市内尽量地铁”）不等于查询城际班次
+12. event_query 和 current_info_queries 要保留实体和限定条件，不能只写“活动”或“查一下”
+13. interests、food_prefs 等开放文本标签保留用户原语言和核心表达，不要擅自翻译成英文
+14. “必须去/一定要去/必去”后的地点放入 must_visit；“不要去/不安排/排除”后的地点放入 must_not_visit，不能降级成普通 interests
+15. “忌口/过敏/不能吃”提取到 food_taboos；饮食偏好仍放 food_prefs，两者不能混淆
+16. 明确出现孕妇或轮椅使用者时，分别设置 has_pregnant=true、has_wheelchair=true；不得被画像中的默认 false 覆盖
+17. 用户明确给出步行或通勤分钟上限时原样提取到 max_walk_minutes/max_transit_minutes，不得替换成系统默认值
+18. “疲劳度低/不耐累”设置 fatigue_preference=low；“避开人群/不喜欢拥挤”设置 avoid_crowds=true
 
 ## 多轮信息收集（重要）
 - 「当前用户画像」里已有 destination / travel_days 等时，用户本轮只补充一个字段（如「5000块」「明天从济南出发」「2个人」「不带娃」），intent 仍为 generate_itinerary，只更新对应 slots
@@ -87,20 +135,59 @@ _DEMAND_PARSER_PROMPT = """你是旅行规划助手的槽位解析专家。分�
 """
 
 
+_REVISION_PARSER_PROMPT = """你是旅行 Agent 的修改意图解析器。结合当前目标与用户对草案的反馈，输出结构化修改操作。
+
+你只负责理解用户语义，不负责直接改行程、搜索事实或判断约束是否可行。Controller 会对你的输出做字段白名单、类型和边界校验。
+
+## intent
+- revise_itinerary：用户给出了可执行的修改意见
+- clarify_revision：反馈含糊或存在多个明显解释，必须追问
+- accept_itinerary：用户实际是在接受当前行程
+- start_new_trip：用户明确放弃当前目的地并开始另一次旅行
+
+## operations
+每项为 {"field": 字段, "operation": "set|add|remove|clear", "value": 值}。
+允许字段：origin, destination, travel_days, start_date, end_date, budget_range,
+must_visit, must_not_visit, mobility_constraints, max_transit_minutes, intent_kind,
+event_query, transport_modes_requested, information_needs, current_info_queries,
+interests, food_preferences, transport_preference, hotel_preference, pace,
+travelers_type, travelers_count, has_children, has_elderly, avoid_pois。
+
+规则：
+1. “太赶/想轻松些”应转成 pace=relaxed；只有用户给出明确天数时才修改 travel_days。
+2. “不要博物馆/删掉外滩”等负向要求，使用 must_not_visit 或 avoid_pois 的 add/remove，不要塞进普通文字备注。
+3. 新增演唱会、比赛、展览等具有确定时间地点的活动时，设置 intent_kind=event_trip、event_query，并给 information_needs 添加 event。
+4. 新增航班/火车等城际班次要求时，设置 transport_modes_requested，并给 information_needs 添加 transport。transport_modes_requested 的值只能是 flight/train/bus/ferry。
+5. 需要最新营业时间、闭馆、餐厅、天气或季节性信息时，修改 information_needs 和 current_info_queries。
+6. 不要根据常识补造数值、日期、地点；确实无法唯一理解时 needs_clarification=true，并给出一个具体问题。
+7. affected_domains 只从 research, candidates, transport, schedule, budget, presentation 中选择。
+8. 只输出 JSON，不要 markdown，不要解释。
+9. 市内交通偏好使用 transport_preference=set，值只能是 public/taxi/walk/rental_car/mixed/any；“公共交通/地铁/公交”统一为 public。用户用“不用查/不是要查/不需要查”等任何否定表达排除航班、火车或车次查询时，禁止 add/set transport_modes_requested 或 information_needs=transport；若当前目标里已有，可用 remove/clear 删除。
+10. 景点营业/闭馆和自然花期不是 event；分别使用 opening_hours/closure/seasonal_activity。event 只表示需要核实日期和场馆的具体公开活动。
+11. 用户一句话可能同时包含多项修改。对“但、同时、另外、还要”等连接的每个可执行子要求都生成独立 operation；输出前检查明确出现的天数、金额、增删地点和偏好没有遗漏。
+12. 例如“总预算控制在4500以内，但酒店品质别降低”必须同时输出 budget_range=set=4500 和 hotel_preference=set="preserve_quality" 两项，不能因为第二项没有给数值就省略。
+13. pace 的值只能是 relaxed/moderate/intensive；“太赶/轻松些”=relaxed，“紧凑/多安排几个地方”=intensive，禁止输出 slow/fast。
+14. 用户要求系统先查询活动日期和地点时，这是 research 操作，不是让用户澄清；仍应输出 event_trip、event_query 和 information_needs=event。
+15. interests、food_preferences 等开放文本值保留用户原语言和核心表达，不要擅自翻译成英文。
+16. 只有用户明确说要放弃当前行程，并给出另一趟旅行或新目的地时才使用 start_new_trip；“换个方案/重新安排/再优化”但没有说明改什么，属于 clarify_revision，必须询问不满意之处。
+
+输出结构：
+{
+  "intent": "revise_itinerary",
+  "confidence": 0.0,
+  "operations": [],
+  "affected_domains": [],
+  "needs_clarification": false,
+  "clarification_question": null
+}
+"""
+
+
 class DemandParserAgent:
     """Parse user demand into structured TravelSlots."""
 
     # All required before planning — must match is_profile_ready()
-    REQUIRED_SLOTS = (
-        "origin",
-        "destination",
-        "travel_dates",
-        "travel_days",
-        "travelers_count",
-        "has_elderly",
-        "has_children",
-        "total_budget",
-    )
+    REQUIRED_SLOTS = ("destination", "travel_days")
 
     SLOT_TO_PROFILE = {
         "origin": "origin",
@@ -134,9 +221,25 @@ class DemandParserAgent:
         known_profile: Optional[dict] = None,
     ) -> SlotParseOutput:
         """Parse input into SlotParseOutput using small LLM or deterministic fallback."""
-        profile_str = user_profile.model_dump_json(exclude_none=True) if user_profile else "{}"
+        # Do not show schema defaults (for example has_wheelchair=false or a
+        # 180-minute walking limit) as if they were remembered user facts. They
+        # anchor the intent model and can overwrite explicit constraints in the
+        # current utterance.
+        profile_str = (
+            user_profile.model_dump_json(exclude_none=True, exclude_defaults=True)
+            if user_profile
+            else "{}"
+        )
         prompt_messages = [
             {"role": "system", "content": _DEMAND_PARSER_PROMPT},
+            {
+                "role": "system",
+                "content": (
+                    f"系统当前日期：{date.today().isoformat()}。"
+                    "解析相对日期和缺少年份的未来旅行日期时必须以此为准；"
+                    "用户没有提供或无法可靠推出的年份不得自行编造。"
+                ),
+            },
             {"role": "system", "content": f"当前用户画像：{profile_str}"},
             *messages[-10:],
             {"role": "user", "content": user_input},
@@ -146,18 +249,21 @@ class DemandParserAgent:
             parsed = await llm.structured_call(
                 messages=prompt_messages,
                 response_model=SlotParseOutput,
-                temperature=0.3,
+                temperature=0.0,
                 task_type="intent",
             )
+            parsed.parse_source = "llm"
             # Rule-based sentiment override when LLM returns neutral
             if parsed.sentiment == "neutral":
                 parsed.sentiment = self._detect_sentiment(user_input)
         except Exception as exc:
             logger.warning("LLM demand parsing failed; using deterministic fallback: %s", exc)
             parsed = self._fallback_parse(user_input)
+            parsed.parse_source = "deterministic_fallback"
 
         parsed = self._normalize_intent_during_gathering(parsed, known_profile, user_input)
         parsed = self._enrich_slots_from_text(parsed, user_input)
+        parsed = await self._audit_conditional_transport_requirement(parsed, user_input)
 
         if known_profile:
             self._merge_known_profile_into_slots(parsed, known_profile)
@@ -183,7 +289,90 @@ class DemandParserAgent:
             ):
                 parsed.missing_slots.append(ambiguous_field)
 
+        parsed.token_usage = int(llm.last_token_usage or 0)
         return parsed
+
+    @staticmethod
+    async def _audit_conditional_transport_requirement(
+        parsed: SlotParseOutput,
+        user_input: str,
+    ) -> SlotParseOutput:
+        """Use a focused model check when the broad parser may have missed a mode.
+
+        This deliberately stays model-based: conditional intent is not inferred
+        from a keyword list.  The second call only runs on an already-incomplete
+        gathering turn, so ordinary complete requests do not pay a second-call
+        latency and token tax.
+        """
+        if parsed.intent not in {"generate_itinerary", "modify_itinerary"}:
+            return parsed
+        if parsed.slots.origin or parsed.slots.transport_modes_requested:
+            return parsed
+        if parsed.slots.destination and parsed.slots.travel_days is not None:
+            return parsed
+
+        primary_tokens = int(llm.last_token_usage or 0)
+        try:
+            audit = await llm.structured_call(
+                messages=[
+                    {"role": "system", "content": _INTERCITY_TRANSPORT_AUDIT_PROMPT},
+                    {"role": "user", "content": user_input},
+                ],
+                response_model=IntercityTransportAudit,
+                temperature=0.0,
+                task_type="intent",
+            )
+            if not isinstance(audit, IntercityTransportAudit):
+                payload = audit.model_dump(mode="json") if hasattr(audit, "model_dump") else audit
+                audit = IntercityTransportAudit.model_validate(payload)
+            audit_tokens = int(llm.last_token_usage or 0)
+            llm.last_token_usage = primary_tokens + audit_tokens
+        except Exception as exc:
+            llm.last_token_usage = primary_tokens
+            logger.warning("Intercity transport intent audit failed: %s", exc)
+            return parsed
+
+        if audit.explicit_request and audit.confidence >= 0.65 and audit.modes:
+            parsed.slots.transport_modes_requested = list(dict.fromkeys(audit.modes))
+            if "transport" not in parsed.slots.information_needs:
+                parsed.slots.information_needs.append("transport")
+        return parsed
+
+    async def parse_revision(
+        self,
+        revision_reason: str,
+        *,
+        current_goal: dict[str, object],
+        recent_messages: list[dict[str, str]] | None = None,
+    ) -> RevisionParseOutput:
+        """Interpret draft feedback with the intent model and a typed output contract.
+
+        Unlike initial slot extraction, revision parsing deliberately has no keyword
+        fallback: silently guessing a constraint change is less safe than preserving
+        the feedback verbatim and re-planning without an unverified mutation.
+        """
+        messages = [
+            {"role": "system", "content": _REVISION_PARSER_PROMPT},
+            {
+                "role": "system",
+                "content": f"系统当前日期：{date.today().isoformat()}。不得编造日期或年份。",
+            },
+            {
+                "role": "system",
+                "content": (
+                    "当前旅行目标（JSON）："
+                    + json.dumps(current_goal, ensure_ascii=False, default=str)
+                ),
+            },
+            *(recent_messages or [])[-6:],
+            {"role": "user", "content": revision_reason},
+        ]
+        return await llm.structured_call(
+            messages=messages,
+            response_model=RevisionParseOutput,
+            temperature=0.0,
+            task_type="intent",
+        )
 
     @classmethod
     def _normalize_intent_during_gathering(
@@ -301,7 +490,10 @@ class DemandParserAgent:
     def missing_from_profile(cls, flat_profile: dict) -> list[str]:
         """Return REQUIRED slot keys still absent from a flattened profile dict."""
         missing: list[str] = []
-        for slot_key in cls.REQUIRED_SLOTS:
+        required_slots = list(cls.REQUIRED_SLOTS)
+        if flat_profile.get("transport_modes_requested"):
+            required_slots.append("origin")
+        for slot_key in required_slots:
             profile_key = cls.SLOT_TO_PROFILE.get(slot_key, slot_key)
             if profile_key not in flat_profile:
                 missing.append(slot_key)
@@ -338,9 +530,12 @@ class DemandParserAgent:
             parsed.clarifying_question = None
             return parsed
 
+        required_slots = list(cls.REQUIRED_SLOTS)
+        if parsed.slots.transport_modes_requested:
+            required_slots.append("origin")
         missing = [
             field
-            for field in cls.REQUIRED_SLOTS
+            for field in required_slots
             if cls._slot_is_empty(getattr(parsed.slots, field), field=field)
         ]
         parsed.missing_slots = missing
@@ -367,8 +562,10 @@ class DemandParserAgent:
         if not missing:
             return ""
 
-        ordered = [field for field in cls.REQUIRED_SLOTS if field in missing]
+        ordered = [field for field in (*cls.REQUIRED_SLOTS, "origin") if field in missing]
         labels = [cls.SLOT_LABELS.get(field, field) for field in ordered]
+        if not labels:
+            return ""
         if len(labels) == 1:
             return f"您需要把这个信息告诉我：{labels[0]}。"
         return f"您需要把以下信息告诉我：{'、'.join(labels)}。"

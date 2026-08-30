@@ -1,5 +1,6 @@
 """Tests for standalone VRP solver."""
 
+import vrp_solver_service.solver as solver_module
 from vrp_solver_service.models import ConstraintsInput, POIInput, SolverRequest
 from vrp_solver_service.solver import TravelVRPSolver
 
@@ -85,6 +86,26 @@ def test_solver_greedy_strategy_for_small_instance():
     assert len(all_activities) <= len(pois) + 2 * constraints.travel_days
 
 
+def test_solver_reports_cpsat_internal_greedy_fallback(monkeypatch):
+    monkeypatch.setattr(
+        solver_module,
+        "_cpsat_solve",
+        lambda *_args, **_kwargs: ([], "UNKNOWN"),
+    )
+
+    response = TravelVRPSolver().solve(
+        SolverRequest(
+            pois=_beijing_pois(),
+            constraints=ConstraintsInput(travel_days=2),
+            strategy="cpsat",
+        )
+    )
+
+    assert response.status == "fallback"
+    assert response.message == "Greedy fallback used"
+    assert response.metadata["cpsat_status"] == "UNKNOWN"
+
+
 def test_solver_handles_single_poi():
     pois = [
         POIInput(
@@ -99,3 +120,66 @@ def test_solver_handles_single_poi():
 
     assert len(response.days[0].activities) == 1
     assert response.days[0].activities[0].poi_name == "故宫"
+
+
+def test_solver_applies_live_date_hours_and_temporary_closure():
+    pois = [
+        POIInput(
+            id="closed",
+            name="临时闭馆景点",
+            score=1,
+            closed_dates=["2026-09-01"],
+        ),
+        POIInput(
+            id="late",
+            name="下午开放景点",
+            score=0.9,
+            duration_minutes=60,
+            date_opening_hours={"2026-09-01": ("15:00", "18:00")},
+        ),
+    ]
+    response = TravelVRPSolver().solve(
+        SolverRequest(
+            pois=pois,
+            constraints=ConstraintsInput(
+                travel_days=1,
+                trip_start_date="2026-09-01",
+                include_restaurant=False,
+                meals_per_day=0,
+            ),
+            strategy="cpsat",
+        )
+    )
+
+    activities = [activity for day in response.days for activity in day.activities]
+    assert all(activity.poi_id != "closed" for activity in activities)
+    late = next(activity for activity in activities if activity.poi_id == "late")
+    assert late.start_time >= "15:00"
+
+
+def test_solver_applies_transport_derived_daily_boundaries():
+    response = TravelVRPSolver().solve(
+        SolverRequest(
+            pois=[
+                POIInput(
+                    id="museum",
+                    name="博物馆",
+                    duration_minutes=60,
+                    open_time="08:00",
+                    close_time="20:00",
+                )
+            ],
+            constraints=ConstraintsInput(
+                travel_days=1,
+                daily_start_minutes=[13 * 60],
+                daily_end_minutes=[17 * 60],
+                include_restaurant=False,
+                meals_per_day=0,
+            ),
+            strategy="cpsat",
+        )
+    )
+
+    activity = response.days[0].activities[0]
+    assert activity.start_time >= "13:00"
+    assert activity.end_time <= "17:00"

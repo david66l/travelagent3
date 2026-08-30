@@ -154,6 +154,176 @@ async def test_stream_graph_events_graph_interrupt_yields_awaiting_confirm():
 
 
 @pytest.mark.asyncio
+async def test_stream_graph_events_rejects_unverified_agent_confirmation_pause():
+    from graph.runner import stream_graph_events
+
+    unpaused = MagicMock(next=[], values={})
+    invalid_pause = MagicMock(
+        next=["confirm_gate"],
+        values={
+            "policy_mode": "agent",
+            "agent_status": "failed",
+            "termination_reason": "policy_error_fallback",
+            "itinerary": [],
+        },
+    )
+    mock_graph = MagicMock()
+    mock_graph.astream_events = MagicMock(return_value=_AsyncIter([]))
+    mock_graph.aget_state = AsyncMock(side_effect=[unpaused, invalid_pause])
+
+    with (
+        patch("graph.runner.get_graph", new=AsyncMock(return_value=mock_graph)),
+        patch(
+            "graph.runner.SessionManager.create",
+            new=AsyncMock(return_value={"user_input": "上海2天"}),
+        ),
+        patch("graph.runner.SessionManager.save", new=AsyncMock()),
+    ):
+        events = [
+            event
+            async for event in stream_graph_events(
+                "s-agent-failed", "u1", "上海2天", job_id="job-1"
+            )
+        ]
+
+    assert len(events) == 1
+    assert events[0]["type"] == "error"
+    assert events[0]["payload"]["error_type"] == "policy_error_fallback"
+
+
+@pytest.mark.asyncio
+async def test_stream_graph_events_replays_same_job_terminal_failure_without_rerun():
+    from graph.runner import stream_graph_events
+
+    failed = MagicMock(
+        next=[],
+        values={
+            "job_id": "job-1",
+            "policy_mode": "agent",
+            "agent_status": "failed",
+            "stage": "agent_failed",
+            "termination_reason": "policy_error_fallback",
+            "agent_error": "bad policy arguments",
+        },
+    )
+    mock_graph = MagicMock()
+    mock_graph.aget_state = AsyncMock(return_value=failed)
+    mock_graph.astream_events = MagicMock()
+
+    with patch("graph.runner.get_graph", new=AsyncMock(return_value=mock_graph)):
+        events = [
+            event async for event in stream_graph_events("s1", "u1", "上海2天", job_id="job-1")
+        ]
+
+    assert events[0]["type"] == "error"
+    assert events[0]["payload"]["error"] == "bad policy arguments"
+    mock_graph.astream_events.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_stream_graph_events_checkpoint_read_failure_is_not_success():
+    from graph.runner import stream_graph_events
+
+    mock_graph = MagicMock()
+    mock_graph.astream_events = MagicMock(return_value=_AsyncIter([]))
+    mock_graph.aget_state = AsyncMock(
+        side_effect=[MagicMock(next=[], values={}), TimeoutError("postgres unavailable")]
+    )
+
+    with (
+        patch("graph.runner.get_graph", new=AsyncMock(return_value=mock_graph)),
+        patch(
+            "graph.runner.SessionManager.create",
+            new=AsyncMock(return_value={"user_input": "北京3天"}),
+        ),
+    ):
+        events = [event async for event in stream_graph_events("s1", "u1", "北京3天")]
+
+    assert events[-1]["type"] == "error"
+    assert events[-1]["payload"]["retryable"] is True
+
+
+@pytest.mark.asyncio
+async def test_stream_graph_events_clarification_saves_checkpoint_without_final_event():
+    from graph.runner import stream_graph_events
+
+    clarification = {
+        "stage": "agent_awaiting_information",
+        "next_action": "clarify",
+        "messages": [{"role": "assistant", "content": "请补充演出名称"}],
+        "agent_status": "awaiting_information",
+    }
+    mock_graph = MagicMock()
+    mock_graph.astream_events = MagicMock(
+        return_value=_AsyncIter(
+            [
+                {
+                    "event": "on_chain_end",
+                    "name": "output",
+                    "data": {"output": clarification},
+                }
+            ]
+        )
+    )
+    empty = MagicMock(next=[], values={})
+    final = MagicMock(next=[], values=clarification)
+    mock_graph.aget_state = AsyncMock(side_effect=[empty, final, final])
+    save = AsyncMock()
+
+    with (
+        patch("graph.runner.get_graph", new=AsyncMock(return_value=mock_graph)),
+        patch(
+            "graph.runner.SessionManager.create",
+            new=AsyncMock(return_value={"user_input": "去看演唱会"}),
+        ),
+        patch("graph.runner.SessionManager.save", new=save),
+    ):
+        events = [event async for event in stream_graph_events("s1", "u1", "去看演唱会")]
+
+    assert [event["type"] for event in events] == ["clarify"]
+    save.assert_awaited_once_with("s1", clarification)
+
+
+@pytest.mark.asyncio
+async def test_stream_graph_events_rejects_confirmation_without_draft_approval():
+    from graph.approval import issue_pending_approval
+    from graph.runner import stream_graph_events
+
+    values = {
+        "user_id": "u1",
+        "itinerary": [{"day_number": 1, "activities": []}],
+    }
+    values["pending_approval"] = issue_pending_approval(values)
+    paused = MagicMock(next=["confirm_gate"], values=values)
+    mock_graph = MagicMock()
+    mock_graph.aget_state = AsyncMock(return_value=paused)
+    mock_graph.astream_events = MagicMock()
+
+    with patch("graph.runner.get_graph", new=AsyncMock(return_value=mock_graph)):
+        events = []
+        async for event in stream_graph_events(
+            "s1",
+            "u1",
+            "",
+            action="confirm",
+            action_payload={},
+        ):
+            events.append(event)
+
+    assert events == [
+        {
+            "type": "error",
+            "stage": "approval_rejected",
+            "payload": {
+                "error": "确认请求缺少草案凭证，请刷新页面后重试。",
+                "error_type": "APPROVAL_REQUIRED",
+            },
+        }
+    ]
+    mock_graph.astream_events.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_stream_graph_events_error():
     from graph.runner import stream_graph_events
 

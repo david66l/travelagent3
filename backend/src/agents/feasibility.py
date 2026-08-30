@@ -28,6 +28,8 @@ class FeasibilityReport(dict):
             "warnings": [],
             "budget_fit": "ok",
             "crowd_risk": "low",
+            "actionable_alternatives": None,
+            "alternatives": [],
         }
         defaults.update(kwargs)
         super().__init__(defaults)
@@ -81,6 +83,8 @@ class FeasibilityChecker:
         cls._check_seasonal_closures(slots, report, must_visit_spots or [], travel_dates)
 
         report["feasible"] = not report["issues"]
+        if report["issues"] and report["actionable_alternatives"] is None:
+            report["actionable_alternatives"] = bool(report["alternatives"])
         return report
 
     @classmethod
@@ -119,6 +123,14 @@ class FeasibilityChecker:
                 f"预算偏低：{slots.destination} {slots.travel_days}天预计至少"
                 f" {estimated_total:.0f} 元，当前预算 {budget:.0f} 元"
             )
+            report["actionable_alternatives"] = True
+            report["alternatives"].extend(
+                [
+                    f"将总预算提高到约 {estimated_total * 0.6:.0f} 元以上",
+                    "减少旅行天数",
+                    "仅保留免费或低价景点，并由用户确认不含往返交通和住宿",
+                ]
+            )
         elif ratio < 0.85:
             report["budget_fit"] = "tight"
             report["warnings"].append(
@@ -131,6 +143,8 @@ class FeasibilityChecker:
             report["warnings"].append("孕妇同行，建议选择轻松节奏并避免高海拔/激烈项目")
         if slots.has_elderly and slots.pace == "intensive":
             report["issues"].append("老人同行时不适合特种兵式紧凑行程")
+            report["actionable_alternatives"] = True
+            report["alternatives"].append("将行程节奏调整为轻松或正常")
         if slots.has_wheelchair and slots.max_walk_minutes and slots.max_walk_minutes > 120:
             report["warnings"].append("轮椅出行建议单日步行控制在 120 分钟以内")
 
@@ -140,6 +154,8 @@ class FeasibilityChecker:
             report["warnings"].append("多日紧凑行程易造成疲劳，建议适当放缓")
         if slots.fatigue_preference == "low" and slots.pace == "intensive":
             report["issues"].append("疲劳接受度低与紧凑行程冲突")
+            report["actionable_alternatives"] = True
+            report["alternatives"].append("将行程节奏调整为轻松或正常")
 
     @classmethod
     def _check_reservations(

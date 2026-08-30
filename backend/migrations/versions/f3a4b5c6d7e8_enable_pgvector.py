@@ -10,7 +10,6 @@ pgvector 已从源码编译安装（PG16 兼容）。
 
 from typing import Sequence, Union
 from alembic import op
-import sqlalchemy as sa
 
 revision: str = "f3a4b5c6d7e8"
 down_revision: Union[str, Sequence[str], None] = "e2f3a4b5c6d7"

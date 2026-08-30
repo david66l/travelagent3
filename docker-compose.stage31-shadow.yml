@@ -1,0 +1,71 @@
+# Stage31 side-effect-isolated Shadow worker overlay.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.stage31-shadow.yml up -d
+#
+# Student and teacher inference endpoints are external to this overlay. Inject
+# their URLs through AGENTIC_STUDENT_BASE_URL and AGENTIC_TEACHER_BASE_URL. On a
+# single 24 GB GPU the Stage30 measurements served them sequentially, so a live
+# dual-endpoint Shadow deployment requires separate GPU capacity or an explicit
+# model-swap gateway with bounded queues.
+
+services:
+  vrp_solver:
+    image: travelagent2-backend:stage31
+
+  backend:
+    image: travelagent2-backend:stage31
+    env_file:
+      - .env
+      - deploy/stage31-shadow.env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://travelagent:travelagent123@postgres:5432/travel_agent
+      REDIS_URL: redis://redis:6379/0
+      VRP_SOLVER_URL: http://vrp_solver:8001
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      SEED_CITIES: 北京,上海,广州,深圳,成都,杭州,西安,重庆,苏州,南京,厦门,青岛,大理,丽江,三亚,长沙,武汉,昆明,桂林,拉萨
+
+  celery_worker:
+    image: travelagent2-backend:stage31
+    command: celery -A core.celery_app worker -Q default,planning -l info
+    environment:
+      DATABASE_URL: postgresql+asyncpg://travelagent:travelagent123@postgres:5432/travel_agent
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      SEED_CITIES: 北京,上海,广州,深圳,成都,杭州,西安,重庆,苏州,南京,厦门,青岛,大理,丽江,三亚,长沙,武汉,昆明,桂林,拉萨
+
+  celery_beat:
+    image: travelagent2-backend:stage31
+
+  celery_shadow_worker:
+    image: travelagent2-backend:stage31
+    container_name: travel_agent_celery_shadow_worker
+    command: celery -A core.celery_app worker -Q shadow -l info --concurrency=1
+    env_file:
+      - .env
+      - deploy/stage31-shadow.env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://travelagent:travelagent123@postgres:5432/travel_agent
+      REDIS_URL: redis://redis:6379/0
+      VRP_SOLVER_URL: http://vrp_solver:8001
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      SEED_CITIES: 北京,上海,广州,深圳,成都,杭州,西安,重庆,苏州,南京,厦门,青岛,大理,丽江,三亚,长沙,武汉,昆明,桂林,拉萨
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      vrp_solver:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+    networks:
+      - travel_agent_network
+    restart: unless-stopped

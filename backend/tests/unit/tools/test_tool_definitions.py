@@ -19,13 +19,15 @@ def test_all_expected_tools_present():
     names = {t["function"]["name"] for t in TOOLS}
     expected = {
         "get_weather",
+        "retrieve_city_knowledge",
+        "search_current_info",
+        "search_transport",
         "check_reservation",
         "get_route",
         "find_restaurants",
         "find_hotels",
         "get_queue_time",
         "get_ticket_link",
-        "get_local_events",
         "get_emergency_services",
         "get_poi_detail",
         "update_user_profile",
@@ -35,6 +37,12 @@ def test_all_expected_tools_present():
         "validate_itinerary",
     }
     assert names == expected
+    assert (
+        "event"
+        in TOOL_NAME_TO_SCHEMA["search_current_info"]["function"]["parameters"]["properties"][
+            "info_type"
+        ]["enum"]
+    )
 
 
 def test_tool_lookup_by_name():

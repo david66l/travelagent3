@@ -110,8 +110,10 @@ async def main() -> None:
     async with async_session_maker() as db:
         rows = (await db.execute(text(sql), params)).mappings().all()
 
-    print(f"Checking {len(rows)} attractions (threshold {args.threshold} km, "
-          f"{'APPLY' if args.apply else 'DRY-RUN'})...\n")
+    print(
+        f"Checking {len(rows)} attractions (threshold {args.threshold} km, "
+        f"{'APPLY' if args.apply else 'DRY-RUN'})...\n"
+    )
 
     mismatches: list[dict] = []
     no_match = 0
@@ -126,28 +128,38 @@ async def main() -> None:
             a_lat, a_lng, matched = found
             dist = _haversine_km(r["lat"], r["lng"], a_lat, a_lng)
             if dist > args.threshold:
-                mismatches.append({
-                    "id": r["id"], "name": r["name"], "city": r["city"],
-                    "old": (r["lat"], r["lng"]), "new": (a_lat, a_lng),
-                    "matched": matched, "dist": dist,
-                })
+                mismatches.append(
+                    {
+                        "id": r["id"],
+                        "name": r["name"],
+                        "city": r["city"],
+                        "old": (r["lat"], r["lng"]),
+                        "new": (a_lat, a_lng),
+                        "matched": matched,
+                        "dist": dist,
+                    }
+                )
 
     if not mismatches:
-        print(f"No coordinate mismatches > {args.threshold} km. "
-              f"({no_match} POIs had no AMap match.)")
+        print(
+            f"No coordinate mismatches > {args.threshold} km. ({no_match} POIs had no AMap match.)"
+        )
         return
 
     mismatches.sort(key=lambda m: m["dist"], reverse=True)
-    print(f"Found {len(mismatches)} suspicious coordinates "
-          f"({no_match} POIs had no AMap match):\n")
+    print(f"Found {len(mismatches)} suspicious coordinates ({no_match} POIs had no AMap match):\n")
     for m in mismatches:
         print(f"  [{m['dist']:6.1f} km] {m['city']} · {m['name']}")
-        print(f"      stored: {m['old'][0]:.5f},{m['old'][1]:.5f}  "
-              f"→ AMap: {m['new'][0]:.5f},{m['new'][1]:.5f}  (matched: {m['matched']})")
+        print(
+            f"      stored: {m['old'][0]:.5f},{m['old'][1]:.5f}  "
+            f"→ AMap: {m['new'][0]:.5f},{m['new'][1]:.5f}  (matched: {m['matched']})"
+        )
 
     if not args.apply:
-        print(f"\nDRY-RUN: {len(mismatches)} rows would be corrected. "
-              f"Re-run with --apply to write them.")
+        print(
+            f"\nDRY-RUN: {len(mismatches)} rows would be corrected. "
+            f"Re-run with --apply to write them."
+        )
         return
 
     async with async_session_maker() as db:

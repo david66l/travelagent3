@@ -31,7 +31,9 @@ def upgrade() -> None:
         sa.Column("avoided_foods", sa.ARRAY(sa.Text()), nullable=False, server_default="{}"),
         sa.Column("avg_daily_budget", sa.Numeric(10, 2), nullable=True),
         sa.Column("trip_count", sa.Integer(), nullable=False, server_default="0"),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+        ),
     )
     op.create_index("ix_profile_vectors_updated", "user_profile_vectors", ["updated_at"])
 

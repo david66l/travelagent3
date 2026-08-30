@@ -13,6 +13,7 @@ celery_app = Celery(
         "worker.planning_tasks",
         "worker.cache_tasks",
         "worker.dlq_tasks",
+        "worker.shadow_tasks",
     ],
 )
 
@@ -35,6 +36,12 @@ celery_app.conf.update(
         "worker.planning_tasks.execute_planning_job": {
             "queue": settings.celery_planning_queue,
         },
+        "worker.planning_tasks.redispatch_pending_planning_jobs": {
+            "queue": settings.celery_planning_queue,
+        },
+        "worker.shadow_tasks.execute_agent_shadow": {
+            "queue": settings.celery_shadow_queue,
+        },
         "worker.memory_tasks.archive_session": {
             "queue": settings.celery_memory_queue,
         },
@@ -55,6 +62,10 @@ celery_app.conf.update(
         },
     },
     beat_schedule={
+        "redispatch-pending-planning-jobs": {
+            "task": "worker.planning_tasks.redispatch_pending_planning_jobs",
+            "schedule": 30.0,
+        },
         "archive-active-sessions": {
             "task": "worker.memory_tasks.archive_active_sessions",
             "schedule": 300.0,  # every 5 minutes (PRD)

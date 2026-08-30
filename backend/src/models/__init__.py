@@ -1,8 +1,6 @@
 """SQLAlchemy ORM models aligned with PRD_AI全栈高并发改造."""
 
 import uuid
-from datetime import datetime
-
 from sqlalchemy import (
     Column,
     String,
@@ -18,6 +16,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
 from core.database import Base
+from core.clock import utc_now_naive
 
 
 def _uuid_str() -> str:
@@ -43,11 +42,11 @@ class User(Base):
         default="guest",
         index=True,
     )  # guest / user / admin
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now_naive, nullable=False)
     updated_at = Column(
         DateTime,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        default=utc_now_naive,
+        onupdate=utc_now_naive,
         nullable=False,
     )
 
@@ -72,8 +71,8 @@ class UserProfile(Base):
     frequent_destinations = Column(JSON, default=list, nullable=False)
     updated_at = Column(
         DateTime,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        default=utc_now_naive,
+        onupdate=utc_now_naive,
         nullable=False,
     )
 
@@ -104,11 +103,11 @@ class Conversation(Base):
         index=True,
     )  # active / archived / deleted
     state_snapshot = Column(JSON, default=dict, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now_naive, nullable=False)
     updated_at = Column(
         DateTime,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        default=utc_now_naive,
+        onupdate=utc_now_naive,
         nullable=False,
     )
     archived_at = Column(DateTime, nullable=True)
@@ -145,7 +144,7 @@ class Message(Base):
     content = Column(Text, nullable=False)
     token_count = Column(Integer, default=0, nullable=False)
     metadata_ = Column("metadata", JSON, default=dict, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now_naive, nullable=False)
 
     conversation = relationship("Conversation", back_populates="messages")
 
@@ -185,11 +184,11 @@ class Itinerary(Base):
     content = Column(JSON, default=dict, nullable=False)
     proposal_text = Column(Text, nullable=True)
     is_favorite = Column(Boolean, default=False, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now_naive, nullable=False)
     updated_at = Column(
         DateTime,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        default=utc_now_naive,
+        onupdate=utc_now_naive,
         nullable=False,
     )
 
@@ -204,6 +203,7 @@ class Itinerary(Base):
 # register them with Base metadata. These tables already exist in migrations
 # but were missing from ORM, which caused alembic autogenerate to drop them.
 from models.attraction import Attraction  # noqa: E402, F401
+from models.agentic_evaluation import AgenticEvaluationRecord  # noqa: E402, F401
 from models.city_info import CityInfo  # noqa: E402, F401
 from models.data_audit_log import DataAuditLog  # noqa: E402, F401
 from models.dead_letter_archive import DeadLetterArchive  # noqa: E402, F401
@@ -239,4 +239,5 @@ __all__ = [
     "UserTripHistory",
     "PlanningLog",
     "UserModificationLog",
+    "AgenticEvaluationRecord",
 ]

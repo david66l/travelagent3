@@ -8,6 +8,8 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from agentic.environment import EnvironmentRollout
+from agentic.reward import EpisodeReward, TurnReward
+from agentic.trajectory import AgentEpisode
 
 
 class GRPOGroupConfig(BaseModel):
@@ -133,3 +135,163 @@ class GRPOGroupAuditor:
             rejection_codes=sorted(errors),
             advantages=advantages,
         )
+
+
+class CurriculumSamplingDecision(BaseModel):
+    task_id: str
+    priority: float = Field(ge=0)
+    reason: str
+
+
+def model_aware_curriculum(
+    decisions: list[GRPOGroupDecision | dict],
+) -> list[CurriculumSamplingDecision]:
+    """Rank tasks by learnability, uncertainty and useful group variance.
+
+    Learnable mixed-outcome tasks receive the highest priority. All-success
+    tasks remain evaluation anchors; all-failure tasks return to SFT repair and
+    never consume GRPO updates merely because they look difficult.
+    """
+    parsed = [
+        item if isinstance(item, GRPOGroupDecision) else GRPOGroupDecision(**item)
+        for item in decisions
+    ]
+    ranked: list[CurriculumSamplingDecision] = []
+    for item in parsed:
+        uncertainty = 1.0 - abs(0.5 - item.success_rate) * 2
+        if item.route == "grpo_update":
+            priority = 1.0 + uncertainty + min(1.0, item.reward_std)
+            reason = "learnable_nonzero_variance"
+        elif item.route == "sft_repair":
+            priority = 0.2
+            reason = "route_to_sft_repair"
+        elif item.route == "evaluation":
+            priority = 0.1
+            reason = "retain_as_evaluation_anchor"
+        else:
+            priority = 0.0
+            reason = "invalid_group"
+        ranked.append(
+            CurriculumSamplingDecision(
+                task_id=item.task_id,
+                priority=round(priority, 6),
+                reason=reason,
+            )
+        )
+    return sorted(ranked, key=lambda item: (-item.priority, item.task_id))
+
+
+def return_to_go_credit(
+    reward: EpisodeReward | dict,
+    *,
+    gamma: float = 1.0,
+) -> list[float]:
+    """R1 research baseline: combine local signals with discounted terminal credit.
+
+    This is exported as an explicit comparison signal; it is not mislabeled as
+    the trajectory-level B0 objective used by the stock TRL trainer.
+    """
+    parsed = reward if isinstance(reward, EpisodeReward) else EpisodeReward(**reward)
+    if not 0 < gamma <= 1:
+        raise ValueError("gamma must be in (0, 1]")
+    total_steps = len(parsed.turn_rewards)
+    credits: list[float] = []
+    for index, turn in enumerate(parsed.turn_rewards):
+        local = (turn.format + turn.tool + turn.grounding + turn.efficiency) / 4
+        distance = total_steps - index - 1
+        value = 0.5 * local + 0.5 * (gamma**distance) * parsed.episode_reward
+        credits.append(round(max(-1.0, min(1.0, value)), 6))
+    return credits
+
+
+def policy_return_to_go_credit(
+    reward: EpisodeReward | dict,
+    episode: AgentEpisode | dict,
+    *,
+    gamma: float = 1.0,
+) -> list[float]:
+    """Return validity-gated credits over model decisions only.
+
+    Discount distance is measured in policy decisions, never controller or
+    tool-observation steps. Invalid model actions are fixed negative and legal
+    calls that encounter an environment failure are neutral. Only valid turns
+    may inherit verified terminal outcome credit.
+    """
+    return [item.credit for item in policy_turn_credit_records(reward, episode, gamma=gamma)]
+
+
+class PolicyTurnCredit(BaseModel):
+    step_index: int = Field(ge=0)
+    validity: Literal["invalid", "external_failure", "valid"]
+    future_credit_eligible: bool
+    local_reward: float = Field(ge=-1, le=1)
+    terminal_distance: int = Field(ge=0)
+    credit: float = Field(ge=-1, le=1)
+
+
+def policy_turn_credit_records(
+    reward: EpisodeReward | dict,
+    episode: AgentEpisode | dict,
+    *,
+    gamma: float = 1.0,
+) -> list[PolicyTurnCredit]:
+    """Build auditable R1-v2 credit facts for model-owned turns."""
+    parsed_reward = reward if isinstance(reward, EpisodeReward) else EpisodeReward(**reward)
+    parsed_episode = episode if isinstance(episode, AgentEpisode) else AgentEpisode(**episode)
+    if not 0 < gamma <= 1:
+        raise ValueError("gamma must be in (0, 1]")
+    if len(parsed_reward.turn_rewards) != len(parsed_episode.steps):
+        raise ValueError("turn rewards must align with episode steps")
+    policy_turns = [
+        turn
+        for turn, step in zip(parsed_reward.turn_rewards, parsed_episode.steps, strict=True)
+        if step.action.decision_source != "controller"
+    ]
+    records: list[PolicyTurnCredit] = []
+    total_policy_turns = len(policy_turns)
+    for policy_index, turn in enumerate(policy_turns):
+        local = _local_turn_reward(turn)
+        validity = _effective_turn_validity(turn)
+        distance = total_policy_turns - policy_index - 1
+        if validity == "invalid":
+            value = -1.0
+        elif validity == "external_failure":
+            value = 0.0
+        else:
+            value = 0.5 * local + 0.5 * (gamma**distance) * parsed_reward.episode_reward
+        records.append(
+            PolicyTurnCredit(
+                step_index=turn.step_index,
+                validity=validity,
+                future_credit_eligible=validity == "valid",
+                local_reward=round(local, 6),
+                terminal_distance=distance,
+                credit=round(max(-1.0, min(1.0, value)), 6),
+            )
+        )
+    return records
+
+
+def _local_turn_reward(turn: TurnReward) -> float:
+    return (turn.format + turn.tool + turn.grounding + turn.efficiency) / 4
+
+
+def _effective_turn_validity(
+    turn: TurnReward,
+) -> Literal["invalid", "external_failure", "valid"]:
+    # Old persisted reports predate explicit validity fields. Reconstruct the
+    # conservative gate from their process facts so replay remains safe.
+    if (
+        turn.validity == "invalid"
+        or turn.format < 0
+        or turn.grounding < 0
+        or "INVALID_MODEL_ACTION" in turn.signals
+    ):
+        return "invalid"
+    if (
+        turn.validity == "external_failure"
+        or "EXTERNAL_FAILURE" in turn.signals
+        or "TOOL_FAILED" in turn.signals
+    ):
+        return "external_failure"
+    return "valid"

@@ -4,15 +4,17 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import sys
 import threading
 import time
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Any, Coroutine, Optional, TypeVar, cast
 
 from celery import signals
 from sqlalchemy import select
 
 from core.celery_app import celery_app
+from core.clock import utc_now_naive
 from core.database import async_session_maker
 from core.memory import WARM_SUFFIX, memory_manager
 from core.redis_client import redis_client
@@ -31,10 +33,17 @@ _worker_loop_thread: Optional[threading.Thread] = None
 _loop_ready = threading.Event()
 
 
+def _new_worker_event_loop() -> asyncio.AbstractEventLoop:
+    """Create a psycopg-compatible loop on every supported platform."""
+    if sys.platform == "win32":
+        return asyncio.SelectorEventLoop()
+    return asyncio.new_event_loop()
+
+
 def _start_worker_loop() -> None:
     """Background thread entry point that owns the worker event loop."""
     global _worker_loop
-    loop = asyncio.new_event_loop()
+    loop = _new_worker_event_loop()
     _worker_loop = loop
     _loop_ready.set()
     loop.run_forever()
@@ -63,6 +72,26 @@ def shutdown_worker_process(**kwargs: Any) -> None:
     global _worker_loop, _worker_loop_thread
     loop = _worker_loop
     if loop is not None and loop.is_running():
+
+        async def _close_resources() -> None:
+            from core.database import engine
+            from worker.planning_tasks import close_worker_graph
+
+            results = await asyncio.gather(
+                close_worker_graph(),
+                redis_client.disconnect(),
+                engine.dispose(),
+                return_exceptions=True,
+            )
+            for result in results:
+                if isinstance(result, BaseException):
+                    logger.warning("Celery async resource shutdown failed: %s", result)
+
+        try:
+            future = asyncio.run_coroutine_threadsafe(_close_resources(), loop)
+            future.result(timeout=5)
+        except Exception as exc:
+            logger.warning("Celery resource shutdown timed out or failed: %s", exc)
         loop.call_soon_threadsafe(loop.stop)
     if _worker_loop_thread is not None:
         _worker_loop_thread.join(timeout=5)
@@ -96,6 +125,9 @@ def _run_async(coro: Coroutine[Any, Any, _T]) -> _T:
     if loop is not None and loop.is_running():
         future = asyncio.run_coroutine_threadsafe(coro, loop)
         return future.result()
+    if sys.platform == "win32":
+        with asyncio.Runner(loop_factory=asyncio.SelectorEventLoop) as runner:
+            return runner.run(coro)
     return asyncio.run(coro)
 
 
@@ -228,7 +260,7 @@ def cleanup_expired_memories(self: Any) -> dict[str, int]:
 
     async def _cleanup() -> dict[str, int]:
         nonlocal compressed
-        cutoff = datetime.utcnow() - timedelta(days=COMPRESS_AGE_DAYS)
+        cutoff = utc_now_naive() - timedelta(days=COMPRESS_AGE_DAYS)
         async with async_session_maker() as db:
             result = await db.execute(select(Conversation).where(Conversation.updated_at < cutoff))
             for conv in result.scalars():
@@ -236,7 +268,7 @@ def cleanup_expired_memories(self: Any) -> dict[str, int]:
                 if snapshot.get("_compressed"):
                     continue
                 conv.state_snapshot = memory_manager.compress_snapshot(snapshot)
-                conv.archived_at = conv.archived_at or datetime.utcnow()
+                conv.archived_at = conv.archived_at or utc_now_naive()
                 compressed += 1
             await db.commit()
         return {"compressed": compressed}

@@ -6,7 +6,7 @@ import base64
 import io
 import logging
 
-import fitz  # PyMuPDF
+import pymupdf as fitz
 
 from perception.types import AttachmentMeta
 

@@ -42,15 +42,17 @@ def route_after_profile(state: dict[str, Any]) -> str | list[str]:
     return ["retrieve", "weather_check"]
 
 
-def route_after_agent_loop(state: dict[str, Any]) -> str | list[str]:
-    """Use a validated Agent draft, otherwise fail safely to the legacy path."""
+def route_after_agent_loop(state: dict[str, Any]) -> str:
+    """Checkpoint every Agent batch and never hide failure with a second planner."""
+    if state.get("agent_status") == "running":
+        return "agent_loop"
     if state.get("agent_status") == "awaiting_information":
         return "output"
     if state.get("agent_status") in {"awaiting_confirmation", "finished"} and state.get(
         "itinerary"
     ):
         return "output"
-    return ["retrieve", "weather_check"]
+    return "output"
 
 
 def route_after_retrieve(state: dict[str, Any]) -> str:
@@ -68,6 +70,10 @@ def route_after_confirm_gate(state: dict[str, Any]) -> str:
     decision = state.get("confirm_decision")
     if decision == "modify":
         return "apply_single_change"
+    if decision == "reject_needs_reason":
+        return "output"
+    if decision == "reject_with_reason":
+        return "agent_loop"
     if decision is None:
         return "plan"  # reject → re-solve a fresh draft
     return "tool_call"  # confirm → deep enrichment
@@ -82,7 +88,7 @@ def route_after_apply_change(state: dict[str, Any]) -> str:
 
 def route_after_tool_call(state: dict[str, Any]) -> str:
     """After tool execution: proceed to fact check."""
-    if state.get("next_action") == "clarify":
+    if state.get("next_action") in {"clarify", "agent_error"}:
         return "output"
     return "factcheck"
 
@@ -93,7 +99,7 @@ def route_after_factcheck(state: dict[str, Any]) -> str:
     ``next_action == "planner"`` means the factcheck node decided a replan is
     worthwhile (conflicts found and loop budget not exhausted).
     """
-    if state.get("next_action") == "clarify":
+    if state.get("next_action") in {"clarify", "agent_error"}:
         return "output"
     if state.get("next_action") == "planner":
         return "plan"
@@ -110,7 +116,7 @@ def route_after_hallucination(state: dict[str, Any]) -> str:
 def route_after_output(state: dict[str, Any]) -> str:
     """After output: pause drafts for HITL; finalize only confirmed plans."""
     next_action = state.get("next_action", "")
-    if next_action in ("clarify", "respond", "infeasible"):
+    if next_action in ("clarify", "respond", "infeasible", "agent_error"):
         return "__end__"
     if next_action == "agent_draft":
         return "confirm_gate"

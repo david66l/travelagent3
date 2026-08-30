@@ -26,10 +26,13 @@ spec:
         prometheus.io/path: "/metrics"
     spec:
       # QoS Guaranteed where requests == limits (PRD §12.2)
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: gateway
-          image: ghcr.io/travelagent/travel-agent-gateway:latest
-          imagePullPolicy: Always
+          image: ghcr.io/travelagent/travel-agent-gateway:git-sha-required
+          imagePullPolicy: IfNotPresent
           ports:
             - name: http
               containerPort: 8080
@@ -81,7 +84,7 @@ spec:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             runAsNonRoot: true
-            runAsUser: 65534
+            runAsUser: 10001
             capabilities:
               drop:
                 - ALL

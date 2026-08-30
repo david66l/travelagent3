@@ -1,0 +1,43 @@
+{
+  "schema_version": "agent-policy-sft-abort-repair-experiment.v1",
+  "dataset": "ml/agentic/datasets/stage2-sft-v3-abort-balanced-v1",
+  "dataset_version": "sft-abort-calibrated-940f47d855f3495b",
+  "initial_checkpoint": "ml/agentic/checkpoints/stage2-sft-v2-lr8e6",
+  "goal": "learn abort versus propose_tradeoff from actionable_alternatives without regressing search and recovery",
+  "training": {
+    "id": "stage2-sft-v3-abort-balanced-lr3e6-steps240",
+    "learning_rate": 0.000003,
+    "max_steps": 240,
+    "gradient_accumulation": 4,
+    "max_train_examples": 0,
+    "max_eval_examples": 128,
+    "termination_token_weight": 1.0,
+    "warmup_ratio": 0.05,
+    "max_grad_norm": 1.0,
+    "logging_steps": 10,
+    "eval_steps": 40,
+    "save_steps": 40,
+    "save_total_limit": 6,
+    "seed": 42
+  },
+  "checkpoint_screen": {
+    "steps": [40, 80, 120, 160, 200, 240],
+    "selection": "earliest checkpoint that passes every gate",
+    "decision_boundary_gate": {
+      "necessary_abort_minimum": 0.85,
+      "semantic_clarification_minimum": 1.0,
+      "actionable_tradeoff_minimum": 1.0,
+      "terminal_injection_minimum": 1.0
+    },
+    "search_recovery_regression_gate": {
+      "full_trajectory_success_minimum": 0.98,
+      "policy_argument_error_rate_maximum": 0.01
+    }
+  },
+  "optimization_rationale": {
+    "single_low_learning_rate_run": "continue from the current champion instead of repeating a broad LR sweep",
+    "multi_checkpoint_screen": "measure when abort improves before later steps can overfit toward termination",
+    "mixed_curriculum": "retain all prior search, recovery, clarification and tradeoff anchors",
+    "no_dpo_or_grpo_yet": "the current 10.94 percent abort success indicates a missing supervised rule, not a preference-only error"
+  }
+}

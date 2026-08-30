@@ -101,8 +101,7 @@ def build_graph(checkpointer: Optional[Any] = None) -> StateGraph:
         "agent_loop",
         route_after_agent_loop,
         {
-            "retrieve": "retrieve",
-            "weather_check": "weather_check",
+            "agent_loop": "agent_loop",
             "output": "output",
         },
     )
@@ -132,6 +131,8 @@ def build_graph(checkpointer: Optional[Any] = None) -> StateGraph:
             "tool_call": "tool_call",
             "apply_single_change": "apply_single_change",
             "plan": "plan",
+            "agent_loop": "agent_loop",
+            "output": "output",
         },
     )
 

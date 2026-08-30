@@ -139,13 +139,13 @@ class Tool(ABC):
             pass
 
     async def _acquire_cache_lock(self, cache_key: str):
-        """Return lock instance if acquired, else None."""
-        lock = redis_client.lock(f"cache_lock:{cache_key}", ttl=30, blocking_timeout=5)
+        """Return a lock when available; caching must never be a hard dependency."""
         try:
+            lock = redis_client.lock(f"cache_lock:{cache_key}", ttl=30, blocking_timeout=5)
             if await lock.acquire():
                 return lock
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("cache lock unavailable for %s: %s", cache_key, exc)
         return None
 
     async def _release_cache_lock(self, lock) -> None:

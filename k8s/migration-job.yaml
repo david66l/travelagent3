@@ -1,0 +1,61 @@
+# One database migration per ArgoCD sync. Running Alembic as an initContainer
+# on every API replica creates a migration race during rolling deployments.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: travel-agent-db-migration
+  namespace: travel-agent
+  annotations:
+    # Datastores/config are wave -2; application workloads use the default
+    # wave 0. The migration therefore runs exactly once between them.
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/sync-wave: "-1"
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        app: database-migration
+    spec:
+      restartPolicy: Never
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: alembic
+          image: ghcr.io/travelagent/travel-agent-backend:git-sha-required
+          imagePullPolicy: IfNotPresent
+          command: ["alembic", "upgrade", "head"]
+          envFrom:
+            - configMapRef:
+                name: travel-agent-config
+            - secretRef:
+                name: travel-agent-secrets
+          env:
+            - name: PYTHONPATH
+              value: "/app/src"
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 999
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+      volumes:
+        - name: tmp
+          emptyDir: {}

@@ -36,3 +36,15 @@ class TestHealthExtensions:
         assert response.status_code == 200
         data = response.json()
         assert data["congested"] is False
+
+    def test_readiness_failure_is_sanitized(self, client):
+        with patch(
+            "api.health.redis_client._client.ping",
+            new=AsyncMock(side_effect=ConnectionError("redis://user:secret@internal:6379")),
+        ):
+            response = client.get("/api/ready")
+
+        assert response.status_code == 503
+        data = response.json()
+        assert data["redis"] == "unavailable"
+        assert "secret" not in response.text

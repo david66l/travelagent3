@@ -1,0 +1,12 @@
+# Offline-reproducible Stage33 application layer on the validated Stage31 image.
+FROM travelagent2-backend:stage31
+
+USER root
+
+COPY --chown=appuser:appgroup src/ /app/src/
+COPY --chown=appuser:appgroup scripts/ /app/scripts/
+
+LABEL org.opencontainers.image.title="TravelAgent2 Backend Stage33"
+LABEL org.opencontainers.image.description="Stage33 champion/challenger Shadow runtime"
+
+USER appuser

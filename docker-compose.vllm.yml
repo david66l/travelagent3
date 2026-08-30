@@ -5,22 +5,20 @@
 services:
   vllm:
     profiles: ["vllm"]
-    image: vllm/vllm-openai:latest
+    image: vllm/vllm-openai:v0.9.2
     container_name: travel_agent_vllm
     command:
       - --model
-      - meta-llama/Llama-3.2-3B-Instruct
+      - Qwen/Qwen2.5-14B-Instruct
+      - --served-model-name
+      - Qwen2.5-14B-Instruct
       - --host
       - "0.0.0.0"
       - --port
       - "8000"
-      - --enable-lora
-      - --lora-modules
-      - travel-chat-v1=/adapters/travel-chat-v1
-      - travel-plan-v1=/adapters/travel-plan-v1
-      - travel-repair-v1=/adapters/travel-repair-v1
-    volumes:
-      - ./ml/adapters:/adapters:ro
+      - --enable-auto-tool-choice
+      - --tool-call-parser
+      - hermes
     ports:
       - "8001:8000"
     networks:

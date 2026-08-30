@@ -1,0 +1,21 @@
+# Offline-reproducible Stage31 application layer.
+#
+# The dependency base is the already validated local Backend image. This file
+# exists because Docker Hub authentication is unavailable on the current IPv6
+# route; it never downloads or changes dependencies. Rebuild the canonical
+# multi-stage Dockerfile once registry access is restored.
+FROM travelagent2-backend:latest
+
+USER root
+
+COPY --chown=appuser:appgroup src/ /app/src/
+COPY --chown=appuser:appgroup data/ /app/data/
+COPY --chown=appuser:appgroup seed_data/ /app/seed_data/
+COPY --chown=appuser:appgroup alembic.ini /app/alembic.ini
+COPY --chown=appuser:appgroup migrations/ /app/migrations/
+COPY --chown=appuser:appgroup scripts/ /app/scripts/
+
+LABEL org.opencontainers.image.title="TravelAgent2 Backend Stage31"
+LABEL org.opencontainers.image.description="Stage31 immutable app layer on the validated local dependency base"
+
+USER appuser

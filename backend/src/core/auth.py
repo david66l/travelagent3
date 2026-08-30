@@ -20,12 +20,15 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Optional
+
+from core.clock import utc_now_naive
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import JWTError, jwt
+import jwt
+from jwt.exceptions import InvalidTokenError
 
 from core.settings import settings
 
@@ -71,7 +74,7 @@ def create_access_token(
     expires_delta: Optional[timedelta] = None,
 ) -> str:
     """Create a short-lived access token."""
-    now = datetime.utcnow()
+    now = utc_now_naive()
     expire = now + (expires_delta or timedelta(minutes=settings.access_token_expire_minutes))
     return jwt.encode(
         {
@@ -88,7 +91,7 @@ def create_access_token(
 
 def create_refresh_token(sub: str, role: str = "user") -> str:
     """Create a long-lived refresh token."""
-    now = datetime.utcnow()
+    now = utc_now_naive()
     expire = now + timedelta(days=settings.refresh_token_expire_days)
     return jwt.encode(
         {
@@ -106,7 +109,7 @@ def create_refresh_token(sub: str, role: str = "user") -> str:
 
 def create_guest_token(session_id: str) -> str:
     """Create a guest token (24h lifetime, no login required)."""
-    now = datetime.utcnow()
+    now = utc_now_naive()
     expire = now + timedelta(hours=settings.guest_token_expire_hours)
     return jwt.encode(
         {
@@ -192,7 +195,7 @@ def _decode_token(token: str) -> TokenPayload:
             settings.jwt_secret,
             algorithms=[settings.jwt_algorithm],
         )
-    except JWTError:
+    except InvalidTokenError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",

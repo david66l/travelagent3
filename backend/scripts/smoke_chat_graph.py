@@ -32,7 +32,9 @@ def post_message(token: str, fingerprint: str, conversation_id: str, content: st
     print(f"[OK] message '{content[:40]}...' status: {r.status_code}")
 
 
-def stream_events(token: str, fingerprint: str, conversation_id: str, max_time: float = 180.0) -> list[dict]:
+def stream_events(
+    token: str, fingerprint: str, conversation_id: str, max_time: float = 180.0
+) -> list[dict]:
     print("[INFO] streaming events...")
     response = requests.get(
         f"{BASE}/api/v1/chat/stream",
@@ -140,7 +142,7 @@ def main() -> int:
             (e.get("questions", []) for e in events if e.get("type") == "needs_clarification"),
             [],
         )
-        print(f"[INFO] turn {i+1} clarification requested: {questions}")
+        print(f"[INFO] turn {i + 1} clarification requested: {questions}")
 
     content, urls = extract_result(all_events)
 

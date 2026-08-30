@@ -1,0 +1,312 @@
+{
+  "schema_version": "career-claim-evidence-ledger.v1",
+  "project": "TravelAgent2",
+  "target_position": "大模型应用算法 / Agent 后训练工程师（默认口径，待按具体 JD 调整）",
+  "intended_channel": "竞赛经历、技术简历、项目答辩与面试",
+  "generated_at": "2026-08-21",
+  "rules": [
+    "只使用仓库代码、冻结报告、模型卡、数据卡和工作日志能够支撑的技术与指标",
+    "模拟授权回放不得描述为真实用户、线上流量或商业化结果",
+    "顺序模型回放不得描述为单卡双模型同时在线吞吐",
+    "个人职责已经本人确认；获奖、排名和真实用户量仍不得在无证据时陈述",
+    "历史 Qwen2.5-3B GRPO 与后续 Qwen3 结果不做跨协议排名"
+  ],
+  "resume_candidate_set": {
+    "status": "rewritten_for_agent_posttraining_role",
+    "version": "2026-08-21-v4-compact",
+    "claims_used": [
+      "C001",
+      "C002",
+      "C003",
+      "C004",
+      "C005",
+      "C006",
+      "C007",
+      "C008",
+      "C010"
+    ],
+    "boundary_notes": [
+      "300 条请求必须写为生产格式模拟回放",
+      "150 条评测必须写为冻结工程评测",
+      "DPO v2 只写修复退化，不写显著优于 SFT",
+      "Stage36 只写晋级 5% Shadow 候选",
+      "Qwen2.5-3B GRPO 与 Qwen3 主线分开陈述",
+      "一页 Agent 应用简历默认使用五条精简版；GRPO 仅在后训练/RL 岗位替换工程化条目"
+    ],
+    "source": "docs/interview/TravelAgent_竞赛经历与面试讲解稿.md#七asu-简历版本"
+  },
+  "claims": [
+    {
+      "id": "C001",
+      "claim": "TravelAgent 是一个面向复杂约束旅行规划的可训练、可验证、可恢复 Agent，而不是让通用大模型直接生成攻略。",
+      "status": "verified",
+      "strength": "high",
+      "evidence": [
+        "README.md",
+        "docs/ARCHITECTURE.md",
+        "backend/src/graph/graph.py",
+        "backend/src/agentic/loop.py",
+        "backend/src/agentic/verifier.py",
+        "backend/src/vrp_solver_service/solver.py"
+      ],
+      "interview_boundary": "模型负责有界工具决策，确定性工具、CP-SAT 求解器和验证器负责事实与硬约束。"
+    },
+    {
+      "id": "C002",
+      "claim": "系统采用 PostgreSQL 持久任务/事件、Celery 异步执行、LangGraph 编排和 SSE 断线重放的可靠规划链路。",
+      "status": "verified_in_code",
+      "strength": "medium",
+      "evidence": [
+        "docs/ARCHITECTURE.md",
+        "backend/src/api/v1/chat.py",
+        "backend/src/models/planning_job.py",
+        "backend/src/worker/planning_worker.py",
+        "backend/src/repositories/planning_job.py"
+      ],
+      "interview_boundary": "代码和定向测试已验证；最近一次本地环境没有可用 Docker daemon，未完成这一版的真实 PostgreSQL/Redis 全链路复测。"
+    },
+    {
+      "id": "C003",
+      "claim": "四人团队中担任核心开发者，负责除前端外的大部分技术工作，包括 Agent 链路、CP-SAT 求解、模型蒸馏微调训练、记忆与上下文设计以及部署监控。",
+      "status": "confirmed_by_owner",
+      "strength": "high",
+      "evidence": [
+        "用户于 2026-08-21 在当前任务中明确确认团队规模和个人职责边界",
+        "Git 历史主要由同一邮箱的两个作者名提交",
+        "docs/worklogs",
+        "仓库中对应训练、评测、路由和运行时代码"
+      ],
+      "interview_boundary": "可以写四人团队核心开发者和上述职责；前端由队友负责，不将前端设计与实现计入个人贡献。"
+    },
+    {
+      "id": "C004",
+      "claim": "构建 4B/8B 多教师、验证器裁决的行为蒸馏流水线，将高频工具决策压缩到 Qwen3-1.7B。",
+      "status": "verified",
+      "strength": "high",
+      "evidence": [
+        "docs/TravelAgent_Stage32_模型卡与数据卡_v1.0.md",
+        "ml/agentic/reports/stage32-cascade-distillation-final-v1/report.json",
+        "backend/src/agentic/distillation.py"
+      ],
+      "metrics": {
+        "pilot_tasks": 192,
+        "candidate_rollouts": 768,
+        "accepted_tasks": 161,
+        "teacher_4b_chosen": 98,
+        "teacher_8b_chosen": 63,
+        "formal_sft_examples": 1443,
+        "preference_pairs": 1091,
+        "frozen_overlap": 0
+      },
+      "interview_boundary": "这是多教师候选生成 + verifier 选择的行为蒸馏，不是 logits 蒸馏。"
+    },
+    {
+      "id": "C005",
+      "claim": "在 150 题冻结外部模型评测上，1.7B SFT 将模型裸能力从 Base 的 106/150 提升到 135/150，修正版 DPO 达到 137/150。",
+      "status": "verified",
+      "strength": "high",
+      "evidence": [
+        "docs/TravelAgent_Stage32_模型卡与数据卡_v1.0.md",
+        "ml/agentic/reports/stage32-cascade-distillation-final-v1/report.json"
+      ],
+      "metrics": {
+        "base": "106/150",
+        "sft": "135/150",
+        "dpo_v2": "137/150",
+        "sft_vs_base": "+19.33pp"
+      },
+      "interview_boundary": "DPO 相对 SFT 的 +2/150，McNemar p=0.5，不宣称统计显著提升。"
+    },
+    {
+      "id": "C006",
+      "claim": "定位 TRL/PEFT 中 DPO reference 配置错误：原训练实际以 Base 而非冻结 SFT 为参考，修复显式 ref adapter 后从 104/150、37 次流中断恢复到 137/150、0 HTTP 错误。",
+      "status": "verified",
+      "strength": "high",
+      "evidence": [
+        "docs/TravelAgent_Stage32_模型卡与数据卡_v1.0.md",
+        "docs/worklogs/2026-08-15_阶段32级联蒸馏启动.md",
+        "ml/agentic/training/train_dpo.py"
+      ],
+      "interview_boundary": "可表述为训练故障定位与修复；不能把修复后的 +2/150 包装成显著优于 SFT。"
+    },
+    {
+      "id": "C007",
+      "claim": "针对模型重复输出工具调用的问题，发现普通 DPO 偏好准确率 100% 仍无法修复生成终止边界，改用 EOS 边界加权 SFT 后实现生产契约 150/150、多动作输出 0/150。",
+      "status": "verified",
+      "strength": "high",
+      "evidence": [
+        "ml/agentic/reports/stage35-repeated-call-posttraining-v1/REPORT.md",
+        "ml/agentic/reports/stage36-boundary-sft-promotion-v1/README.md",
+        "ml/agentic/reports/stage36-boundary-sft-promotion-v1/report.json",
+        "docs/worklogs/2026-08-16_阶段36工具调用终止边界SFT.md"
+      ],
+      "metrics": {
+        "training_examples": 240,
+        "termination_token_weight": 16,
+        "raw_label_success": "149/150",
+        "production_contract_success": "150/150",
+        "multiple_action_runs": "0/150",
+        "target_case_stability": "5/5"
+      },
+      "interview_boundary": "150 题是合成冻结难例，不是公开榜单或真人线上结果；Stage36 仅晋级 5% Shadow。"
+    },
+    {
+      "id": "C008",
+      "claim": "在 300 个生产格式模拟授权回放中，Agent 硬通过率 99.33%，相对确定性基线 +1.00pp，兜底率由 38.33% 降至 0.67%。",
+      "status": "verified_with_limitation",
+      "strength": "medium",
+      "evidence": [
+        "ml/agentic/reports/stage33-simulated-users-v1/REPORT.md",
+        "ml/agentic/reports/stage33-simulated-users-v1/report.json"
+      ],
+      "metrics": {
+        "requests": 300,
+        "cities": 20,
+        "agent_hard_pass": "99.33%",
+        "baseline_hard_pass": "98.33%",
+        "agent_fallback": "0.67%",
+        "baseline_fallback": "38.33%",
+        "agent_p95_ms": 13658,
+        "baseline_p95_ms": 15605
+      },
+      "interview_boundary": "必须说模拟用户/授权回放；平均软评分低于基线 0.0379，且不具备 Canary 资格。"
+    },
+    {
+      "id": "C009",
+      "claim": "4B 学生/8B 教师路由在冻结工程 benchmark 上保持 516/516 工具决策和 172/172 多轮任务，教师任务占比 2.33%，相对全量 8B 生成 Token 降低 28.52%、模型请求延迟降低 47.87%。",
+      "status": "verified_with_limitation",
+      "strength": "medium",
+      "evidence": [
+        "ml/agentic/reports/stage24-final-evaluation-v1/REPORT.md",
+        "ml/agentic/reports/stage24-final-evaluation-v1/report.json",
+        "docs/worklogs/2026-08-15_阶段24统一后训练消融与最终评估.md"
+      ],
+      "interview_boundary": "这是顺序模型回放；冻结集为合成工程 benchmark，不能描述为单卡双模型线上实测。"
+    },
+    {
+      "id": "C010",
+      "claim": "在前一代 Qwen2.5-3B 的 32 题 × 4 rollout 同协议实验中，SFT+GRPO-B0 将成功率从 SFT 的 80.47% 提升到 82.81%。",
+      "status": "verified",
+      "strength": "medium",
+      "evidence": [
+        "docs/Qwen2.5-3B_AgentPolicy_正式对照报告.md",
+        "docs/worklogs/2026-08-15_阶段24统一后训练消融与最终评估.md"
+      ],
+      "interview_boundary": "这是 trajectory-level B0 工程基线，不宣称解决 long-horizon 逐轮信用分配，也不与 Qwen3 跨协议比较。"
+    },
+    {
+      "id": "C011",
+      "claim": "项目已在真实用户生产流量中证明商业价值或完成全量上线。",
+      "status": "prohibited",
+      "strength": "high",
+      "evidence": [
+        "Stage33 与 Stage36 报告均明确真实 Shadow/Canary 证据尚未完成"
+      ],
+      "interview_boundary": "只能说完成模拟授权回放、Shadow 接线与 5% Shadow 候选晋级。"
+    },
+    {
+      "id": "C012",
+      "claim": "TravelAgent 是 NVIDIA 第二届 DGX Spark 黑客松的四人团队参赛项目。",
+      "status": "confirmed_by_owner",
+      "strength": "high",
+      "evidence": [
+        "用户于 2026-08-21 在当前任务中明确提供竞赛名称和团队规模"
+      ],
+      "interview_boundary": "可以陈述参赛项目；比赛时间、赛道、最终结果、奖项和排名尚未提供。"
+    },
+    {
+      "id": "C013",
+      "claim": "项目获得 NVIDIA 第二届 DGX Spark 黑客松奖项、具体排名或商业用户量。",
+      "status": "prohibited_until_provided",
+      "strength": "high",
+      "evidence": [],
+      "interview_boundary": "没有最终比赛结果、奖项、排名和真实用户量证据，不得自行补充。"
+    },
+    {
+      "id": "C014",
+      "claim": "在使用同一 DeepSeek-V4-Flash、同一冻结任务与事实快照的 30 对规划组件消融中，纯 Agent Loop 直接生成行程的联合硬通过为 1/30、平均总 Token 28,552；直通型有界策略加 CP-SAT 与 Verifier 为 29/30、平均总 Token 488，相对纯 Agent Token 降低 98.29%、平均延迟降低 96.76%。",
+      "status": "verified_with_limitation",
+      "strength": "medium",
+      "evidence": [
+        "ml/agentic/reports/stage38-pure-agent-vs-verified-final-v1/REPORT.md",
+        "ml/agentic/reports/stage38-pure-agent-vs-verified-final-v1/report.json",
+        "ml/agentic/reports/stage38-pure-agent-vs-verified-final-v1/runs.jsonl",
+        "scripts/benchmark_pure_agent_vs_verified.py",
+        "backend/tests/unit/evaluation/test_pure_agent_vs_verified_benchmark.py"
+      ],
+      "metrics": {
+        "paired_tasks": 30,
+        "covered_cities": 11,
+        "pure_agent_hard_pass": "1/30",
+        "verified_planner_hard_pass": "29/30",
+        "pure_agent_mean_tokens": 28552.13,
+        "verified_planner_mean_tokens": 488.1,
+        "pure_to_verified_token_ratio": "58.50x",
+        "verified_token_reduction": "98.29%",
+        "verified_latency_reduction": "96.76%"
+      },
+      "interview_boundary": "这是规划组件消融，不是仓库真实 run_agent_branch 全链路；必须说明是冻结合成授权回放、DeepSeek-V4-Flash 顺序云端实验和 32k 请求边界软预算，不是真实线上流量；混合组唯一失败来自游玩时长预处理扩张后超过营业窗。"
+    },
+    {
+      "id": "C015",
+      "claim": "在 30 个相同 case_id、同为 DeepSeek-V4-Flash 的顺序回放中，Controller-first 性能模式取得 30/30 硬通过、平均 1 次模型调用和 559.5 LLM Token；相对纯 ReAct 参考 Token 降低 98.04%、平均端到端延迟降低 92.18%。",
+      "status": "verified_with_limitation",
+      "strength": "medium",
+      "evidence": [
+        "ml/agentic/reports/stage39-real-agent-runtime-vs-pure-react-v1/REPORT.md",
+        "ml/agentic/reports/stage39-real-agent-runtime-vs-pure-react-v1/report.json",
+        "ml/agentic/reports/stage39-real-agent-runtime-vs-pure-react-v1/runs.jsonl",
+        "scripts/benchmark_real_agent_runtime.py",
+        "backend/tests/unit/evaluation/test_real_agent_runtime_benchmark.py",
+        "ml/agentic/reports/stage38-pure-agent-vs-verified-final-v1/runs.jsonl"
+      ],
+      "metrics": {
+        "paired_tasks": 30,
+        "covered_cities": 11,
+        "pure_agent_hard_pass": "1/30",
+        "real_agent_runtime_hard_pass": "30/30",
+        "pure_agent_mean_tokens": 28552.13,
+        "real_agent_runtime_mean_tokens": 559.5,
+        "pure_to_actual_token_ratio": "51.03x",
+        "actual_token_reduction": "98.04%",
+        "actual_latency_reduction": "92.18%",
+        "solver_status": "13 optimal, 17 fallback"
+      },
+      "interview_boundary": "该模式由 Controller 代选固定步骤，只能作为工程性能基线，不能宣称模型完成了多步工具决策；两组工具观察也不是逐字节相同。"
+    },
+    {
+      "id": "C016",
+      "claim": "在 30 个相同 case_id、同为 DeepSeek-V4-Flash 的顺序回放中，policy_driven 模式让模型逐步选择所有任务动作，取得 29/30 硬通过；成功任务平均 9 次模型决策、6,030.69 Token。相对纯 ReAct 参考的 1/30、平均 28,552.13 Token，按全样本计算 Token 降低 79.51%、平均端到端延迟降低 70.96%。",
+      "status": "verified_with_limitation",
+      "strength": "medium",
+      "evidence": [
+        "ml/agentic/reports/stage40-policy-driven-runtime-vs-pure-react-v1/REPORT.md",
+        "ml/agentic/reports/stage40-policy-driven-runtime-vs-pure-react-v1/report.json",
+        "ml/agentic/reports/stage40-policy-driven-runtime-vs-pure-react-v1/runs.jsonl",
+        "scripts/benchmark_real_agent_runtime.py",
+        "backend/tests/unit/evaluation/test_real_agent_runtime_benchmark.py",
+        "backend/tests/unit/agentic/test_integration.py"
+      ],
+      "metrics": {
+        "paired_tasks": 30,
+        "covered_cities": 11,
+        "pure_agent_hard_pass": "1/30",
+        "policy_driven_hard_pass": "29/30",
+        "pure_agent_mean_tokens": 28552.13,
+        "policy_driven_mean_tokens_all_tasks": 5850.63,
+        "policy_driven_success_mean_tokens": 6030.69,
+        "policy_driven_success_mean_model_calls": 9.0,
+        "pure_to_policy_driven_token_ratio": "4.88x",
+        "policy_driven_token_reduction": "79.51%",
+        "policy_driven_latency_reduction": "70.96%",
+        "termination_reasons": "29 awaiting_user, 1 budget_exhausted_fallback"
+      },
+      "interview_boundary": "唯一失败是一次 124.35s 尾延迟触发 120s 总预算，不是工具选择或 Verifier 失败；纯 ReAct 使用冻结工具夹具，policy_driven 使用生产工具栈与 PostgreSQL，并非逐观察字节相同；只覆盖信息完整规划任务和顺序回放。"
+    }
+  ],
+  "owner_confirmation_needed": [
+    "竞赛时间、具体赛道和最终结果",
+    "是否获得奖项或排名；若有需提供正式结果",
+    "目标岗位 JD，以便在 Agent 应用、后训练或工程架构三种口径中选择重点"
+  ]
+}

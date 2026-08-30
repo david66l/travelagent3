@@ -163,6 +163,19 @@ def test_fast_failure_does_not_receive_efficiency_reward():
     assert reward.episode_reward < 0
 
 
+def test_infeasible_request_cannot_pass_by_continuing_to_a_validated_plan():
+    episode = _episode()
+    episode.initial_state["goal"]["capability"] = {"status": "infeasible"}
+    episode.final_state["goal"]["capability"] = {"status": "infeasible"}
+    _rehash(episode)
+
+    reward = HierarchicalRewardEngine().score(episode)
+
+    assert reward.gate_status == "task_failed"
+    assert reward.episode_reward <= -0.25
+    assert reward.audit_metrics["capability_termination_mismatch"] is True
+
+
 def test_duplicate_successful_tool_call_is_penalized_without_double_gain():
     episode = _episode()
     duplicate = episode.steps[0].model_copy(deep=True)
@@ -177,6 +190,20 @@ def test_duplicate_successful_tool_call_is_penalized_without_double_gain():
     assert reward.audit_metrics["duplicate_calls"] == 1
     assert reward.turn_rewards[1].efficiency == -1
     assert reward.turn_rewards[1].tool < reward.turn_rewards[0].tool
+
+
+def test_policy_self_repair_is_preserved_as_audit_signal():
+    episode = _episode()
+    episode.steps[0].action.repair_attempts = 1
+    episode.steps[0].action.repair_error_codes = ["ARGUMENT_VALIDATION_FAILED"]
+    _rehash(episode)
+
+    reward = HierarchicalRewardEngine().score(episode)
+
+    assert reward.audit_metrics["policy_repair_attempts"] == 1
+    assert reward.audit_metrics["repaired_decision_steps"] == 1
+    assert reward.turn_rewards[0].policy_repair_attempts == 1
+    assert "POLICY_SELF_REPAIRED" in reward.turn_rewards[0].signals
 
 
 def test_protected_validator_payload_is_treated_as_fact_forgery():
@@ -233,3 +260,99 @@ def test_generated_user_question_is_not_treated_as_ungrounded_tool_argument():
     assert reward.components.task == 1
     assert reward.turn_rewards[0].grounding == 1
     assert reward.gate_status == "passed"
+
+
+def test_needs_user_request_rejects_policy_capability_check_before_clarification():
+    episode = _episode()
+    capability_check = TrajectoryStep(
+        step_index=0,
+        task_id="capability_check",
+        context=_context(episode.trajectory_id, "capability_check", "capability_check"),
+        action=PolicyAction(action="capability_check", arguments={}),
+        observations=[],
+        verification={"task_status": "succeeded", "error_code": None},
+        state_before_hash="before-capability",
+        state_after_hash="after-capability",
+    )
+    capability_check.context.capability = {"status": "needs_user", "evidence": []}
+    capability_check.context.missing_information = ["budget_range"]
+    capability_check.context.allowed_actions = ["capability_check", "ask_user"]
+    question = TrajectoryStep(
+        step_index=1,
+        task_id="capability_check",
+        context=capability_check.context.model_copy(deep=True),
+        action=PolicyAction(action="ask_user", arguments={"question": "budget_range"}),
+        observations=[],
+        verification={"task_status": "blocked", "error_code": None},
+        state_before_hash="after-capability",
+        state_after_hash="after-question",
+    )
+    goal = {
+        "missing_information": ["budget_range"],
+        "capability": {"status": "needs_user"},
+    }
+    episode.steps = [capability_check, question]
+    episode.initial_state = {"goal": goal}
+    episode.final_state = {"goal": goal}
+    episode.status = "interrupted"
+    episode.termination_reason = "awaiting_user"
+    _rehash(episode)
+
+    reward = HierarchicalRewardEngine().score(episode)
+
+    assert reward.gate_status == "task_failed"
+    assert reward.episode_reward <= -0.25
+    assert reward.audit_metrics["needs_user_action_mismatch"] is True
+    assert "NEEDS_USER_CAPABILITY_CHECK_MISMATCH" in reward.gate_reasons
+
+
+def test_legal_retryable_tool_failure_is_not_classified_as_invalid_policy():
+    episode = _episode()
+    failed = episode.steps[0]
+    failed.observations = [
+        ObservationEnvelope.failure(
+            tool=failed.action.action,
+            code="UPSTREAM_TIMEOUT",
+            message="provider timed out",
+            retryable=True,
+            tool_call_id=failed.action.action_id,
+        )
+    ]
+    failed.verification = {
+        "task_status": "ready",
+        "error_code": "UPSTREAM_TIMEOUT",
+    }
+    _rehash(episode)
+
+    reward = HierarchicalRewardEngine().score(episode)
+
+    assert reward.turn_rewards[0].validity == "external_failure"
+    assert reward.turn_rewards[0].future_credit_eligible is False
+    assert "INVALID_MODEL_ACTION" not in reward.turn_rewards[0].signals
+    assert reward.audit_metrics["external_failure_steps"] == 1
+
+
+def test_policy_caused_argument_mismatch_is_invalid_even_if_episode_succeeds():
+    episode = _episode()
+    failed = episode.steps[0]
+    failed.observations = [
+        ObservationEnvelope.failure(
+            tool=failed.action.action,
+            code="SNAPSHOT_ARGUMENT_MISMATCH",
+            message="arguments differ from grounded snapshot",
+            retryable=False,
+            tool_call_id=failed.action.action_id,
+        )
+    ]
+    failed.verification = {
+        "task_status": "failed",
+        "error_code": "SNAPSHOT_ARGUMENT_MISMATCH",
+    }
+    _rehash(episode)
+
+    reward = HierarchicalRewardEngine().score(episode)
+
+    assert reward.turn_rewards[0].validity == "invalid"
+    assert reward.turn_rewards[0].future_credit_eligible is False
+    assert "INVALID_MODEL_ACTION" in reward.turn_rewards[0].signals
+    assert reward.audit_metrics["invalid_model_steps"] == 1

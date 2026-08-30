@@ -4,7 +4,7 @@
 # Image: ghcr.io/travelagent/travel-agent-frontend:latest
 
 # ── Builder stage ──
-FROM node:20-alpine AS builder
+FROM node:24-alpine AS builder
 
 WORKDIR /app
 
@@ -24,9 +24,23 @@ ENV NODE_ENV=production
 RUN npm run build
 
 # ── Production stage ──
-FROM node:20-alpine AS production
+FROM node:24-alpine AS production
 
 WORKDIR /app
+
+# Apply distribution security fixes and remove package-manager tooling that is
+# unnecessary for the immutable runtime image (and otherwise adds vendored
+# packages to the production attack surface).
+RUN apk upgrade --no-cache && \
+    rm -rf /usr/local/lib/node_modules/npm \
+           /usr/local/bin/npm \
+           /usr/local/bin/npx \
+           /usr/local/lib/node_modules/corepack \
+           /usr/local/bin/corepack \
+           /usr/local/bin/pnpm \
+           /usr/local/bin/pnpx \
+           /usr/local/bin/yarn \
+           /usr/local/bin/yarnpkg
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1

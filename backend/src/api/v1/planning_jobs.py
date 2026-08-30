@@ -32,6 +32,9 @@ async def create_planning_job(
         queue_name=body.queue_name,
         input_requirements=body.input_requirements,
     )
+    # The worker must never race the request transaction and claim a row that
+    # has only been flushed locally.
+    await service.commit_created_job()
     enqueue_planning_job(job.id)
     return success_response(
         data=PlanningJobResponse.model_validate(job).model_dump(),

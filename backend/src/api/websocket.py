@@ -65,9 +65,17 @@ async def chat_websocket(websocket: WebSocket, session_id: str) -> None:
                 last_user_id = user_id
                 last_user_role = user_role
                 if msg_type == "modify":
-                    action_payload = {"change": msg.get("change")}
+                    action_payload = {
+                        "change": msg.get("change"),
+                        "approval": msg.get("approval"),
+                    }
                 elif msg_type == "trip_event":
                     action_payload = msg.get("external_event") or {}
+                elif msg_type in {"confirm", "reject"}:
+                    action_payload = {
+                        "reason": msg.get("content") if msg_type == "reject" else None,
+                        "approval": msg.get("approval"),
+                    }
                 else:
                     action_payload = None
                 await process_chat_message(

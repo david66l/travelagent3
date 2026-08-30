@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+
+if [ -x "backend/.venv/Scripts/python.exe" ]; then
+  exec backend/.venv/Scripts/python.exe scripts/check_staged_secrets.py
+fi
+
+exec python scripts/check_staged_secrets.py
