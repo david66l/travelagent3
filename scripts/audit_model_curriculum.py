@@ -111,12 +111,20 @@ def select_boundary_stratified(
 def select_verifier_repair_stratified(
     rows: list[GRPOCorpusRow],
     per_target: int,
+    *,
+    offset_per_target: int = 0,
 ) -> list[GRPOCorpusRow]:
     """Select an equal number of immutable states for each target action."""
     selected: dict[str, list[GRPOCorpusRow]] = defaultdict(list)
+    seen: Counter[str] = Counter()
     for row in rows:
         target = verifier_repair_metadata(row).get("target_action")
-        if isinstance(target, str) and len(selected[target]) < per_target:
+        if not isinstance(target, str):
+            continue
+        if seen[target] < offset_per_target:
+            seen[target] += 1
+            continue
+        if len(selected[target]) < per_target:
             selected[target].append(row)
     return [row for target in sorted(selected) for row in selected[target]]
 
@@ -175,6 +183,7 @@ async def audit(args: argparse.Namespace) -> dict[str, Any]:
         selected = select_verifier_repair_stratified(
             rows,
             args.tasks_per_verifier_repair_target,
+            offset_per_target=args.verifier_repair_target_offset,
         )
     elif args.tasks_per_boundary_cell is not None:
         selected = select_boundary_stratified(rows, args.tasks_per_boundary_cell)
@@ -317,6 +326,7 @@ async def audit(args: argparse.Namespace) -> dict[str, Any]:
             "target_positions": list(args.decision_loop_target_positions or []),
         },
         "requested_verifier_repair_targets": list(args.verifier_repair_targets or []),
+        "verifier_repair_target_offset": args.verifier_repair_target_offset,
         "verifier_repair_targets": dict(
             Counter(
                 str(metadata["target_action"])
@@ -789,6 +799,12 @@ def main() -> int:
         choices=("retry_solve", "propose_tradeoff", "abort"),
         help="Optionally restrict verifier-repair target actions.",
     )
+    parser.add_argument(
+        "--verifier-repair-target-offset",
+        type=int,
+        default=0,
+        help="Skip this many states per verifier-repair target before selection.",
+    )
     parser.add_argument("--group-size", type=int, default=4)
     parser.add_argument("--max-new-tokens", type=int, default=192)
     parser.add_argument("--temperature", type=float, default=0.8)
@@ -842,6 +858,8 @@ def main() -> int:
         parser.error("tasks-per-verifier-repair-target must be positive")
     if args.family_offset < 0:
         parser.error("family-offset must not be negative")
+    if args.verifier_repair_target_offset < 0:
+        parser.error("verifier-repair-target-offset must not be negative")
     if args.group_size < 4:
         parser.error("group-size must be at least 4")
     if args.max_tool_calling_iterations < 1:

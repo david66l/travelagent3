@@ -13,6 +13,7 @@ from scripts.audit_model_curriculum import (
     rollout_trl_history,
     select_boundary_stratified,
     select_stratified,
+    select_verifier_repair_stratified,
     task_family,
 )
 
@@ -86,6 +87,34 @@ def test_stratified_selection_can_be_pre_filtered_to_one_family():
         "clarification-0",
         "clarification-1",
     ]
+
+
+def test_verifier_repair_selection_supports_disjoint_target_offsets():
+    rows = []
+    for target in ("abort", "propose_tradeoff", "retry_solve"):
+        for index in range(4):
+            row = _row("search", index).model_copy(deep=True)
+            row.task.task_id = f"{target}-{index}"
+            row.snapshot.hidden_test_facts["grpo_decision_state"] = {
+                "schema_version": "react-verifier-repair-decision.v1",
+                "target_action": target,
+            }
+            rows.append(row)
+
+    selected = select_verifier_repair_stratified(
+        rows,
+        per_target=2,
+        offset_per_target=2,
+    )
+
+    assert {row.task.task_id for row in selected} == {
+        "abort-2",
+        "abort-3",
+        "propose_tradeoff-2",
+        "propose_tradeoff-3",
+        "retry_solve-2",
+        "retry_solve-3",
+    }
 
 
 def test_boundary_selection_is_balanced_by_status_and_actionability():
