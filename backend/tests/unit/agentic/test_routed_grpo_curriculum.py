@@ -105,3 +105,54 @@ def test_accepts_jsonl_group_decisions_from_offline_reroute(tmp_path: Path):
 
     assert manifest["counts"]["train"] == 2
     assert manifest["audit_routes"] == {"grpo_update": 1, "evaluation": 1}
+
+
+def test_reports_verifier_repair_action_distribution(tmp_path: Path):
+    source = tmp_path / "source"
+    SOURCE_BUILDER.build(
+        source,
+        start_index=99200,
+        train_count=32,
+        validation_count=32,
+        test_count=32,
+    )
+    rows = load_grpo_corpus(source / "train.jsonl")
+    update, evaluation = rows[:2]
+    update.snapshot.hidden_test_facts["grpo_decision_state"] = {
+        "target_action": "propose_tradeoff"
+    }
+    evaluation.snapshot.hidden_test_facts["grpo_decision_state"] = {
+        "target_action": "abort"
+    }
+    (source / "train.jsonl").write_text(
+        "\n".join(
+            json.dumps(row.model_dump(mode="json"), ensure_ascii=False)
+            for row in rows
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    report = tmp_path / "audit.json"
+    report.write_text(
+        json.dumps(
+            {
+                "decisions": [
+                    {"task_id": update.task.task_id, "route": "grpo_update"},
+                    {"task_id": evaluation.task.task_id, "route": "evaluation"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    manifest = ROUTED_BUILDER.build(
+        source,
+        report,
+        tmp_path / "routed",
+        support_per_variant=0,
+        anchor_count=1,
+    )
+
+    assert manifest["train_update_actions"] == {"propose_tradeoff": 1}
+    assert manifest["train_anchor_actions"] == {"abort": 1}
+    assert manifest["train_actions"] == {"abort": 1, "propose_tradeoff": 1}

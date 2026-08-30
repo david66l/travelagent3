@@ -40,6 +40,15 @@ def _metadata(row: GRPOCorpusRow) -> dict[str, Any] | None:
     return value if isinstance(value, dict) else None
 
 
+def _target_action(row: GRPOCorpusRow) -> str | None:
+    """Return the verifier-repair action without inferring it from task ids."""
+    value = row.snapshot.hidden_test_facts.get("grpo_decision_state")
+    if not isinstance(value, dict):
+        return None
+    target = value.get("target_action")
+    return str(target) if target else None
+
+
 def _stable(rows: list[GRPOCorpusRow], salt: str) -> list[GRPOCorpusRow]:
     return sorted(
         rows,
@@ -146,6 +155,18 @@ def build(
     train.extend(anchors)
     train = _stable(list({row.task.task_id: row for row in train}.values()), "train:output")
 
+    update_actions = Counter(
+        action
+        for task_id in sorted(update_ids)
+        if (action := _target_action(source_by_id[task_id])) is not None
+    )
+    anchor_actions = Counter(
+        action for row in anchors if (action := _target_action(row)) is not None
+    )
+    train_actions = Counter(
+        action for row in train if (action := _target_action(row)) is not None
+    )
+
     validation = load_grpo_corpus(source_dir / "validation.jsonl")
     train_ids = {row.task.task_id for row in train}
     validation_ids = {row.task.task_id for row in validation}
@@ -186,6 +207,9 @@ def build(
         "train_update_tasks": len(update_ids),
         "train_support_cells": dict(support_cells),
         "train_anchors": len(anchors),
+        "train_update_actions": dict(sorted(update_actions.items())),
+        "train_anchor_actions": dict(sorted(anchor_actions.items())),
+        "train_actions": dict(sorted(train_actions.items())),
         "preflight": preflight.model_dump(mode="json"),
     }
     (output_dir / "manifest.json").write_text(
