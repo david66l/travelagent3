@@ -13,6 +13,7 @@ from agentic.grpo_training import (
 from agentic.trl_environment import build_trl_environment_factories
 from scripts.audit_model_curriculum import rollout_action_rows
 from scripts.build_verifier_repair_grpo_corpus import (
+    _RL_CHALLENGE_TRAIN_TEMPLATES,
     _SEMANTIC_DIVERSE_TRAIN_TEMPLATES,
     _TEMPLATES,
     _prepare_variant,
@@ -39,6 +40,32 @@ def test_semantic_diverse_train_templates_are_balanced_and_holdout_safe():
         for phrase in template["grounding_phrases"]
     }
     assert all(phrase not in train_text for phrase in holdout_phrases)
+
+
+def test_rl_challenge_templates_are_balanced_unseen_and_holdout_safe():
+    targets = [item["target_action"] for item in _RL_CHALLENGE_TRAIN_TEMPLATES]
+    assert targets.count("retry_solve") == 3
+    assert targets.count("propose_tradeoff") == 3
+    assert targets.count("abort") == 3
+
+    challenge_text = json.dumps(_RL_CHALLENGE_TRAIN_TEMPLATES, ensure_ascii=False)
+    sft_text = json.dumps(
+        [*_TEMPLATES["train"], *_SEMANTIC_DIVERSE_TRAIN_TEMPLATES],
+        ensure_ascii=False,
+    )
+    holdout_phrases = {
+        phrase
+        for split in ("validation", "test")
+        for template in _TEMPLATES[split]
+        for phrase in template["grounding_phrases"]
+    }
+    challenge_phrases = {
+        phrase
+        for template in _RL_CHALLENGE_TRAIN_TEMPLATES
+        for phrase in template["grounding_phrases"]
+    }
+    assert all(phrase not in sft_text for phrase in challenge_phrases)
+    assert all(phrase not in challenge_text for phrase in holdout_phrases)
 
 
 def test_verifier_repair_variants_are_unique_and_prompt_target_is_hidden():

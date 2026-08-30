@@ -222,6 +222,84 @@ _SEMANTIC_DIVERSE_TRAIN_TEMPLATES: tuple[dict[str, Any], ...] = (
     },
 )
 
+# These train-source challenges are intentionally excluded from SFT.  They are
+# used only for on-policy exploration so GRPO sees unseen language with real
+# within-group variance instead of replaying already memorized demonstrations.
+_RL_CHALLENGE_TRAIN_TEMPLATES: tuple[dict[str, Any], ...] = (
+    {
+        "family": "repairable_solver_failure",
+        "target_action": "retry_solve",
+        "request_suffix": " 若硬约束没有冲突，只是路线搜索失败，请换策略再尝试一次。",
+        "violation": "硬约束核验未发现冲突；失败集中在路线顺序搜索，可切换greedy继续求解",
+        "grounding_phrases": ["硬约束核验未发现冲突", "路线顺序搜索"],
+        "expected_arguments": {"strategy": "greedy"},
+    },
+    {
+        "family": "repairable_solver_failure",
+        "target_action": "retry_solve",
+        "request_suffix": " 候选地点和时窗都有效时，算法超时可以用备用策略重算。",
+        "violation": "候选地点与营业时窗均有效，当前算法搜索超时；允许greedy执行备用重算",
+        "grounding_phrases": ["营业时窗均有效", "搜索超时"],
+        "expected_arguments": {"strategy": "greedy"},
+    },
+    {
+        "family": "repairable_solver_failure",
+        "target_action": "retry_solve",
+        "request_suffix": " 如果验证器标记为可恢复的求解失败，不要询问我，直接有界重试。",
+        "violation": "求解器返回可恢复失败且剩余重试预算充足，greedy可执行下一轮有界求解",
+        "grounding_phrases": ["可恢复失败", "重试预算充足"],
+        "expected_arguments": {"strategy": "greedy"},
+    },
+    {
+        "family": "actionable_tradeoff",
+        "target_action": "propose_tradeoff",
+        "request_suffix": " 若饮食要求使餐费超支，请让我决定加餐费或取消高价餐厅。",
+        "violation": "满足全部饮食要求后餐饮费用超过上限180元，需要用户确认费用取舍",
+        "grounding_phrases": ["超过上限180元", "费用取舍"],
+        "require_options": True,
+        "supervised_options": ["增加餐饮预算", "取消一家高价餐厅"],
+    },
+    {
+        "family": "actionable_tradeoff",
+        "target_action": "propose_tradeoff",
+        "request_suffix": " 若返程时间和最后一个景点冲突，请给我删景点或改车次的选项。",
+        "violation": "最后一个景点闭馆时间与返程发车时间冲突，必须由用户选择保留哪项",
+        "grounding_phrases": ["返程发车时间冲突", "保留哪项"],
+        "require_options": True,
+        "supervised_options": ["删除最后一个景点", "改乘更晚车次"],
+    },
+    {
+        "family": "actionable_tradeoff",
+        "target_action": "propose_tradeoff",
+        "request_suffix": " 若无障碍路线会增加时间，可以让我选延长行程或减少活动。",
+        "violation": "采用无障碍路线后每日时长增加70分钟，现有活动数量无法全部保留",
+        "grounding_phrases": ["每日时长增加70分钟", "无法全部保留"],
+        "require_options": True,
+        "supervised_options": ["延长每日行程时间", "减少一个普通活动"],
+    },
+    {
+        "family": "necessary_abort",
+        "target_action": "abort",
+        "request_suffix": " 不接受撤离区域外的替代地点；官方要求撤离时终止计划。",
+        "violation": "当地已发布强制撤离命令，用户拒绝更换区域且没有获准开放的地点",
+        "grounding_phrases": ["强制撤离命令", "没有获准开放的地点"],
+    },
+    {
+        "family": "necessary_abort",
+        "target_action": "abort",
+        "request_suffix": " 只接受原日期的轮渡，不接受飞机或改期；停航就结束。",
+        "violation": "官方确认原日期全部轮渡停航，用户拒绝航班替代和日期调整",
+        "grounding_phrases": ["全部轮渡停航", "拒绝航班替代"],
+    },
+    {
+        "family": "necessary_abort",
+        "target_action": "abort",
+        "request_suffix": " 许可证、目标区域和日期都不能变；无合法许可时不要继续。",
+        "violation": "指定日期无法取得法定进入许可，且用户锁定目标区域并拒绝更改",
+        "grounding_phrases": ["无法取得法定进入许可", "拒绝更改"],
+    },
+)
+
 
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -408,6 +486,7 @@ def build(
     train_sources: int = 60,
     validation_sources: int = 16,
     semantic_diverse_train: bool = False,
+    rl_challenge_train: bool = False,
 ) -> dict[str, Any]:
     source_train = _compatible_sources(load_grpo_corpus(source_dir / "train.jsonl"))
     source_test = _compatible_sources(load_grpo_corpus(source_dir / "validation.jsonl"))
@@ -418,7 +497,11 @@ def build(
         raise ValueError("no compatible frozen-test sources")
 
     train_templates = _TEMPLATES["train"]
-    if semantic_diverse_train:
+    if semantic_diverse_train and rl_challenge_train:
+        raise ValueError("semantic-diverse and RL-challenge train profiles are exclusive")
+    if rl_challenge_train:
+        train_templates = _RL_CHALLENGE_TRAIN_TEMPLATES
+    elif semantic_diverse_train:
         train_templates = (*train_templates, *_SEMANTIC_DIVERSE_TRAIN_TEMPLATES)
     train = _build_rows(
         source_train[:train_sources],
@@ -463,7 +546,11 @@ def build(
             "snapshots reserved for frozen test; independent hard benchmark never read"
         ),
         "train_template_profile": (
-            "semantic-diverse-v1" if semantic_diverse_train else "base-v1"
+            "rl-challenge-unseen-v1"
+            if rl_challenge_train
+            else "semantic-diverse-v1"
+            if semantic_diverse_train
+            else "base-v1"
         ),
         "template_counts": {
             "train": len(train_templates),
@@ -530,6 +617,13 @@ def main() -> int:
         action="store_true",
         help=(
             "Add train-only verifier paraphrases while preserving validation and test wording."
+        ),
+    )
+    parser.add_argument(
+        "--rl-challenge-train",
+        action="store_true",
+        help=(
+            "Build train-source unseen paraphrases for on-policy GRPO exploration only."
         ),
     )
     args = parser.parse_args()
