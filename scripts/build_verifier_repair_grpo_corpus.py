@@ -142,6 +142,86 @@ _TEMPLATES: dict[str, tuple[dict[str, Any], ...]] = {
     ),
 }
 
+# The base corpus deliberately keeps a small template surface for smoke tests.
+# Formal post-training needs paraphrase diversity, otherwise the policy can
+# memorize one verifier sentence instead of learning the semantic boundary
+# between retry, trade-off, and safe termination.  These additions use only
+# training semantics and keep validation/test wording sealed.
+_SEMANTIC_DIVERSE_TRAIN_TEMPLATES: tuple[dict[str, Any], ...] = (
+    {
+        "family": "repairable_solver_failure",
+        "target_action": "retry_solve",
+        "request_suffix": " 若约束仍然可满足而失败来自排序方式，请换一种求解策略再算一次。",
+        "violation": "行程约束本身仍可满足；当前排序造成营业时窗冲突，可用greedy做局部重排",
+        "grounding_phrases": ["营业时窗冲突", "局部重排"],
+        "expected_arguments": {"strategy": "greedy"},
+    },
+    {
+        "family": "repairable_solver_failure",
+        "target_action": "retry_solve",
+        "request_suffix": " 如果只是当前算法没有找到可行顺序，允许切换算法重试一轮。",
+        "violation": "交通衔接被当前访问顺序拉长；更换greedy策略后仍有机会找到可行排程",
+        "grounding_phrases": ["当前访问顺序", "可行排程"],
+        "expected_arguments": {"strategy": "greedy"},
+    },
+    {
+        "family": "repairable_solver_failure",
+        "target_action": "retry_solve",
+        "request_suffix": " 验证器若只否定本轮调度结果，不要改需求，先进行一次有界重算。",
+        "violation": "本轮求解策略未找到满足入场时刻的顺序；授权greedy进行一次有限重算",
+        "grounding_phrases": ["本轮求解策略", "有限重算"],
+        "expected_arguments": {"strategy": "greedy"},
+    },
+    {
+        "family": "actionable_tradeoff",
+        "target_action": "propose_tradeoff",
+        "request_suffix": " 若游玩时间不够，可以让我选择早出发或删除一个普通景点。",
+        "violation": "按当前出发时间计算，总游览时长超出可用时间75分钟，需要用户选择调整项",
+        "grounding_phrases": ["超出可用时间75分钟", "用户选择"],
+        "require_options": True,
+        "supervised_options": ["提前出发", "删除一个普通景点"],
+    },
+    {
+        "family": "actionable_tradeoff",
+        "target_action": "propose_tradeoff",
+        "request_suffix": " 若步行强度和必去项冲突，请给我打车或减少远距离景点的选择。",
+        "violation": "保留全部远距离景点会使每日步行超过用户上限，需要确认交通或景点取舍",
+        "grounding_phrases": ["超过用户上限", "景点取舍"],
+        "require_options": True,
+        "supervised_options": ["增加打车行程", "减少一个远距离景点"],
+    },
+    {
+        "family": "actionable_tradeoff",
+        "target_action": "propose_tradeoff",
+        "request_suffix": " 若住宿位置和房费不能兼得，请让我选择提高住宿预算或换区域。",
+        "violation": "指定区域的可用住宿均超过房费上限，必须由用户确认预算或区域调整",
+        "grounding_phrases": ["超过房费上限", "用户确认"],
+        "require_options": True,
+        "supervised_options": ["提高住宿预算", "更换住宿区域"],
+    },
+    {
+        "family": "necessary_abort",
+        "target_action": "abort",
+        "request_suffix": " 日期不能推迟，也不接受室内替代；官方红色预警时直接停止。",
+        "violation": "目的地处于官方红色安全预警期，且用户明确拒绝改期和室内替代方案",
+        "grounding_phrases": ["官方红色安全预警", "拒绝改期"],
+    },
+    {
+        "family": "necessary_abort",
+        "target_action": "abort",
+        "request_suffix": " 活动、日期和场馆都不能改变；主办方取消时不要编造替代场次。",
+        "violation": "主办方已确认指定场次取消，用户锁定日期与场馆且不存在同场替代票",
+        "grounding_phrases": ["指定场次取消", "不存在同场替代票"],
+    },
+    {
+        "family": "necessary_abort",
+        "target_action": "abort",
+        "request_suffix": " 不允许绕过管制或更换目标；没有合法通行条件时结束规划。",
+        "violation": "目标区域处于强制通行管制，当前条件下没有合法入口且用户拒绝换目标",
+        "grounding_phrases": ["强制通行管制", "没有合法入口"],
+    },
+)
+
 
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -295,8 +375,9 @@ def _build_rows(
     sources: list[GRPOCorpusRow],
     *,
     split: str,
+    templates: tuple[dict[str, Any], ...] | None = None,
 ) -> list[GRPOCorpusRow]:
-    templates = _TEMPLATES[split]
+    templates = templates or _TEMPLATES[split]
     return [
         _prepare_variant(
             source,
@@ -326,6 +407,7 @@ def build(
     output_dir: Path,
     train_sources: int = 60,
     validation_sources: int = 16,
+    semantic_diverse_train: bool = False,
 ) -> dict[str, Any]:
     source_train = _compatible_sources(load_grpo_corpus(source_dir / "train.jsonl"))
     source_test = _compatible_sources(load_grpo_corpus(source_dir / "validation.jsonl"))
@@ -335,7 +417,14 @@ def build(
     if not source_test:
         raise ValueError("no compatible frozen-test sources")
 
-    train = _build_rows(source_train[:train_sources], split="train")
+    train_templates = _TEMPLATES["train"]
+    if semantic_diverse_train:
+        train_templates = (*train_templates, *_SEMANTIC_DIVERSE_TRAIN_TEMPLATES)
+    train = _build_rows(
+        source_train[:train_sources],
+        split="train",
+        templates=train_templates,
+    )
     validation = _build_rows(source_train[train_sources:required], split="validation")
     test = _build_rows(source_test, split="test")
     splits = {"train": train, "validation": validation, "test": test}
@@ -373,6 +462,14 @@ def build(
             "accepted Native ReAct train snapshots split by source state; original validation "
             "snapshots reserved for frozen test; independent hard benchmark never read"
         ),
+        "train_template_profile": (
+            "semantic-diverse-v1" if semantic_diverse_train else "base-v1"
+        ),
+        "template_counts": {
+            "train": len(train_templates),
+            "validation": len(_TEMPLATES["validation"]),
+            "test": len(_TEMPLATES["test"]),
+        },
         "counts": {name: len(rows) for name, rows in splits.items()},
         "source_counts": {
             "train": train_sources,
@@ -428,6 +525,13 @@ def main() -> int:
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--train-sources", type=int, default=60)
     parser.add_argument("--validation-sources", type=int, default=16)
+    parser.add_argument(
+        "--semantic-diverse-train",
+        action="store_true",
+        help=(
+            "Add train-only verifier paraphrases while preserving validation and test wording."
+        ),
+    )
     args = parser.parse_args()
     print(json.dumps(build(**vars(args)), ensure_ascii=False, indent=2))
     return 0

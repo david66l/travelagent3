@@ -12,13 +12,33 @@ from agentic.grpo_training import (
 )
 from agentic.trl_environment import build_trl_environment_factories
 from scripts.audit_model_curriculum import rollout_action_rows
-from scripts.build_verifier_repair_grpo_corpus import _TEMPLATES, _prepare_variant
+from scripts.build_verifier_repair_grpo_corpus import (
+    _SEMANTIC_DIVERSE_TRAIN_TEMPLATES,
+    _TEMPLATES,
+    _prepare_variant,
+)
 
 
 def _source():
     return load_grpo_corpus(
         Path("ml/agentic/datasets/native-react-grpo-v1/train.jsonl")
     )[0]
+
+
+def test_semantic_diverse_train_templates_are_balanced_and_holdout_safe():
+    targets = [item["target_action"] for item in _SEMANTIC_DIVERSE_TRAIN_TEMPLATES]
+    assert targets.count("retry_solve") == 3
+    assert targets.count("propose_tradeoff") == 3
+    assert targets.count("abort") == 3
+
+    train_text = json.dumps(_SEMANTIC_DIVERSE_TRAIN_TEMPLATES, ensure_ascii=False)
+    holdout_phrases = {
+        phrase
+        for split in ("validation", "test")
+        for template in _TEMPLATES[split]
+        for phrase in template["grounding_phrases"]
+    }
+    assert all(phrase not in train_text for phrase in holdout_phrases)
 
 
 def test_verifier_repair_variants_are_unique_and_prompt_target_is_hidden():
