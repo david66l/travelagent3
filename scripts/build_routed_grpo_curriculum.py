@@ -110,7 +110,7 @@ def build(
         row
         for row in source_train
         if row.task.task_id not in update_ids
-        and routes.get(row.task.task_id) != "sft_repair"
+        and routes.get(row.task.task_id) == "evaluation"
         and _metadata(row) is not None
     ]
     support_cells: Counter[str] = Counter()
@@ -124,7 +124,12 @@ def build(
         support_cells[variant] += len(selected)
 
     anchors = _stable(
-        [row for row in source_train if _metadata(row) is None],
+        [
+            row
+            for row in source_train
+            if routes.get(row.task.task_id) == "evaluation"
+            and _metadata(row) is None
+        ],
         "support:anchors",
     )[:anchor_count]
     train.extend(anchors)
@@ -161,6 +166,7 @@ def build(
         "selection_policy": {
             "optimization_targets": "grpo_update only",
             "excluded_from_optimization": ["sft_repair", "reject"],
+            "anti_regression_support": "audited evaluation tasks only",
             "support_per_variant": support_per_variant,
             "anchor_count": anchor_count,
         },
