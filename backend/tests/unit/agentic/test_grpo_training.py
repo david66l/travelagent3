@@ -195,8 +195,12 @@ def test_react_verifier_repair_state_rejects_ungrounded_arguments():
         options=["随便改一下"],
     )
 
-    assert environment.get_reward() == -1.0
+    score = environment.get_reward()
+    assert 0 < score < 1
     assert environment.rollout_record.reward.gate_status == "task_failed"
+    assert environment.rollout_record.reward.audit_metrics[
+        "decision_grounding_match"
+    ] is False
 
 
 def test_react_environment_normalizes_arrow_null_tool_lists():

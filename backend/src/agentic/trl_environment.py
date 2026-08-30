@@ -1092,7 +1092,7 @@ class TRLReactVerifierRepairDecisionEnvironment(_TRLTravelEnvironmentBase):
         return self._complete_decision("search_transport", arguments)
 
     def get_reward(self) -> float:
-        """Score one target action plus its grounded argument contract."""
+        """Score exact success plus verifier-decomposed partial progress."""
         session = self._require_session()
         policy_steps = [
             step
@@ -1100,25 +1100,35 @@ class TRLReactVerifierRepairDecisionEnvironment(_TRLTravelEnvironmentBase):
             if step.action.decision_source != "controller"
         ]
         target = str(self._decision_contract.get("target_action") or "")
-        valid = len(policy_steps) == 1 and policy_steps[0].action.action == target
-        if valid:
+        checks: dict[str, bool] = {"action_match": False}
+        if len(policy_steps) == 1:
             step = policy_steps[0]
-            verification_error = step.verification.get("error_code")
-            expected_abort = target == "abort" and verification_error == "POLICY_ABORT"
-            valid = (
-                all(observation.ok for observation in step.observations)
-                and (not verification_error or expected_abort)
-                and self._arguments_match_contract(step.action.arguments)
-            )
+            checks["action_match"] = step.action.action == target
+            if checks["action_match"]:
+                verification_error = step.verification.get("error_code")
+                expected_abort = target == "abort" and verification_error == "POLICY_ABORT"
+                checks["execution_valid"] = all(
+                    observation.ok for observation in step.observations
+                ) and (not verification_error or expected_abort)
+                checks.update(self._argument_contract_checks(step.action.arguments))
+        valid = all(checks.values())
         super().get_reward()
-        score = 1.0 if valid else -1.0
+        score = (
+            round(2 * sum(checks.values()) / len(checks) - 1, 6)
+            if checks.get("action_match")
+            else -1.0
+        )
         if self._reward is None:
             raise RuntimeError("decision-state reward was not initialized")
         self._reward = self._reward.model_copy(
             update={
                 "episode_reward": score,
+                "terminal_reward": score,
                 "components": self._reward.components.model_copy(
-                    update={"task": score, "constraint": score}
+                    update={
+                        "task": 1.0 if checks.get("action_match") else -1.0,
+                        "constraint": 1.0 if valid else score,
+                    }
                 ),
                 "gate_status": "passed" if valid else "task_failed",
                 "gate_reasons": [] if valid else ["VERIFIER_REPAIR_DECISION_INVALID"],
@@ -1127,6 +1137,9 @@ class TRLReactVerifierRepairDecisionEnvironment(_TRLTravelEnvironmentBase):
                     "decision_state_training": True,
                     "decision_step_valid": valid,
                     "decision_target_action": target,
+                    "verified_partial_credit": True,
+                    "decision_partial_reward": score,
+                    **{f"decision_{name}": value for name, value in checks.items()},
                 },
             }
         )
@@ -1134,11 +1147,17 @@ class TRLReactVerifierRepairDecisionEnvironment(_TRLTravelEnvironmentBase):
         return score
 
     def _arguments_match_contract(self, arguments: dict[str, Any]) -> bool:
+        return all(self._argument_contract_checks(arguments).values())
+
+    def _argument_contract_checks(self, arguments: dict[str, Any]) -> dict[str, bool]:
+        checks: dict[str, bool] = {}
         expected = self._decision_contract.get("expected_arguments") or {}
-        if not isinstance(expected, dict) or any(
-            arguments.get(key) != value for key, value in expected.items()
-        ):
-            return False
+        if not isinstance(expected, dict):
+            checks["expected_arguments_match"] = False
+        elif expected:
+            checks["expected_arguments_match"] = all(
+                arguments.get(key) == value for key, value in expected.items()
+            )
         phrases = [
             str(item)
             for item in self._decision_contract.get("grounding_phrases") or []
@@ -1146,13 +1165,15 @@ class TRLReactVerifierRepairDecisionEnvironment(_TRLTravelEnvironmentBase):
         ]
         if phrases:
             rendered = _decision_text(arguments)
-            if not any(_decision_text(phrase) in rendered for phrase in phrases):
-                return False
+            checks["grounding_match"] = any(
+                _decision_text(phrase) in rendered for phrase in phrases
+            )
         if self._decision_contract.get("require_options") is True:
             options = arguments.get("options")
-            if not isinstance(options, list) or not any(str(item).strip() for item in options):
-                return False
-        return True
+            checks["options_present"] = isinstance(options, list) and any(
+                str(item).strip() for item in options
+            )
+        return checks
 
 
 def _decision_text(value: Any) -> str:

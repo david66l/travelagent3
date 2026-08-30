@@ -35,6 +35,7 @@ class GRPOGroupDecision(BaseModel):
     reward_std: float
     success_rate: float
     zero_variance: bool
+    verified_partial_credit: bool = False
     eligible_for_update: bool
     curriculum_band: Literal["too_easy", "learnable", "too_hard", "invalid"]
     route: Literal["grpo_update", "evaluation", "sft_repair", "reject"]
@@ -85,6 +86,10 @@ class GRPOGroupAuditor:
         ]
         success_rate = sum(successes) / len(successes) if successes else 0.0
         zero_variance = reward_std <= self.config.zero_variance_epsilon
+        verified_partial_credit = bool(parsed) and all(
+            item.reward.audit_metrics.get("verified_partial_credit") is True
+            for item in parsed
+        )
 
         if errors:
             band: Literal["too_easy", "learnable", "too_hard", "invalid"] = "invalid"
@@ -93,8 +98,16 @@ class GRPOGroupAuditor:
             band = "too_easy"
             route = "evaluation"
         elif success_rate < self.config.preferred_success_rate_min:
-            band = "too_hard"
-            route = "sft_repair"
+            if verified_partial_credit and not zero_variance and max(rewards) > -1.0:
+                # A fully failed sparse-reward group has no direction and must
+                # return to SFT.  A declared verifier-decomposed reward can
+                # still compare action, execution and grounded arguments even
+                # before any rollout passes the exact terminal gate.
+                band = "learnable"
+                route = "grpo_update"
+            else:
+                band = "too_hard"
+                route = "sft_repair"
         else:
             band = "learnable"
             route = "grpo_update"
@@ -129,6 +142,7 @@ class GRPOGroupAuditor:
             reward_std=round(reward_std, 8),
             success_rate=round(success_rate, 8),
             zero_variance=zero_variance,
+            verified_partial_credit=verified_partial_credit,
             eligible_for_update=eligible,
             curriculum_band=band,
             route=route,

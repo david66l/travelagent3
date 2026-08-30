@@ -91,6 +91,23 @@ def test_zero_variance_failure_group_routes_to_sft_repair():
     assert decision.route == "sft_repair"
 
 
+def test_verified_partial_credit_can_route_an_exact_failure_group_to_grpo():
+    group = [_rollout(index, -0.5) for index in range(4)]
+    partial_rewards = [-1.0, -0.333333, 0.333333, 0.333333]
+    for rollout, reward in zip(group, partial_rewards, strict=True):
+        rollout.reward.episode_reward = reward
+        rollout.reward.terminal_reward = reward
+        rollout.reward.audit_metrics["verified_partial_credit"] = True
+
+    decision = _auditor().evaluate("group-partial", group)
+
+    assert decision.success_rate == 0.0
+    assert decision.reward_std > 0
+    assert decision.verified_partial_credit is True
+    assert decision.eligible_for_update is True
+    assert decision.route == "grpo_update"
+
+
 def test_mismatched_initial_state_or_duplicate_trajectory_rejects_group():
     group = [_rollout(index, 0.8 - index * 0.2) for index in range(4)]
     group[3].initial_state_fingerprint = "different"

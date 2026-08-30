@@ -110,3 +110,28 @@ def test_each_verifier_repair_target_passes_only_with_grounded_arguments():
         assert rollout_action_rows(rollout, policy_inference_metrics=[{}])[0][
             "action"
         ] == target
+
+
+def test_verifier_repair_reward_gives_verified_partial_argument_credit():
+    row = _prepare_variant(
+        _source(),
+        split="validation",
+        template=_TEMPLATES["validation"][0],
+        ordinal=0,
+    )
+    converted = to_trl_environment_rows([row])[0]
+    environment = build_trl_environment_factories("react")[converted["environment"]](
+        audit_enabled=False
+    )
+    environment.reset(**converted)
+
+    environment.retry_solve(strategy="greedy", reason="没有引用可见的验证证据")
+
+    score = environment.get_reward()
+    reward = environment.rollout_record.reward
+    assert 0 < score < 1
+    assert reward.gate_status == "task_failed"
+    assert reward.audit_metrics["verified_partial_credit"] is True
+    assert reward.audit_metrics["decision_action_match"] is True
+    assert reward.audit_metrics["decision_expected_arguments_match"] is True
+    assert reward.audit_metrics["decision_grounding_match"] is False

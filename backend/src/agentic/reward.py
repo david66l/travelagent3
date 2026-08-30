@@ -97,7 +97,7 @@ class EpisodeReward(BaseModel):
     quality_reward: float
     episode_reward: float = Field(ge=-1, le=1)
     turn_rewards: list[TurnReward]
-    audit_metrics: dict[str, int | float | bool] = Field(default_factory=dict)
+    audit_metrics: dict[str, int | float | bool | str] = Field(default_factory=dict)
 
 
 class HierarchicalRewardEngine:
