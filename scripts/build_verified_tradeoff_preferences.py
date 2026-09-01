@@ -38,7 +38,15 @@ class FakeContinuationPolicy(CurriculumTeacherPolicy):
     async def propose(self, context: PolicyContext) -> PolicyAction:
         if context.capability.get("status") == "infeasible":
             task_id = context.current_subtask.get("task_id")
-            if task_id == "capability_check" and "capability_check" in context.allowed_actions:
+            if task_id == "capability_check":
+                return PolicyAction(action="capability_check")
+            # Produce an intentionally invalid continuation even after the
+            # production graph removed the legacy capability-check node. This
+            # negative policy exists only to verify that the reward rejects
+            # continuing an infeasible goal; respecting the new action mask
+            # would delegate back to the teacher and accidentally create a
+            # second successful trade-off sample.
+            if "capability_check" not in context.allowed_actions:
                 return PolicyAction(action="capability_check")
             if task_id == "search_candidates":
                 has_candidates = any(

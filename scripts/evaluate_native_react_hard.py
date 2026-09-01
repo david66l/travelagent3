@@ -22,6 +22,7 @@ sys.path.insert(0, str(ROOT / "backend" / "src"))
 from agentic.policy import (  # noqa: E402
     DecisionSpecialistRoutedAgentPolicy,
     NativeToolAgentPolicy,
+    VerifierRepairSpecialistRoutedAgentPolicy,
 )
 from core.inference_metrics import percentile  # noqa: E402
 from core.llm_client import LLMClient  # noqa: E402
@@ -64,6 +65,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "--policy-model remains the generalist."
         ),
     )
+    parser.add_argument(
+        "--verifier-repair-specialist-model",
+        help=(
+            "Route only visible failed review states to this bounded retry/tradeoff/abort "
+            "specialist; --policy-model remains the SFT generalist."
+        ),
+    )
     parser.add_argument("--policy-base-url")
     parser.add_argument("--policy-api-key", default="not-needed")
     parser.add_argument("--policy-temperature", type=float, default=0.0)
@@ -83,8 +91,18 @@ def validate_args(args: argparse.Namespace) -> None:
         raise ValueError("--limit must be positive")
     if args.bootstrap_samples < 1:
         raise ValueError("--bootstrap-samples must be positive")
-    if args.decision_specialist_model and not args.policy_model:
-        raise ValueError("--policy-model is required with --decision-specialist-model")
+    specialist_models = [
+        model
+        for model in (
+            args.decision_specialist_model,
+            args.verifier_repair_specialist_model,
+        )
+        if model
+    ]
+    if len(specialist_models) > 1:
+        raise ValueError("only one authoritative decision specialist may be enabled")
+    if specialist_models and not args.policy_model:
+        raise ValueError("--policy-model is required with a specialist model")
 
 
 def rollout_seed(base_seed: int, case_id: str) -> int:
@@ -154,6 +172,12 @@ def build_report(
             for action in row.get("actions") or []
         )
     ]
+    route_traces = [
+        action.get("route_trace") or {}
+        for row in records
+        for action in row.get("actions") or []
+        if action.get("route_trace")
+    ]
     return {
         "schema_version": RUNTIME_SCHEMA_VERSION,
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -170,17 +194,33 @@ def build_report(
             "policy_protocol": "native_tool",
             "policy_model": policy_model,
             "policy_topology": (
-                "sft-generalist-plus-decision-specialist"
+                "sft-generalist-plus-poi-detail-specialist"
                 if args.decision_specialist_model
+                else "sft-generalist-plus-verifier-repair-specialist"
+                if args.verifier_repair_specialist_model
                 else "single-model"
             ),
             "decision_specialist_model": args.decision_specialist_model,
+            "verifier_repair_specialist_model": args.verifier_repair_specialist_model,
             "policy_backend": policy_backend,
             "intent_model": settings.llm_model,
             "fault_protocol": "declared-one-shot-at-production-action-boundary",
             "seed_protocol": "sha256-base-seed-case-id-v1",
             "base_seed": args.seed,
             "temperature": args.policy_temperature,
+            "specialist_routing": {
+                "requested": sum(
+                    trace.get("requested_target") == "student" for trace in route_traces
+                ),
+                "executed": sum(
+                    trace.get("executed_target") == "student" for trace in route_traces
+                ),
+                "fallbacks": sum(bool(trace.get("fallback_used")) for trace in route_traces),
+                "scope_violations": sum(
+                    trace.get("fallback_error_code") == "SPECIALIST_SCOPE_VIOLATION"
+                    for trace in route_traces
+                ),
+            },
         },
         "summary": {
             "total": len(records),
@@ -301,11 +341,17 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
     loaded = load_frozen_split(args.benchmark_dir, args.split)
     selected = select_cases(loaded.cases, args)
     generalist_model = args.policy_model or settings.agentic_policy_model or settings.llm_model
-    policy_model = (
-        f"{generalist_model}+decision-specialist:{args.decision_specialist_model}"
-        if args.decision_specialist_model
-        else generalist_model
-    )
+    if args.decision_specialist_model:
+        policy_model = (
+            f"{generalist_model}+poi-detail-specialist:{args.decision_specialist_model}"
+        )
+    elif args.verifier_repair_specialist_model:
+        policy_model = (
+            f"{generalist_model}+verifier-repair-specialist:"
+            f"{args.verifier_repair_specialist_model}"
+        )
+    else:
+        policy_model = generalist_model
     if args.policy_base_url:
         client = LLMClient(
             base_url=args.policy_base_url,
@@ -338,6 +384,16 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
             NativeToolAgentPolicy(
                 client,
                 model=args.decision_specialist_model,
+                temperature=args.policy_temperature,
+                max_tokens=256,
+            ),
+        )
+    elif args.verifier_repair_specialist_model:
+        policy = VerifierRepairSpecialistRoutedAgentPolicy(
+            generalist_policy,
+            NativeToolAgentPolicy(
+                client,
+                model=args.verifier_repair_specialist_model,
                 temperature=args.policy_temperature,
                 max_tokens=256,
             ),

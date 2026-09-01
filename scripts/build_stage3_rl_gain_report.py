@@ -65,6 +65,56 @@ def _cluster_bootstrap(
     return deltas[int(samples * 0.025)], deltas[min(samples - 1, int(samples * 0.975))]
 
 
+def _source_cluster(task_id: str, row: dict[str, Any]) -> str:
+    """Group synthetic variants that originate from the same executed state."""
+    for namespace in ("verifier_repair", "decision_loop"):
+        metadata = row.get(namespace) or {}
+        source_task_id = metadata.get("source_task_id")
+        if source_task_id:
+            source_snapshot = metadata.get("source_snapshot_version") or "unknown-snapshot"
+            return f"{namespace}:{source_task_id}:{source_snapshot}"
+    return f"task:{task_id}"
+
+
+def _cluster_randomization_test(
+    paired: list[tuple[str, bool, bool]],
+    *,
+    seed: int,
+    monte_carlo_samples: int = 100000,
+) -> tuple[float, str, int]:
+    """Two-sided sign-flip test over independent source-state clusters."""
+    by_cluster: dict[str, list[int]] = defaultdict(list)
+    for cluster_id, baseline, candidate in paired:
+        by_cluster[cluster_id].append(int(candidate) - int(baseline))
+    cluster_deltas = [sum(values) / len(values) for values in by_cluster.values()]
+    nonzero = [delta for delta in cluster_deltas if delta]
+    if not nonzero:
+        return 1.0, "exact", 1
+    observed = abs(sum(nonzero))
+    if len(nonzero) <= 20:
+        extreme = 0
+        assignments = 1 << len(nonzero)
+        for mask in range(assignments):
+            permuted = sum(
+                delta if mask & (1 << index) else -delta
+                for index, delta in enumerate(nonzero)
+            )
+            if abs(permuted) >= observed - 1e-12:
+                extreme += 1
+        return extreme / assignments, "exact", assignments
+
+    rng = random.Random(seed)
+    extreme = 0
+    for _ in range(monte_carlo_samples):
+        permuted = sum(delta if rng.getrandbits(1) else -delta for delta in nonzero)
+        extreme += int(abs(permuted) >= observed - 1e-12)
+    return (
+        (extreme + 1) / (monte_carlo_samples + 1),
+        "monte_carlo",
+        monte_carlo_samples,
+    )
+
+
 def _variant(task_id: str, row: dict[str, Any] | None = None) -> str:
     verifier_repair = (row or {}).get("verifier_repair") or {}
     if verifier_repair.get("target_action"):
@@ -95,6 +145,7 @@ def build_report(
     minimum_pairs: int = 128,
     minimum_gain: float = 0.03,
     minimum_candidate_success: float = 0.90,
+    minimum_source_clusters: int = 16,
     maximum_p_value: float = 0.05,
     bootstrap_samples: int = 10000,
     bootstrap_seed: int = 20260827,
@@ -110,26 +161,51 @@ def build_report(
         )
 
     keys = sorted(baseline)
-    paired = [
+    source_mismatches = [
+        key
+        for key in keys
+        if _source_cluster(key[0], baseline[key])
+        != _source_cluster(key[0], candidate[key])
+    ]
+    if source_mismatches:
+        raise ValueError(
+            "paired rollout source metadata differs between baseline and candidate: "
+            f"{source_mismatches[:5]}"
+        )
+    paired_by_task = [
         (key[0], _success(baseline[key]), _success(candidate[key]))
         for key in keys
     ]
-    baseline_successes = sum(item[1] for item in paired)
-    candidate_successes = sum(item[2] for item in paired)
-    total = len(paired)
+    paired_by_source = [
+        (
+            _source_cluster(key[0], baseline[key]),
+            _success(baseline[key]),
+            _success(candidate[key]),
+        )
+        for key in keys
+    ]
+    baseline_successes = sum(item[1] for item in paired_by_task)
+    candidate_successes = sum(item[2] for item in paired_by_task)
+    total = len(paired_by_task)
     baseline_rate = baseline_successes / total if total else 0.0
     candidate_rate = candidate_successes / total if total else 0.0
     gain = candidate_rate - baseline_rate
-    candidate_only = sum(not base and cand for _, base, cand in paired)
-    baseline_only = sum(base and not cand for _, base, cand in paired)
+    candidate_only = sum(not base and cand for _, base, cand in paired_by_task)
+    baseline_only = sum(base and not cand for _, base, cand in paired_by_task)
     p_value = _exact_mcnemar_p(candidate_only, baseline_only)
+    cluster_p_value, cluster_test_method, cluster_test_samples = (
+        _cluster_randomization_test(
+            paired_by_source,
+            seed=bootstrap_seed,
+        )
+    )
     ci_low, ci_high = _cluster_bootstrap(
-        paired, seed=bootstrap_seed, samples=bootstrap_samples
+        paired_by_source, seed=bootstrap_seed, samples=bootstrap_samples
     )
 
     by_variant: dict[str, Counter[str]] = defaultdict(Counter)
     by_city: dict[str, Counter[str]] = defaultdict(Counter)
-    for key, (_, base, cand) in zip(keys, paired, strict=True):
+    for key, (_, base, cand) in zip(keys, paired_by_task, strict=True):
         task_id = key[0]
         counts = by_variant[_variant(task_id, baseline[key])]
         counts["pairs"] += 1
@@ -165,22 +241,28 @@ def build_report(
     gate_errors = []
     if total < minimum_pairs:
         gate_errors.append("INSUFFICIENT_PAIRED_ROLLOUTS")
+    independent_source_clusters = len({item[0] for item in paired_by_source})
+    if independent_source_clusters < minimum_source_clusters:
+        gate_errors.append("INSUFFICIENT_INDEPENDENT_SOURCE_CLUSTERS")
     if gain < minimum_gain:
         gate_errors.append("INSUFFICIENT_ABSOLUTE_GAIN")
     if candidate_rate < minimum_candidate_success:
         gate_errors.append("CANDIDATE_SUCCESS_BELOW_TARGET")
     if p_value > maximum_p_value:
         gate_errors.append("PAIRED_SIGNIFICANCE_NOT_REACHED")
+    if cluster_p_value > maximum_p_value:
+        gate_errors.append("SOURCE_CLUSTER_SIGNIFICANCE_NOT_REACHED")
     if ci_low <= 0:
         gate_errors.append("CLUSTER_BOOTSTRAP_INTERVAL_CROSSES_ZERO")
 
     return {
-        "schema_version": "stage3-rl-gain-report.v1",
+        "schema_version": "stage3-rl-gain-report.v2",
         "scope": "paired stochastic policy efficacy; production regression gate is separate",
         "baseline_report_dirs": [str(path) for path in baseline_dirs],
         "candidate_report_dirs": [str(path) for path in candidate_dirs],
         "paired_rollouts": total,
-        "tasks": len({item[0] for item in paired}),
+        "tasks": len({item[0] for item in paired_by_task}),
+        "independent_source_clusters": independent_source_clusters,
         "baseline_successes": baseline_successes,
         "candidate_successes": candidate_successes,
         "baseline_success_rate": baseline_rate,
@@ -194,11 +276,14 @@ def build_report(
         "paired_outcomes": {
             "candidate_only_success": candidate_only,
             "baseline_only_success": baseline_only,
-            "both_success": sum(base and cand for _, base, cand in paired),
-            "both_fail": sum(not base and not cand for _, base, cand in paired),
+            "both_success": sum(base and cand for _, base, cand in paired_by_task),
+            "both_fail": sum(not base and not cand for _, base, cand in paired_by_task),
         },
         "exact_mcnemar_two_sided_p": p_value,
-        "task_cluster_bootstrap_95ci": [ci_low, ci_high],
+        "source_cluster_randomization_two_sided_p": cluster_p_value,
+        "source_cluster_randomization_method": cluster_test_method,
+        "source_cluster_randomization_samples": cluster_test_samples,
+        "source_cluster_bootstrap_95ci": [ci_low, ci_high],
         "by_variant": variant_metrics,
         "by_city": city_metrics,
         "gate": {
@@ -208,7 +293,9 @@ def build_report(
                 "minimum_pairs": minimum_pairs,
                 "minimum_gain": minimum_gain,
                 "minimum_candidate_success": minimum_candidate_success,
+                "minimum_independent_source_clusters": minimum_source_clusters,
                 "maximum_p_value": maximum_p_value,
+                "source_cluster_randomization_required": True,
                 "bootstrap_ci_must_exclude_zero": True,
             },
         },
@@ -223,6 +310,7 @@ def main() -> int:
     parser.add_argument("--minimum-pairs", type=int, default=128)
     parser.add_argument("--minimum-gain", type=float, default=0.03)
     parser.add_argument("--minimum-candidate-success", type=float, default=0.90)
+    parser.add_argument("--minimum-source-clusters", type=int, default=16)
     parser.add_argument("--maximum-p-value", type=float, default=0.05)
     args = parser.parse_args()
     report = build_report(
@@ -231,6 +319,7 @@ def main() -> int:
         minimum_pairs=args.minimum_pairs,
         minimum_gain=args.minimum_gain,
         minimum_candidate_success=args.minimum_candidate_success,
+        minimum_source_clusters=args.minimum_source_clusters,
         maximum_p_value=args.maximum_p_value,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)

@@ -65,7 +65,15 @@ def reroute(corpus_file: Path, rollouts_file: Path, output_dir: Path) -> dict[st
         environment.reset(**converted)
         if actions:
             action = actions[0]
-            environment._act(str(action.get("action") or ""), dict(action.get("arguments") or {}))
+            action_name = str(action.get("action") or "")
+            method = getattr(environment, action_name, None)
+            if not callable(method):
+                raise ValueError(f"sampled action is not public on replay route: {action_name}")
+            # Go through the public route-scoped method, rather than the
+            # internal transport helper, so replay preserves the exact
+            # model-call cardinality, raw-authoring audit, controller hydration
+            # and reward contract used by the GRPO trainer.
+            method(**dict(action.get("arguments") or {}))
         score = environment.get_reward()
         replayed = environment.rollout_record
         if replayed is None:

@@ -44,6 +44,8 @@ def _target_action(row: GRPOCorpusRow) -> str | None:
     """Return the verifier-repair action without inferring it from task ids."""
     value = row.snapshot.hidden_test_facts.get("grpo_decision_state")
     if not isinstance(value, dict):
+        value = row.snapshot.hidden_test_facts.get("grpo_decision_summary")
+    if not isinstance(value, dict):
         return None
     target = value.get("target_action")
     return str(target) if target else None
@@ -67,8 +69,32 @@ def _write(path: Path, rows: list[GRPOCorpusRow]) -> None:
     )
 
 
-def _load_routes(report_paths: list[Path]) -> dict[str, str]:
+_AUDIT_PROTOCOL_FIELDS = (
+    "checkpoint_adapter_sha256",
+    "audit_script_sha256",
+    "corpus_sha256",
+    "execution_mode",
+    "seed_protocol",
+    "temperature",
+    "decoding_mode",
+    "quantization",
+    "group_size",
+    "max_new_tokens",
+    "max_tool_calling_iterations",
+    "reward_config_versions",
+)
+
+
+def _audit_protocol(payload: dict[str, Any]) -> dict[str, Any] | None:
+    protocol = {field: payload.get(field) for field in _AUDIT_PROTOCOL_FIELDS}
+    if any(value is None or value == [] for value in protocol.values()):
+        return None
+    return protocol
+
+
+def _load_routes(report_paths: list[Path]) -> tuple[dict[str, str], dict[str, Any] | None]:
     routes: dict[str, str] = {}
+    protocols: list[tuple[Path, dict[str, Any] | None]] = []
     for report_path in report_paths:
         raw = report_path.read_text(encoding="utf-8")
         try:
@@ -79,6 +105,7 @@ def _load_routes(report_paths: list[Path]) -> dict[str, str]:
             decisions = payload
         elif isinstance(payload, dict) and "decisions" in payload:
             decisions = payload.get("decisions")
+            protocols.append((report_path, _audit_protocol(payload)))
         elif isinstance(payload, dict) and {"task_id", "route"} <= payload.keys():
             decisions = [payload]
         else:
@@ -98,7 +125,30 @@ def _load_routes(report_paths: list[Path]) -> dict[str, str]:
             if task_id in routes:
                 raise ValueError(f"audit reports contain duplicate task: {task_id}")
             routes[task_id] = route
-    return routes
+    if len(report_paths) > 1:
+        missing = [str(path) for path, protocol in protocols if protocol is None]
+        if len(protocols) != len(report_paths) or missing:
+            raise ValueError(
+                "multiple audit reports require complete sampling provenance: "
+                f"{missing or [str(path) for path in report_paths]}"
+            )
+        expected = protocols[0][1]
+        mismatches = [
+            {
+                "report": str(path),
+                "fields": [
+                    field
+                    for field in _AUDIT_PROTOCOL_FIELDS
+                    if protocol and protocol[field] != expected[field]  # type: ignore[index]
+                ],
+            }
+            for path, protocol in protocols[1:]
+            if protocol != expected
+        ]
+        if mismatches:
+            raise ValueError(f"audit sampling protocols differ: {mismatches}")
+    uniform_protocol = protocols[0][1] if protocols else None
+    return routes, uniform_protocol
 
 
 def build(
@@ -112,7 +162,7 @@ def build(
     audit_reports = [audit_report] if isinstance(audit_report, Path) else list(audit_report)
     if not audit_reports:
         raise ValueError("at least one audit report is required")
-    routes = _load_routes(audit_reports)
+    routes, audit_protocol = _load_routes(audit_reports)
     source_train = load_grpo_corpus(source_dir / "train.jsonl")
     source_by_id = {row.task.task_id: row for row in source_train}
     unknown = sorted(set(routes) - set(source_by_id))
@@ -195,6 +245,7 @@ def build(
         "source_dir": str(source_dir),
         "audit_reports": [str(path) for path in audit_reports],
         "audit_report_sha256": {str(path): _sha256(path) for path in audit_reports},
+        "uniform_audit_protocol": audit_protocol,
         "selection_policy": {
             "optimization_targets": "grpo_update only",
             "excluded_from_optimization": ["sft_repair", "reject"],

@@ -6,6 +6,7 @@ import argparse
 import ast
 import hashlib
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -60,6 +61,12 @@ def main() -> int:
     parser.add_argument("--execution-mode", default="policy_driven")
     parser.add_argument("--credit-mode", default="trajectory_b0")
     parser.add_argument("--num-generations", type=int, default=8)
+    parser.add_argument(
+        "--num-generations-eval",
+        type=int,
+        default=0,
+        help="Evaluation group size used by the original run; zero reuses training size.",
+    )
     parser.add_argument("--temperature", type=float, required=True)
     parser.add_argument("--beta", type=float, required=True)
     parser.add_argument("--seed", type=int, required=True)
@@ -72,8 +79,22 @@ def main() -> int:
     parser.add_argument("--learning-rate", type=float)
     parser.add_argument("--lr-scheduler-type")
     parser.add_argument("--warmup-ratio", type=float)
+    parser.add_argument("--epochs", type=float, default=1.0)
+    parser.add_argument("--max-steps", type=int, default=-1)
+    parser.add_argument("--batch-size", type=int, default=1)
+    parser.add_argument("--gradient-accumulation", type=int, default=8)
+    parser.add_argument("--lora-r", type=int, default=16)
+    parser.add_argument("--lora-alpha", type=int, default=32)
     parser.add_argument("--rollout-audit-path", type=Path)
     args = parser.parse_args()
+    eval_num_generations = args.num_generations_eval or args.num_generations
+    if args.num_generations < 4 or eval_num_generations < 4:
+        raise ValueError("GRPO train and eval generation groups must both be at least 4")
+    effective_batch = args.batch_size * args.gradient_accumulation
+    if effective_batch % args.num_generations != 0:
+        raise ValueError(
+            "batch-size * gradient-accumulation must be divisible by num-generations"
+        )
 
     checkpoints = sorted(
         args.output_dir.glob("checkpoint-*"),
@@ -124,7 +145,11 @@ def main() -> int:
         "method": "trajectory-level-agentic-grpo-b0",
         "credit_mode": args.credit_mode,
         "execution_mode": args.execution_mode,
-        "policy_decision_scope": "all_dag_actions",
+        "policy_decision_scope": {
+            "policy_driven": "all_dag_actions",
+            "controller_first": "legacy_narrow_delegated_actions",
+            "react": "production_research_recovery_clarification_tradeoff_actions",
+        }.get(args.execution_mode, "unknown"),
         "rollout_initialization_contract": (
             rollout_contracts[0] if len(rollout_contracts) == 1 else "mixed"
         ),
@@ -146,12 +171,27 @@ def main() -> int:
         "git_commit": "unknown",
         "seed": args.seed,
         "num_generations": args.num_generations,
+        "num_generations_eval": eval_num_generations,
         "temperature": args.temperature,
         "beta": args.beta,
         "optimization": {
+            "epochs": args.epochs,
+            "max_steps": args.max_steps,
             "learning_rate": args.learning_rate,
             "lr_scheduler_type": args.lr_scheduler_type,
             "warmup_ratio": args.warmup_ratio,
+            "per_device_train_batch_size": args.batch_size,
+            "gradient_accumulation_steps": args.gradient_accumulation,
+            "effective_completion_batch_size": effective_batch,
+            "effective_prompt_batch_size": effective_batch // args.num_generations,
+            "per_device_eval_batch_size": eval_num_generations,
+            "loss_type": "dapo",
+            "scale_rewards": "group",
+            "mask_truncated_completions": True,
+            "lora_r": args.lora_r,
+            "lora_alpha": args.lora_alpha,
+            "load_in_4bit": True,
+            "cuda_allocator_conf": os.environ.get("PYTORCH_CUDA_ALLOC_CONF"),
         },
         "max_tool_calling_iterations": args.max_tool_calling_iterations,
         "max_completion_length": args.max_completion_length,

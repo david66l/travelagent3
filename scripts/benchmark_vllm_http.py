@@ -28,7 +28,7 @@ from agentic.policy import (  # noqa: E402
     constrain_policy_context,
     policy_prompt_payload,
 )
-from agentic.policy_actions import policy_action_schemas  # noqa: E402
+from agentic.policy_actions import policy_action_schemas_for_state  # noqa: E402
 
 
 def project_runtime_policy_case(case: VLLMBenchmarkCase) -> VLLMBenchmarkCase:
@@ -58,7 +58,10 @@ def project_runtime_policy_case(case: VLLMBenchmarkCase) -> VLLMBenchmarkCase:
                     ),
                 },
             ],
-            "tools": policy_action_schemas(constrained.allowed_actions),
+            "tools": policy_action_schemas_for_state(
+                constrained.allowed_actions,
+                capability=constrained.capability,
+            ),
             "allowed_actions": constrained.allowed_actions,
         },
     )

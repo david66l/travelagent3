@@ -15,12 +15,18 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "backend" / "src"))
 
-from agentic.environment import EnvironmentRollout  # noqa: E402
+from agentic.environment import (  # noqa: E402
+    EnvironmentRollout,
+    environment_fingerprint,
+)
 from agentic.grpo import GRPOGroupAuditor, model_aware_curriculum  # noqa: E402
 from agentic.grpo_training import (  # noqa: E402
+    AUTHORITY_PAYLOAD_ENCODING,
     DEFAULT_POLICY_DRIVEN_TOOL_ITERATIONS,
     GRPOCorpusRow,
     MIN_POLICY_DRIVEN_TOOL_ITERATIONS,
+    VERIFIER_REPAIR_DECISION_SCHEMA_VERSION,
+    decode_authority_payload,
     load_grpo_corpus,
     to_trl_environment_rows,
 )
@@ -29,12 +35,34 @@ from agentic.local_policy import (  # noqa: E402
     parse_local_tool_call,
 )
 from agentic.policy import AGENT_TOOL_POLICY_SYSTEM_PROMPT, PolicyOutputError  # noqa: E402
-from agentic.policy_actions import policy_action_schemas  # noqa: E402
+from agentic.policy_actions import (  # noqa: E402
+    policy_action_schemas,
+    policy_action_schemas_for_state,
+)
 from agentic.trl_environment import (  # noqa: E402
     GRPOExecutionMode,
     build_trl_environment_factories,
 )
 from core.inference_metrics import summarize_inference_metrics  # noqa: E402
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _canonical_sha256(value: Any) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            value,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
 
 
 def task_family(row: GRPOCorpusRow) -> str:
@@ -72,7 +100,12 @@ def verifier_repair_metadata(row: GRPOCorpusRow) -> dict[str, Any]:
     metadata = row.snapshot.hidden_test_facts.get("grpo_decision_state")
     if not isinstance(metadata, dict):
         return {}
-    if metadata.get("schema_version") != "react-verifier-repair-decision.v1":
+    if metadata.get("schema_version") not in {
+        "react-verifier-repair-decision.v1",
+        "react-verifier-repair-decision.v2",
+        "react-verifier-repair-decision.v3",
+        VERIFIER_REPAIR_DECISION_SCHEMA_VERSION,
+    }:
         return {}
     return metadata
 
@@ -127,6 +160,66 @@ def select_verifier_repair_stratified(
         if len(selected[target]) < per_target:
             selected[target].append(row)
     return [row for target in sorted(selected) for row in selected[target]]
+
+
+def transport_trl_environment_rows(
+    rows: list[GRPOCorpusRow],
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Materialize audit inputs through the same Arrow boundary as GRPOTrainer."""
+    try:
+        import datasets
+    except ImportError as exc:  # pragma: no cover - exercised in the pinned runtime
+        raise RuntimeError(
+            "curriculum audit requires datasets for canonical GRPO transport"
+        ) from exc
+
+    source_rows = to_trl_environment_rows(rows)
+    dataset = datasets.Dataset.from_list(source_rows, on_mixed_types="use_json")
+    transported = [dict(item) for item in dataset]
+    if transported != source_rows:
+        raise RuntimeError("Arrow transport changed a GRPO audit row")
+    for row, item in zip(rows, transported, strict=True):
+        if item.get("authority_payload_encoding") != AUTHORITY_PAYLOAD_ENCODING:
+            raise RuntimeError("Arrow transport lost the authority payload encoding")
+        if not isinstance(item.get("task"), str) or not isinstance(
+            item.get("snapshot"), str
+        ):
+            raise RuntimeError("Arrow authority payloads must remain scalar strings")
+        decoded_task = decode_authority_payload(item["task"], field="task")
+        decoded_snapshot = decode_authority_payload(item["snapshot"], field="snapshot")
+        if decoded_task != row.task.model_dump(mode="json"):
+            raise RuntimeError("Arrow transport changed the task authority payload")
+        if decoded_snapshot != row.snapshot.model_dump(mode="json"):
+            raise RuntimeError("Arrow transport changed the snapshot authority payload")
+        reconstructed = GRPOCorpusRow(task=decoded_task, snapshot=decoded_snapshot)
+        if environment_fingerprint(
+            reconstructed.task, reconstructed.snapshot
+        ) != item.get("initial_state_fingerprint"):
+            raise RuntimeError("Arrow transport changed the initial-state fingerprint")
+        decision_state = decoded_snapshot.get("hidden_test_facts", {}).get(
+            "grpo_decision_state"
+        )
+        if isinstance(decision_state, dict) and len(item["prompt"]) > 2:
+            if item["prompt"] != decision_state.get("prompt_messages"):
+                raise RuntimeError("Arrow transport changed the authoritative replay prompt")
+    task_feature = dataset.features.get("task")
+    snapshot_feature = dataset.features.get("snapshot")
+    if getattr(task_feature, "dtype", None) != "string" or getattr(
+        snapshot_feature, "dtype", None
+    ) != "string":
+        raise RuntimeError("Arrow authority payload features must be string")
+    return transported, {
+        "schema_version": "canonical-grpo-audit-transport.v1",
+        "datasets_version": datasets.__version__,
+        "rows": len(transported),
+        "authority_payload_encoding": AUTHORITY_PAYLOAD_ENCODING,
+        "task_feature": repr(task_feature),
+        "snapshot_feature": repr(snapshot_feature),
+        "whole_row_equality": True,
+        "decoded_authority_equality": True,
+        "fingerprint_equality": True,
+        "authoritative_prompt_equality": True,
+    }
 
 
 async def audit(args: argparse.Namespace) -> dict[str, Any]:
@@ -193,6 +286,7 @@ async def audit(args: argparse.Namespace) -> dict[str, Any]:
             args.tasks_per_family,
             offset_per_family=args.family_offset,
         )
+    transported_rows, transport_evidence = transport_trl_environment_rows(selected)
     policy = LocalCheckpointAgentPolicy(
         args.checkpoint,
         max_new_tokens=args.max_new_tokens,
@@ -202,12 +296,64 @@ async def audit(args: argparse.Namespace) -> dict[str, Any]:
         load_in_4bit=args.load_in_4bit,
         structured_decoding=args.structured_decoding_mode,
     )
+    route_contract_evidence = []
+    for row, transported_row in zip(selected, transported_rows, strict=True):
+        route, actions = _route_and_actions(row)
+        capability = dict(row.task.feasibility_report or {})
+        prompt_tail = transported_row["prompt"][-1].get("content")
+        if isinstance(prompt_tail, str):
+            try:
+                policy_state = json.loads(prompt_tail).get("policy_state") or {}
+            except (json.JSONDecodeError, TypeError):
+                policy_state = {}
+            capability = dict(policy_state.get("capability") or capability)
+        schemas = policy_action_schemas_for_state(actions, capability=capability)
+        rendered_prompt = policy.tokenizer.apply_chat_template(
+            transported_row["prompt"],
+            tools=schemas,
+            add_generation_prompt=True,
+            tokenize=False,
+            enable_thinking=False,
+        )
+        tokenized_prompt = policy.tokenizer.apply_chat_template(
+            transported_row["prompt"],
+            tools=schemas,
+            add_generation_prompt=True,
+            tokenize=True,
+            return_dict=True,
+            enable_thinking=False,
+        )
+        token_ids = tokenized_prompt["input_ids"]
+        if hasattr(token_ids, "tolist"):
+            token_ids = token_ids.tolist()
+        if token_ids and isinstance(token_ids[0], list):
+            if len(token_ids) != 1:
+                raise RuntimeError("single prompt tokenization returned a batch")
+            token_ids = token_ids[0]
+        route_contract_evidence.append(
+            {
+                "task_id": row.task.task_id,
+                "initial_state_fingerprint": transported_row[
+                    "initial_state_fingerprint"
+                ],
+                "route": route,
+                "actions": actions,
+                "schema_set_sha256": _canonical_sha256(schemas),
+                "rendered_prompt_sha256": hashlib.sha256(
+                    rendered_prompt.encode("utf-8")
+                ).hexdigest(),
+                "token_ids_sha256": _canonical_sha256(token_ids),
+                "token_count": len(token_ids),
+            }
+        )
     auditor = GRPOGroupAuditor()
     environment_factories = build_trl_environment_factories(args.execution_mode)
     decisions = []
     rollout_rows: list[dict[str, Any]] = []
     try:
-        for task_index, row in enumerate(selected, start=1):
+        for task_index, (row, transported_row) in enumerate(
+            zip(selected, transported_rows, strict=True), start=1
+        ):
             rollouts = []
             for sample_index in range(args.group_size):
                 policy_errors: list[dict[str, Any]] = []
@@ -227,7 +373,13 @@ async def audit(args: argparse.Namespace) -> dict[str, Any]:
                     max_tool_calling_iterations=args.max_tool_calling_iterations,
                     policy_errors=policy_errors,
                     policy_inference_metrics=policy_inference_metrics,
+                    transported_row=transported_row,
                 )
+                if (
+                    rollout.initial_state_fingerprint
+                    != transported_row["initial_state_fingerprint"]
+                ):
+                    raise RuntimeError("audit rollout changed the initial-state fingerprint")
                 rollout_latency_ms = (time.perf_counter() - rollout_started) * 1000
                 rollouts.append(rollout)
                 rollout_rows.append(
@@ -240,6 +392,7 @@ async def audit(args: argparse.Namespace) -> dict[str, Any]:
                         "sample_index": sample_index,
                         "rollout_seed": rollout_seed,
                         "trajectory_id": rollout.episode.trajectory_id,
+                        "initial_state_fingerprint": rollout.initial_state_fingerprint,
                         "status": rollout.episode.status,
                         "termination_reason": rollout.episode.termination_reason,
                         "gate_status": rollout.reward.gate_status,
@@ -292,6 +445,12 @@ async def audit(args: argparse.Namespace) -> dict[str, Any]:
         "schema_version": "model-aware-curriculum-audit.v1",
         "scope": "stochastic policy audit; not a training efficacy claim",
         "checkpoint": args.checkpoint,
+        "checkpoint_adapter_sha256": (
+            _sha256(Path(args.checkpoint) / "adapter_model.safetensors")
+            if (Path(args.checkpoint) / "adapter_model.safetensors").is_file()
+            else None
+        ),
+        "audit_script_sha256": _sha256(Path(__file__).resolve()),
         "execution_mode": args.execution_mode,
         "policy_decision_scope": (
             "all_dag_actions"
@@ -299,6 +458,21 @@ async def audit(args: argparse.Namespace) -> dict[str, Any]:
             else "delegated_choice_actions_only"
         ),
         "corpus_file": str(args.corpus_file),
+        "corpus_sha256": _sha256(args.corpus_file),
+        "authority_transport": transport_evidence,
+        "render_protocol_version": policy.render_protocol_version,
+        "chat_template_sha256": policy.chat_template_sha256,
+        "chat_template_kwargs": policy.chat_template_kwargs,
+        "route_contract_evidence": route_contract_evidence,
+        "aggregate_schema_set_sha256": _canonical_sha256(
+            [item["schema_set_sha256"] for item in route_contract_evidence]
+        ),
+        "aggregate_rendered_prompt_sha256": _canonical_sha256(
+            [item["rendered_prompt_sha256"] for item in route_contract_evidence]
+        ),
+        "aggregate_token_ids_sha256": _canonical_sha256(
+            [item["token_ids_sha256"] for item in route_contract_evidence]
+        ),
         "seed": args.seed,
         "seed_protocol": "sha256-task-sample-v1",
         "temperature": args.temperature,
@@ -309,6 +483,15 @@ async def audit(args: argparse.Namespace) -> dict[str, Any]:
         }[args.structured_decoding_mode],
         "quantization": "nf4-double-quant" if args.load_in_4bit else "none",
         "group_size": args.group_size,
+        "max_new_tokens": args.max_new_tokens,
+        "max_tool_calling_iterations": args.max_tool_calling_iterations,
+        "reward_config_versions": sorted(
+            {
+                str(row["reward_config_version"])
+                for row in rollout_rows
+                if row.get("reward_config_version")
+            }
+        ),
         "tasks": len(selected),
         "requested_families": list(args.families or []),
         "family_offset": args.family_offset,
@@ -327,6 +510,24 @@ async def audit(args: argparse.Namespace) -> dict[str, Any]:
         },
         "requested_verifier_repair_targets": list(args.verifier_repair_targets or []),
         "verifier_repair_target_offset": args.verifier_repair_target_offset,
+        "verifier_repair_schema_versions": sorted(
+            {
+                str(metadata["schema_version"])
+                for row in selected
+                if (metadata := verifier_repair_metadata(row))
+            }
+        ),
+        "constraint_flexibility_schema_versions": sorted(
+            {
+                str(contract["schema_version"])
+                for row in selected
+                if isinstance(
+                    contract := row.task.slots.get("constraint_flexibility"),
+                    dict,
+                )
+                and contract.get("schema_version")
+            }
+        ),
         "verifier_repair_targets": dict(
             Counter(
                 str(metadata["target_action"])
@@ -373,19 +574,20 @@ async def rollout_trl_history(
     max_tool_calling_iterations: int = DEFAULT_POLICY_DRIVEN_TOOL_ITERATIONS,
     policy_errors: list[dict[str, Any]] | None = None,
     policy_inference_metrics: list[dict[str, Any]] | None = None,
+    transported_row: dict[str, Any] | None = None,
 ) -> EnvironmentRollout:
     """Drive the production TRL environment with the exact multi-turn history."""
     route, _initial_route_actions = _route_and_actions(row)
     factories = environment_factories or build_trl_environment_factories(execution_mode)
     environment = factories[route]()
+    if transported_row is None:
+        transported_row = transport_trl_environment_rows([row])[0][0]
     trl_row = to_trl_environment_rows([row])[0]
-    reset_prompt = trl_row["prompt"]
-    initial = environment.reset(
-        task=row.task.model_dump(mode="json"),
-        snapshot=row.snapshot.model_dump(mode="json"),
-        prompt=reset_prompt,
-    )
-    if trl_row["rollout_contract"] == "verified_decision_state_replay.v1":
+    if transported_row != trl_row:
+        raise RuntimeError("audit rollout did not receive the canonical transported row")
+    reset_prompt = transported_row["prompt"]
+    initial = environment.reset(**transported_row)
+    if transported_row["rollout_contract"] == "verified_decision_state_replay.v1":
         messages = [dict(message) for message in reset_prompt]
         rendered_transition = str(messages[-1]["content"])
     else:
@@ -405,13 +607,19 @@ async def rollout_trl_history(
             # transition. Rebuilding the schema here is essential: keeping the
             # first route's actions would turn a nine-decision rollout into a
             # one-step audit even though the environment itself is policy-driven.
-            tools = policy_action_schemas(allowed_actions)
+            capability = dict(policy_state.get("capability") or {})
+            tools = policy_action_schemas_for_state(
+                allowed_actions,
+                capability=capability,
+            )
             try:
-                action = await policy.propose_from_history(
-                    messages,
-                    tools=tools,
-                    allowed_actions=allowed_actions,
-                )
+                proposal_kwargs = {
+                    "tools": tools,
+                    "allowed_actions": allowed_actions,
+                }
+                if isinstance(policy, LocalCheckpointAgentPolicy):
+                    proposal_kwargs["capability"] = capability
+                action = await policy.propose_from_history(messages, **proposal_kwargs)
             except PolicyOutputError as exc:
                 # Match TRL: a completion without a valid tool call ends this
                 # rollout. get_reward() below finalizes it as truncated/failed
@@ -420,6 +628,7 @@ async def rollout_trl_history(
                     policy_errors.append(
                         {
                             "code": exc.code,
+                            "detail_code": exc.detail_code,
                             "message": str(exc),
                             "raw_output": exc.raw_output,
                         }
@@ -444,11 +653,18 @@ async def rollout_trl_history(
                     ],
                 }
             )
-            # The offline auditor rebuilds the exact state-scoped schema above.
-            # Submit the already validated action directly so the audit can cover
-            # recovery/termination actions that are intentionally absent from
-            # TRL's static public method schema for the initial route.
-            result = environment._act(action.action, action.arguments)
+            # Use the same public, schema-decorated method that TRL calls.  Calling
+            # ``_act`` directly bypasses the one-decision cardinality counters and
+            # makes otherwise valid verifier-repair rollouts fail their structural
+            # reward gate.  The route-scoped factory exposes every action present in
+            # the dynamic schema reconstructed above.
+            method = getattr(environment, action.action, None)
+            if not callable(method):
+                raise RuntimeError(
+                    f"audit environment does not expose action {action.action!r}"
+                )
+            environment._set_pending_model_action_audit(action)
+            result = method(**action.arguments)
             messages.append(
                 {"role": "tool", "name": action.action, "content": result}
             )
@@ -489,6 +705,11 @@ def rollout_action_rows(
             "task_id": step.task_id,
             "action": step.action.action,
             "arguments": step.action.arguments,
+            "model_raw_arguments": step.action.model_arguments,
+            "controller_override_attempt": step.action.controller_override_attempt,
+            "model_contract_compliant": step.action.model_contract_compliant,
+            "controller_hydration_exact": step.action.controller_hydration_exact,
+            "controller_hydrated_fields": step.action.controller_hydrated_fields,
             "decision_source": step.action.decision_source,
             "allowed_actions": step.context.allowed_actions,
             "decision_cardinality": len(step.context.allowed_actions),
@@ -523,11 +744,21 @@ def _route_and_actions(row: GRPOCorpusRow) -> tuple[str, list[str]]:
         "search_current": ["search_pois", "search_current_info"],
         "search_transport": ["search_pois", "search_transport"],
         "decision_get_poi_detail": ["get_poi_detail"],
-        "decision_verifier_repair": [
+        "decision_verifier_repair_retry": [
             "retry_solve",
+            "retrieve_city_knowledge",
+            "search_pois",
+            "get_poi_detail",
+            "get_weather",
+            "search_current_info",
+            "search_transport",
+            "get_route_matrix",
+            "ask_user",
             "propose_tradeoff",
             "abort",
         ],
+        "decision_verifier_repair_tradeoff": ["propose_tradeoff", "abort"],
+        "decision_verifier_repair_abort": ["abort"],
     }
     return route, initial_actions[route]
 

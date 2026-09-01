@@ -22,11 +22,15 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "backend" / "src"))
 
 from agentic.grpo_training import GRPOCorpusRow, load_grpo_corpus  # noqa: E402
-from agentic.policy_actions import policy_action_schemas  # noqa: E402
+from agentic.policy_actions import policy_action_schemas_for_state  # noqa: E402
+from agentic.reason_quality import (  # noqa: E402
+    build_grounded_repair_reason,
+    verifier_reason_quality_checks,
+)
 from agentic.sft_dataset import DatasetManifest, SFTExample  # noqa: E402
 
 SPLITS = ("train", "validation", "test")
-SCHEMA_VERSION = "react-verifier-repair-sft-warmstart.v1"
+SCHEMA_VERSION = "react-verifier-repair-sft-warmstart.v2"
 
 
 def _sha256(path: Path) -> str:
@@ -85,14 +89,26 @@ def _decision_arguments(row: GRPOCorpusRow, messages: list[dict[str, Any]]) -> d
     if not isinstance(contract, dict):
         raise ValueError("verifier-repair decision contract is missing")
     action = str(contract.get("target_action") or "")
-    reason = _review_violation(messages)
-    if not any(str(phrase) in reason for phrase in contract.get("grounding_phrases") or []):
-        raise ValueError("supervised reason is not grounded in visible verifier evidence")
+    evidence = _review_violation(messages)
+    reason = build_grounded_repair_reason(evidence, action)
+    quality = verifier_reason_quality_checks(
+        reason=reason,
+        target_action=action,
+        grounding_phrases=[
+            str(phrase) for phrase in contract.get("grounding_phrases") or []
+        ],
+        evidence=evidence,
+    )
+    if not all(quality.values()):
+        failed = sorted(name for name, passed in quality.items() if not passed)
+        raise ValueError(f"supervised reason quality failed: {failed}")
     if action == "retry_solve":
-        strategy = str((contract.get("expected_arguments") or {}).get("strategy") or "")
-        if strategy not in {"cpsat", "greedy"}:
-            raise ValueError("retry decision has no valid expected strategy")
-        return {"strategy": strategy, "reason": reason}
+        controller_arguments = contract.get("controller_arguments")
+        if controller_arguments != {"strategy": "greedy"}:
+            raise ValueError("retry decision has no valid controller fallback strategy")
+        # Solver selection is controller-owned.  Never teach the model a
+        # parameter it will not be allowed to author at serving time.
+        return {"reason": reason}
     if action == "propose_tradeoff":
         options = [
             str(item).strip()
@@ -101,7 +117,7 @@ def _decision_arguments(row: GRPOCorpusRow, messages: list[dict[str, Any]]) -> d
         ]
         if not options:
             raise ValueError("trade-off decision has no supervised options")
-        return {"reason": reason, "options": options[:3]}
+        return {"reason": reason}
     if action == "abort":
         return {"reason": reason}
     raise ValueError(f"unsupported verifier-repair target: {action}")
@@ -128,7 +144,10 @@ def _decision_example(row: GRPOCorpusRow, split: str) -> SFTExample:
         policy_name="verified-verifier-repair-teacher",
         policy_version=SCHEMA_VERSION,
         messages=messages,
-        tools=policy_action_schemas(allowed),
+        tools=policy_action_schemas_for_state(
+            allowed,
+            capability=dict(state.get("capability") or {}),
+        ),
     )
 
 
@@ -166,7 +185,10 @@ def _replay_examples(row: GRPOCorpusRow, split: str) -> list[SFTExample]:
                 policy_name="verified-prefix-replay",
                 policy_version=SCHEMA_VERSION,
                 messages=[*prompt_messages, assistant],
-                tools=policy_action_schemas(allowed),
+                tools=policy_action_schemas_for_state(
+                    allowed,
+                    capability=dict(state.get("capability") or {}),
+                ),
             )
         )
     return examples
