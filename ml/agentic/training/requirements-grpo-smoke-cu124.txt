@@ -1,0 +1,24 @@
+# Minimal isolated environment for the verified-decision GRPO smoke pipeline.
+# Install into a fresh Python 3.12 venv without --system-site-packages.
+# The fully resolved `pip freeze --all` is stored with each cloud run artifact.
+
+torch==2.6.0
+transformers==5.12.1
+trl==1.9.2
+peft==0.20.0
+bitsandbytes==0.50.0
+accelerate==1.14.0
+datasets==5.0.1
+
+pydantic==2.13.4
+pydantic-settings==2.15.0
+openai==2.41.1
+httpx==0.27.2
+redis==8.1.0
+prometheus-client==0.21.0
+jmespath==1.1.0
+structlog==26.1.0
+fastapi==0.141.1
+
+pytest==9.1.1
+pytest-asyncio==1.4.0
