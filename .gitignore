@@ -15,6 +15,11 @@ secrets/
 k8s/secrets/
 k8s/secret.local.yaml
 models/
+# Python domain models are source code; the broad model-weight rule above must
+# not hide newly added application schemas.
+!backend/src/models/
+backend/src/models/*
+!backend/src/models/travel_slots.py
 celerybeat-*
 *.db-shm
 *.db-wal
