@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Iterable
@@ -14,21 +13,11 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend" / "src"))
 
 from evaluation.native_react_hard_benchmark import write_benchmark  # noqa: E402
+from agentic.training import resolve_git_commit  # noqa: E402
 
 
 PROMPT_KEYS = {"user_input", "revision_input", "feedback", "user_query"}
 
-
-def _git_commit() -> str:
-    try:
-        return subprocess.check_output(
-            ["git", "rev-parse", "HEAD"],
-            cwd=ROOT,
-            text=True,
-            stderr=subprocess.DEVNULL,
-        ).strip()
-    except (OSError, subprocess.CalledProcessError):
-        return "unknown"
 
 
 def _extract_prompts(value: Any) -> Iterable[str]:
@@ -82,7 +71,7 @@ def main() -> int:
     manifest = write_benchmark(
         args.output_dir,
         forbidden_prompts=prompts,
-        git_commit=_git_commit(),
+        git_commit=resolve_git_commit(ROOT),
     )
     manifest["contamination_scan"] = scan
     (args.output_dir / "manifest.json").write_text(

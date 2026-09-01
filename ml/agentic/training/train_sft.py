@@ -159,8 +159,6 @@ def configure_agent_sft_tokenizer(tokenizer):
     return tokenizer
 
 
-
-
 def _adapter_sha256(path: str | Path) -> str | None:
     adapter = Path(path) / "adapter_model.safetensors"
     if not adapter.is_file():

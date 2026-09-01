@@ -318,8 +318,6 @@ def create_stable_tool_suffix_grpo_trainer_class(
     return StableToolSuffixGRPOTrainer
 
 
-
-
 def _file_provenance(path: Path) -> dict[str, str | int]:
     """Return immutable evidence for one training input or output file."""
     digest = hashlib.sha256()

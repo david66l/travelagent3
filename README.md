@@ -224,6 +224,7 @@ go test ./...
 Qwen 学生模型的后训练（SFT / GRPO / DPO，Qwen3-1.7B + QLoRA 单卡）与全链路使用同一套参数合同与 chat template（SHA 锁定），训练入口在 [`ml/agentic/training/`](ml/agentic/training/)，语料构建/审计/评测/晋升门脚本在 [`scripts/`](scripts/)。
 
 - **实验总账**：[`experiments/index.md`](experiments/index.md) —— 每个 run 一行（假设来源、关键指标、裁决），当前 107 个受控 run。
+- **统一工具入口**：`python scripts/travelctl.py list` 列出全部语料构建/审计/评测/晋升脚本（140 个，按动词族组织）；`travelctl <verb> <subject> [args...]` 派发执行，旧脚本入口全部保留。
 - **当前状态（2026-09）**：所有后训练 checkpoint 处于 quarantine，无一晋升生产路由；160 题 sealed test 未解封。历史已验证的晋升案例：终止边界 SFT（多动作 0/150 → 150/150）、级联蒸馏（Base 106/150 → SFT 135/150）。
 - **可复现性纪律**：正式训练运行于 git 仓库内，`training_report.json` 必须携带可解析的 `git_commit`（无法解析时训练入口直接拒绝开跑）。
 

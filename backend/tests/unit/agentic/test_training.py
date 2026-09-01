@@ -362,3 +362,15 @@ def test_require_git_commit_fails_closed_outside_a_repository(tmp_path, monkeypa
     # The smoke-sandbox escape hatch lets the run proceed and records unknown.
     commit = training_module.require_git_commit(parser, tmp_path, allow_unknown=True)
     assert commit == training_module.GIT_COMMIT_UNKNOWN
+
+
+def test_resolve_git_commit_degrades_to_unknown_when_git_missing(tmp_path, monkeypatch):
+    import agentic.training as training_module
+
+    def raise_os_error(*args, **kwargs):
+        raise FileNotFoundError("git executable not found")
+
+    monkeypatch.setattr(
+        training_module.subprocess, "check_output", raise_os_error
+    )
+    assert training_module.resolve_git_commit(tmp_path) == training_module.GIT_COMMIT_UNKNOWN

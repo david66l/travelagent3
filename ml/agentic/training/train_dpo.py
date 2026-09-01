@@ -95,8 +95,6 @@ def _is_deterministic_decision_boundary_pair(row: dict[str, Any]) -> bool:
     )
 
 
-
-
 def load_jsonl(path: Path) -> list[dict[str, Any]]:
     rows = [
         json.loads(line)
