@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import argparse
 import importlib.metadata
 import importlib.util
 import hashlib
 import json
+import subprocess
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
@@ -15,6 +17,44 @@ from packaging.utils import canonicalize_name
 from pydantic import BaseModel, Field
 
 from agentic.sft_dataset import DatasetManifest, SFTExample
+
+GIT_COMMIT_UNKNOWN = "unknown"
+
+
+def resolve_git_commit(repo_root: Path) -> str:
+    """Return the HEAD commit of the training checkout, or ``GIT_COMMIT_UNKNOWN``."""
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            cwd=repo_root,
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+    except (OSError, subprocess.CalledProcessError):
+        return GIT_COMMIT_UNKNOWN
+
+
+def require_git_commit(
+    parser: argparse.ArgumentParser,
+    repo_root: Path,
+    *,
+    allow_unknown: bool,
+) -> str:
+    """Fail closed unless the training run is reproducible from a git commit.
+
+    Training reports must map to a resolvable commit so an adapter artifact can
+    always be traced back to the exact code that produced it.  The
+    ``--allow-unknown-git-commit`` escape hatch exists for non-repo smoke
+    sandboxes only and is never valid for a reported formal run.
+    """
+    commit = resolve_git_commit(repo_root)
+    if commit == GIT_COMMIT_UNKNOWN and not allow_unknown:
+        parser.error(
+            "git commit could not be resolved (no git repository): training reports "
+            "must map to a reproducible commit. Use a git checkout, or pass "
+            "--allow-unknown-git-commit for non-repo smoke sandboxes only."
+        )
+    return commit
 
 
 class TrainingDependency(BaseModel):

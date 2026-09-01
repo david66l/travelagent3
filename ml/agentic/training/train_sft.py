@@ -6,7 +6,6 @@ import argparse
 import hashlib
 import json
 import os
-import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -17,9 +16,10 @@ sys.path.insert(0, str(REPO_ROOT / "backend" / "src"))
 
 from agentic.training import (  # noqa: E402
     load_jsonl,
-    preflight_sft_model,
     preflight_sft_dataset,
+    preflight_sft_model,
     preflight_sft_termination_boundaries,
+    require_git_commit,
     select_sft_smoke_rows,
     to_rendered_prompt_completion,
 )
@@ -159,16 +159,6 @@ def configure_agent_sft_tokenizer(tokenizer):
     return tokenizer
 
 
-def _git_commit() -> str:
-    try:
-        return subprocess.check_output(
-            ["git", "rev-parse", "HEAD"],
-            cwd=REPO_ROOT,
-            text=True,
-            stderr=subprocess.DEVNULL,
-        ).strip()
-    except (OSError, subprocess.CalledProcessError):
-        return "unknown"
 
 
 def _adapter_sha256(path: str | Path) -> str | None:
@@ -307,13 +297,9 @@ def main() -> int:
         "must stay reproducible from a git commit.",
     )
     args = parser.parse_args()
-    git_commit = _git_commit()
-    if git_commit == "unknown" and not args.allow_unknown_git_commit:
-        parser.error(
-            "git commit could not be resolved (no git repository): training reports "
-            "must map to a reproducible commit. Use a git checkout, or pass "
-            "--allow-unknown-git-commit for non-repo smoke sandboxes only."
-        )
+    git_commit = require_git_commit(
+        parser, REPO_ROOT, allow_unknown=args.allow_unknown_git_commit
+    )
     if args.termination_token_weight < 1.0:
         parser.error("--termination-token-weight must be at least 1.0")
     if args.action_token_weight < 1.0:

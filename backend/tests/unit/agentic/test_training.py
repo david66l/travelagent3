@@ -308,3 +308,57 @@ def test_termination_boundary_preflight_rejects_missing_eos(tmp_path):
     assert report.ready is False
     assert report.missing_termination_rows == 3
     assert "SFT_TERMINATION_TOKEN_MISSING:3" in report.errors
+
+
+def test_resolve_git_commit_returns_head_sha(tmp_path, monkeypatch):
+    import agentic.training as training_module
+
+    recorded = {}
+
+    def fake_check_output(cmd, cwd=None, text=False, stderr=None):
+        recorded["cmd"] = cmd
+        recorded["cwd"] = cwd
+        return "abc123def\n"
+
+    monkeypatch.setattr(training_module.subprocess, "check_output", fake_check_output)
+    assert training_module.resolve_git_commit(tmp_path) == "abc123def"
+    assert recorded["cmd"] == ["git", "rev-parse", "HEAD"]
+    assert recorded["cwd"] == tmp_path
+
+
+def test_resolve_git_commit_degrades_to_unknown_without_repo(tmp_path, monkeypatch):
+    import subprocess as subprocess_module
+
+    import agentic.training as training_module
+
+    def raise_called_process_error(*args, **kwargs):
+        raise subprocess_module.CalledProcessError(128, "git")
+
+    monkeypatch.setattr(
+        training_module.subprocess, "check_output", raise_called_process_error
+    )
+    assert training_module.resolve_git_commit(tmp_path) == training_module.GIT_COMMIT_UNKNOWN
+
+
+def test_require_git_commit_fails_closed_outside_a_repository(tmp_path, monkeypatch):
+    import argparse
+
+    import agentic.training as training_module
+
+    parser = argparse.ArgumentParser(prog="train-test")
+
+    def return_unknown(*args, **kwargs):
+        return training_module.GIT_COMMIT_UNKNOWN
+
+    monkeypatch.setattr(training_module, "resolve_git_commit", return_unknown)
+
+    try:
+        training_module.require_git_commit(parser, tmp_path, allow_unknown=False)
+    except SystemExit as exc:
+        assert exc.code == 2
+    else:
+        raise AssertionError("require_git_commit must fail closed without a repo")
+
+    # The smoke-sandbox escape hatch lets the run proceed and records unknown.
+    commit = training_module.require_git_commit(parser, tmp_path, allow_unknown=True)
+    assert commit == training_module.GIT_COMMIT_UNKNOWN

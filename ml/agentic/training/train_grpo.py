@@ -9,7 +9,6 @@ import importlib
 import json
 import os
 import platform
-import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -31,6 +30,7 @@ from agentic.grpo_training import (  # noqa: E402
     tool_result_suffix_ids,
     to_trl_environment_rows,
 )
+from agentic.training import require_git_commit  # noqa: E402
 from agentic.chat_template_contract import (  # noqa: E402
     AGENT_CHAT_TEMPLATE_KWARGS,
     AGENT_CHAT_TEMPLATE_PATH,
@@ -318,16 +318,6 @@ def create_stable_tool_suffix_grpo_trainer_class(
     return StableToolSuffixGRPOTrainer
 
 
-def _git_commit() -> str:
-    try:
-        return subprocess.check_output(
-            ["git", "rev-parse", "HEAD"],
-            cwd=REPO_ROOT,
-            text=True,
-            stderr=subprocess.DEVNULL,
-        ).strip()
-    except (OSError, subprocess.CalledProcessError):
-        return "unknown"
 
 
 def _file_provenance(path: Path) -> dict[str, str | int]:
@@ -739,13 +729,9 @@ def main() -> int:
         "must stay reproducible from a git commit.",
     )
     args = parser.parse_args()
-    git_commit = _git_commit()
-    if git_commit == "unknown" and not args.allow_unknown_git_commit:
-        parser.error(
-            "git commit could not be resolved (no git repository): training reports "
-            "must map to a reproducible commit. Use a git checkout, or pass "
-            "--allow-unknown-git-commit for non-repo smoke sandboxes only."
-        )
+    git_commit = require_git_commit(
+        parser, REPO_ROOT, allow_unknown=args.allow_unknown_git_commit
+    )
 
     if args.rollout_only and not args.allow_small_corpus:
         raise ValueError("rollout-only is an isolated diagnostic and requires --allow-small-corpus")

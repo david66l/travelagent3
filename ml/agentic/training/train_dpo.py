@@ -7,7 +7,6 @@ import hashlib
 import json
 import math
 import os
-import subprocess
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -17,6 +16,7 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT / "backend" / "src"))
 
+from agentic.training import require_git_commit  # noqa: E402
 from agentic.chat_template_contract import (  # noqa: E402
     AGENT_CHAT_TEMPLATE_KWARGS,
     AGENT_CHAT_TEMPLATE_SHA256,
@@ -95,16 +95,6 @@ def _is_deterministic_decision_boundary_pair(row: dict[str, Any]) -> bool:
     )
 
 
-def _git_commit() -> str:
-    try:
-        return subprocess.check_output(
-            ["git", "rev-parse", "HEAD"],
-            cwd=REPO_ROOT,
-            text=True,
-            stderr=subprocess.DEVNULL,
-        ).strip()
-    except (OSError, subprocess.CalledProcessError):
-        return "unknown"
 
 
 def load_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -607,13 +597,9 @@ def main() -> int:
         "must stay reproducible from a git commit.",
     )
     args = parser.parse_args()
-    git_commit = _git_commit()
-    if git_commit == "unknown" and not args.allow_unknown_git_commit:
-        parser.error(
-            "git commit could not be resolved (no git repository): training reports "
-            "must map to a reproducible commit. Use a git checkout, or pass "
-            "--allow-unknown-git-commit for non-repo smoke sandboxes only."
-        )
+    git_commit = require_git_commit(
+        parser, REPO_ROOT, allow_unknown=args.allow_unknown_git_commit
+    )
     if args.beta <= 0:
         raise ValueError("DPO beta must be positive")
     if not (Path(args.model) / "adapter_config.json").is_file():
