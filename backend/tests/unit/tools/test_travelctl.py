@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-import sys
+import importlib.util
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
-
-import travelctl  # noqa: E402
+_TRAVELCTL = Path(__file__).resolve().parents[4] / "scripts" / "travelctl.py"
+_spec = importlib.util.spec_from_file_location("travelctl", _TRAVELCTL)
+assert _spec is not None and _spec.loader is not None
+travelctl = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(travelctl)
 
 
 def test_discover_groups_supported_verbs_with_docstring_help():
