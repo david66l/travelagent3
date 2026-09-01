@@ -94,7 +94,7 @@ def test_recorder_builds_versioned_hash_verified_episode():
     )
     episode = recorder.finalize(result)
 
-    assert episode.schema_version == "agent-episode.v2"
+    assert episode.schema_version == "agent-episode.v3"
     assert "13812345678" not in episode.model_dump_json()
     assert EpisodeReplayVerifier().verify(episode) == []
 
@@ -128,7 +128,15 @@ def test_replay_verifier_preserves_v1_hash_without_inference_metrics_field():
     legacy_payload = episode.model_dump(mode="json", exclude={"content_hash"})
     legacy_payload["schema_version"] = "agent-episode.v1"
     for step in legacy_payload["steps"]:
-        step["action"].pop("inference_metrics", None)
+        for field in {
+            "inference_metrics",
+            "model_arguments",
+            "controller_override_attempt",
+            "model_contract_compliant",
+            "controller_hydration_exact",
+            "controller_hydrated_fields",
+        }:
+            step["action"].pop(field, None)
     serialized = json.dumps(
         legacy_payload,
         ensure_ascii=False,

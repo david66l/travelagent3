@@ -35,7 +35,7 @@ def test_reward_replay_preserves_exact_gate_and_routes_partial_variance(tmp_path
                 "actions": [
                     {
                         "action": "retry_solve",
-                        "arguments": {"strategy": "greedy", "reason": grounded},
+                        "arguments": {"reason": grounded},
                     }
                 ],
             },
@@ -46,7 +46,7 @@ def test_reward_replay_preserves_exact_gate_and_routes_partial_variance(tmp_path
                 "actions": [
                     {
                         "action": "retry_solve",
-                        "arguments": {"strategy": "greedy", "reason": "未引用证据"},
+                        "arguments": {"reason": "未引用证据"},
                     }
                 ],
             },

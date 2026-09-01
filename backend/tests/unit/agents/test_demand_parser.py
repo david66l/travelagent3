@@ -5,7 +5,12 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from agents import demand_parser
-from models.travel_slots import RevisionParseOutput, SlotParseOutput, TravelSlots
+from models.travel_slots import (
+    ConstraintFlexibilityContract,
+    RevisionParseOutput,
+    SlotParseOutput,
+    TravelSlots,
+)
 
 
 @pytest.fixture
@@ -44,6 +49,77 @@ async def test_parse_extracts_slots(parser):
     assert result.slots.travel_days == 4
     assert result.slots.travel_companion == "couple"
     assert "美食" in result.slots.interests
+
+
+@pytest.mark.asyncio
+async def test_parse_preserves_high_confidence_neutral_constraint_contract(parser):
+    contract = ConstraintFlexibilityContract(
+        locked_constraints=["total_budget"],
+        solver_adjustable_constraints=["activity_schedule"],
+        relaxable_constraints=["activity_set"],
+        relaxation_options={"activity_set": ["减少一个非必去活动"]},
+    )
+    fake = _make_parse_output(
+        confidence=0.92,
+        slots=TravelSlots(
+            destination="成都",
+            travel_days=3,
+            constraint_flexibility=contract,
+        ),
+    )
+    with patch.object(
+        demand_parser.llm,
+        "structured_call",
+        new=AsyncMock(return_value=fake),
+    ):
+        result = await parser.parse(
+            "预算不能增加，活动顺序可重排，冲突时可以先问我是否删一个非必去活动",
+            [],
+            None,
+        )
+
+    assert result.slots.constraint_flexibility == contract
+
+
+@pytest.mark.asyncio
+async def test_parse_drops_low_confidence_constraint_contract(parser):
+    fake = _make_parse_output(
+        confidence=0.6,
+        slots=TravelSlots(
+            destination="成都",
+            travel_days=3,
+            constraint_flexibility=ConstraintFlexibilityContract(
+                locked_constraints=["total_budget"]
+            ),
+        ),
+    )
+    with patch.object(
+        demand_parser.llm,
+        "structured_call",
+        new=AsyncMock(return_value=fake),
+    ):
+        result = await parser.parse("这些条件大概都别动吧", [], None)
+
+    assert result.slots.constraint_flexibility is None
+
+
+def test_constraint_contract_rejects_overlapping_mutability_classes():
+    with pytest.raises(ValueError):
+        ConstraintFlexibilityContract(
+            locked_constraints=["total_budget"],
+            solver_adjustable_constraints=["total_budget"],
+        )
+
+
+def test_constraint_contract_rejects_hidden_action_fields():
+    with pytest.raises(ValueError):
+        ConstraintFlexibilityContract.model_validate(
+            {
+                "schema_version": "constraint-flexibility.v1",
+                "locked_constraints": ["total_budget"],
+                "target_action": "abort",
+            }
+        )
 
 
 @pytest.mark.asyncio
@@ -145,6 +221,8 @@ async def test_parse_fallback_on_llm_failure(parser):
     assert result.intent == "generate_itinerary"
     assert result.slots.destination == "北京"
     assert result.slots.travel_days == 3
+    assert result.slots.constraint_flexibility is None
+    assert "constraint_flexibility" in result.slots.model_fields_set
 
 
 @pytest.mark.asyncio

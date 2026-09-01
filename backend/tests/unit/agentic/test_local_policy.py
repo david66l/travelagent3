@@ -28,6 +28,49 @@ def test_parse_local_tool_call_rejects_unstructured_prose():
         parse_local_tool_call("I think we should search next.")
 
 
+@pytest.mark.parametrize(
+    "output",
+    [
+        (
+            '<tool_call>{"name":"search_pois","arguments":{}}</tool_call>'
+            '<tool_call>{"name":"ask_user","arguments":{"question":"预算？"}}'
+            '</tool_call>'
+        ),
+        '先搜索 <tool_call>{"name":"search_pois","arguments":{}}</tool_call>',
+        (
+            '<tool_call>{"name":"search_pois","arguments":{}}</tool_call>'
+            ' 然后继续搜索'
+        ),
+    ],
+)
+def test_parse_local_tool_call_rejects_multiple_calls_or_surrounding_prose(output):
+    with pytest.raises(PolicyOutputError, match="one valid tool call"):
+        parse_local_tool_call(output)
+
+
+def test_parse_local_tool_call_accepts_one_allowlisted_qwen_terminator():
+    action, arguments = parse_local_tool_call(
+        '<tool_call>{"name":"search_pois","arguments":{}}</tool_call><|im_end|>'
+    )
+
+    assert action == "search_pois"
+    assert arguments == {}
+
+
+@pytest.mark.parametrize(
+    "output",
+    [
+        '{"name":"search_pois","arguments":null}',
+        '{"name":"search_pois","arguments":{},"extra":true}',
+        '{"name":"search_pois","action":"ask_user","arguments":{}}',
+        '[]',
+    ],
+)
+def test_parse_local_tool_call_rejects_non_exact_json_shape(output):
+    with pytest.raises(PolicyOutputError, match="tool call"):
+        parse_local_tool_call(output)
+
+
 def test_structured_processor_receives_state_scoped_json_schema():
     class Backend:
         def get_json_schema_logits_processor(self, schema_text):
@@ -43,8 +86,48 @@ def test_structured_processor_receives_state_scoped_json_schema():
     assert set(schema["oneOf"][0]["properties"]["arguments"]["properties"]) == {"question"}
 
 
+def test_structured_processor_uses_reason_only_tradeoff_schema_and_authority_cache_key():
+    class Backend:
+        def __init__(self):
+            self.schemas = []
+
+        def get_json_schema_logits_processor(self, schema_text):
+            schema = json.loads(schema_text)
+            self.schemas.append(schema)
+            return schema
+
+    backend = Backend()
+    policy = object.__new__(LocalCheckpointAgentPolicy)
+    policy._structured_backend = backend
+    policy._structured_processor_cache = {}
+    policy.structured_decoding_mode = "json_schema"
+    capability = {
+        "status": "infeasible",
+        "actionable_alternatives": True,
+        "alternatives": ["提高总预算"],
+    }
+
+    tradeoff = policy._structured_logits_processor(
+        ["propose_tradeoff", "abort"], capability=capability
+    )
+    no_authority = policy._structured_logits_processor(
+        ["propose_tradeoff", "abort"], capability={}
+    )
+
+    assert set(tradeoff["oneOf"][0]["properties"]["arguments"]["properties"]) == {
+        "reason"
+    }
+    assert [branch["properties"]["name"]["const"] for branch in no_authority["oneOf"]] == [
+        "abort"
+    ]
+    assert len(backend.schemas) == 2
+
+
 def test_structured_processor_can_preserve_qwen_tool_envelope(monkeypatch):
-    pytest.importorskip("outlines_core", reason="agentic-training optional dependency")
+    pytest.importorskip(
+        "outlines_core.json_schema",
+        reason="agentic-training optional dependency",
+    )
 
     class Backend:
         def get_regex_logits_processor(self, regex):

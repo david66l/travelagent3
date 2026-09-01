@@ -17,8 +17,10 @@ from agentic.policy import (
     RoutedAgentPolicy,
     SelfRepairingAgentPolicy,
     ShadowComparingAgentPolicy,
+    VerifierRepairSpecialistRoutedAgentPolicy,
     constrain_policy_context,
     is_poi_detail_specialist_state,
+    is_verifier_repair_specialist_state,
     policy_prompt_payload,
     route_policy_context,
 )
@@ -188,7 +190,7 @@ def test_research_provider_failure_uses_tradeoff_after_two_attempts():
 
     constrained = constrain_policy_context(context)
 
-    assert constrained.allowed_actions == ["propose_tradeoff"]
+    assert constrained.allowed_actions == ["abort"]
 
 
 def test_intent_requirements_hide_irrelevant_live_tools_until_required_evidence_exists():
@@ -317,9 +319,8 @@ def test_controller_constraint_removes_invalid_capability_actions_for_tradeoff()
 
     constrained = constrain_policy_context(context)
 
-    assert constrained.allowed_actions == ["propose_tradeoff", "abort"]
+    assert constrained.allowed_actions == ["abort"]
     assert constrained.current_subtask["allowed_actions"] == [
-        "propose_tradeoff",
         "abort",
     ]
     assert context.allowed_actions[0] == "capability_check"
@@ -708,7 +709,7 @@ def test_policy_router_sends_bounded_exhausted_recovery_to_student():
 
     assert route.target == "student"
     assert route.family == "tradeoff"
-    assert constrained.allowed_actions == ["propose_tradeoff", "abort"]
+    assert constrained.allowed_actions == ["abort"]
 
 
 def test_policy_router_infers_live_retry_budget_from_controller_attempts():
@@ -749,7 +750,7 @@ def test_policy_router_sends_bounded_recovery_without_grounded_action_to_student
 
     assert route.target == "student"
     assert route.family == "tradeoff"
-    assert constrained.allowed_actions == ["propose_tradeoff", "abort"]
+    assert constrained.allowed_actions == ["abort"]
 
 
 def test_controller_constraint_uses_frozen_case_action_for_retry():
@@ -968,3 +969,268 @@ async def test_decision_specialist_falls_back_on_scope_violation() -> None:
     assert action.route_trace.fallback_used is True
     assert action.route_trace.fallback_error_code == "SPECIALIST_SCOPE_VIOLATION"
     assert action.token_usage == 24
+
+
+def _verifier_repair_context() -> PolicyContext:
+    context = _context()
+    context.current_subtask = {
+        "task_id": "review_itinerary",
+        "status": "running",
+        "action_attempt_counts": {},
+    }
+    context.allowed_actions = ["retry_solve", "propose_tradeoff", "abort"]
+    context.hard_constraints["constraint_flexibility"] = {
+        "schema_version": "constraint-flexibility.v1",
+        "locked_constraints": ["total_budget"],
+        "solver_adjustable_constraints": ["activity_schedule"],
+        "relaxable_constraints": ["daily_time_window"],
+        "relaxation_options": {
+            "daily_time_window": ["延长每日活动时间"],
+        },
+    }
+    context.capability = {
+        "status": "solvable",
+        "evidence": ["活动时间重叠，但仍可调整排程"],
+        "actionable_alternatives": None,
+        "alternatives": [],
+    }
+    context.relevant_artifacts = [
+        {"artifact_type": "solver_result", "status": "fallback"},
+        {
+            "artifact_type": "validation_report",
+            "hard_pass": False,
+            "violation_codes": ["ACTIVITY_TIME_OVERLAP"],
+            "violations": [
+                {
+                    "code": "ACTIVITY_TIME_OVERLAP",
+                    "message": "活动时间重叠，但仍可调整排程",
+                }
+            ],
+        },
+    ]
+    return context
+
+
+@pytest.mark.parametrize(
+    "contract",
+    [
+        None,
+        {"schema_version": "constraint-flexibility.v0"},
+        {
+            "schema_version": "constraint-flexibility.v1",
+            "locked_constraints": ["activity_schedule"],
+            "solver_adjustable_constraints": ["activity_schedule"],
+        },
+    ],
+)
+def test_verifier_repair_specialist_fails_closed_for_missing_or_invalid_contract(
+    contract,
+):
+    context = _verifier_repair_context()
+    if contract is None:
+        context.hard_constraints.pop("constraint_flexibility")
+    else:
+        context.hard_constraints["constraint_flexibility"] = contract
+
+    assert is_verifier_repair_specialist_state(context) is False
+
+
+def test_verifier_repair_specialist_requires_capability_from_same_verifier_evidence():
+    context = _verifier_repair_context()
+    context.capability["evidence"] = ["来自旧验证轮次的证据"]
+
+    assert is_verifier_repair_specialist_state(context) is False
+
+
+def test_verifier_repair_specialist_stops_routing_after_retry_budget_is_consumed():
+    context = _verifier_repair_context()
+    context.current_subtask["action_attempt_counts"] = {"retry_solve": 1}
+
+    assert is_verifier_repair_specialist_state(context) is False
+
+
+@pytest.mark.asyncio
+async def test_verifier_repair_specialist_routes_only_visible_failed_review_state():
+    generalist = AsyncMock()
+    specialist = AsyncMock()
+    specialist.propose.return_value = PolicyAction(
+        action="retry_solve",
+        arguments={"reason": "求解失败仍可有界重试"},
+    )
+    context = _verifier_repair_context()
+    policy = VerifierRepairSpecialistRoutedAgentPolicy(generalist, specialist)
+
+    assert is_verifier_repair_specialist_state(context) is True
+    action = await policy.propose(context)
+
+    specialist.propose.assert_awaited_once_with(context)
+    generalist.propose.assert_not_awaited()
+    assert action.action == "retry_solve"
+    assert action.route_trace is not None
+    assert action.route_trace.executed_target == "student"
+    assert action.route_trace.family == "recovery"
+
+
+@pytest.mark.asyncio
+async def test_verifier_repair_specialist_stays_off_without_failed_verifier_artifact():
+    generalist = AsyncMock()
+    generalist.propose.return_value = PolicyAction(action="accept_itinerary")
+    specialist = AsyncMock()
+    context = _verifier_repair_context()
+    context.relevant_artifacts[-1]["hard_pass"] = True
+    context.allowed_actions = ["accept_itinerary"]
+    policy = VerifierRepairSpecialistRoutedAgentPolicy(generalist, specialist)
+
+    assert is_verifier_repair_specialist_state(context) is False
+    action = await policy.propose(context)
+
+    specialist.propose.assert_not_awaited()
+    assert action.action == "accept_itinerary"
+    assert action.route_trace is not None
+    assert action.route_trace.executed_target == "teacher"
+
+
+@pytest.mark.asyncio
+async def test_verifier_repair_specialist_stays_off_for_unknown_violation_code():
+    generalist = AsyncMock()
+    generalist.propose.return_value = PolicyAction(
+        action="abort", arguments={"reason": "通用策略处理未知校验错误"}
+    )
+    specialist = AsyncMock()
+    context = _verifier_repair_context()
+    context.relevant_artifacts[-1]["violation_codes"] = ["UNKNOWN_FUTURE_RULE"]
+    context.relevant_artifacts[-1]["violations"] = [
+        {"code": "UNKNOWN_FUTURE_RULE", "message": "未知规则"}
+    ]
+    policy = VerifierRepairSpecialistRoutedAgentPolicy(generalist, specialist)
+
+    assert is_verifier_repair_specialist_state(context) is False
+    action = await policy.propose(context)
+
+    specialist.propose.assert_not_awaited()
+    generalist.propose.assert_awaited_once_with(context)
+    assert action.route_trace is not None
+    assert action.route_trace.executed_target == "teacher"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("violation_code", "needs_user"),
+    [
+        ("POI_CLOSED_ON_DATE", False),
+        ("ACTIVITY_TIME_OVERLAP", True),
+    ],
+)
+async def test_verifier_repair_specialist_defers_search_or_clarification_states(
+    violation_code: str,
+    needs_user: bool,
+):
+    generalist = AsyncMock()
+    generalist.propose.return_value = PolicyAction(action="search_pois")
+    specialist = AsyncMock()
+    context = _verifier_repair_context()
+    context.relevant_artifacts[-1]["violation_codes"] = [violation_code]
+    context.relevant_artifacts[-1]["violations"] = [
+        {"code": violation_code, "message": "需要通用策略处理"}
+    ]
+    if needs_user:
+        context.missing_information = ["acceptable_budget"]
+        generalist.propose.return_value = PolicyAction(
+            action="ask_user", arguments={"question": "预算最多可放宽多少？"}
+        )
+    policy = VerifierRepairSpecialistRoutedAgentPolicy(generalist, specialist)
+
+    assert is_verifier_repair_specialist_state(context) is False
+    action = await policy.propose(context)
+
+    specialist.propose.assert_not_awaited()
+    assert action.action in {"search_pois", "ask_user"}
+
+
+@pytest.mark.asyncio
+async def test_verifier_repair_specialist_fails_closed_for_mixed_violations():
+    generalist = AsyncMock()
+    generalist.propose.return_value = PolicyAction(action="search_pois")
+    specialist = AsyncMock()
+    context = _verifier_repair_context()
+    context.relevant_artifacts[-1]["violation_codes"] = [
+        "ACTIVITY_TIME_OVERLAP",
+        "POI_CLOSED_ON_DATE",
+    ]
+    context.relevant_artifacts[-1]["violations"] = [
+        {"code": "ACTIVITY_TIME_OVERLAP", "message": "活动重叠"},
+        {"code": "POI_CLOSED_ON_DATE", "message": "目标闭馆"},
+    ]
+    policy = VerifierRepairSpecialistRoutedAgentPolicy(generalist, specialist)
+
+    assert is_verifier_repair_specialist_state(context) is False
+    action = await policy.propose(context)
+
+    specialist.propose.assert_not_awaited()
+    generalist.propose.assert_awaited_once_with(context)
+    assert action.action == "search_pois"
+
+
+@pytest.mark.asyncio
+async def test_verifier_repair_specialist_defers_supported_multi_violation_state():
+    generalist = AsyncMock()
+    generalist.propose.return_value = PolicyAction(
+        action="propose_tradeoff",
+        arguments={"reason": "组合约束冲突", "options": ["调整预算", "调整时间"]},
+    )
+    specialist = AsyncMock()
+    context = _verifier_repair_context()
+    context.relevant_artifacts[-1]["violation_codes"] = [
+        "ACTIVITY_TIME_OVERLAP",
+        "TOTAL_BUDGET_EXCEEDED",
+    ]
+    context.relevant_artifacts[-1]["violations"] = [
+        {"code": "ACTIVITY_TIME_OVERLAP", "message": "活动重叠"},
+        {"code": "TOTAL_BUDGET_EXCEEDED", "message": "预算超支"},
+    ]
+    policy = VerifierRepairSpecialistRoutedAgentPolicy(generalist, specialist)
+
+    assert is_verifier_repair_specialist_state(context) is False
+    action = await policy.propose(context)
+
+    specialist.propose.assert_not_awaited()
+    generalist.propose.assert_awaited_once_with(context)
+    assert action.action == "propose_tradeoff"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("specialist_action", "expected_error"),
+    [
+        (PolicyAction(action="search_pois"), "SPECIALIST_SCOPE_VIOLATION"),
+        (
+            PolicyAction(
+                action="propose_tradeoff",
+                arguments={"reason": "存在冲突", "options": []},
+                token_usage=7,
+            ),
+            "ARGUMENT_VALIDATION_FAILED",
+        ),
+    ],
+)
+async def test_verifier_repair_specialist_falls_back_on_invalid_or_scoped_output(
+    specialist_action,
+    expected_error,
+):
+    generalist = AsyncMock()
+    generalist.propose.return_value = PolicyAction(
+        action="abort", arguments={"reason": "回退到通用策略"}, token_usage=5
+    )
+    specialist = AsyncMock()
+    specialist.propose.return_value = specialist_action
+    context = _verifier_repair_context()
+    policy = VerifierRepairSpecialistRoutedAgentPolicy(generalist, specialist)
+
+    action = await policy.propose(context)
+
+    assert action.action == "abort"
+    assert action.route_trace is not None
+    assert action.route_trace.executed_target == "teacher"
+    assert action.route_trace.fallback_used is True
+    assert action.route_trace.fallback_error_code == expected_error
+    assert action.token_usage == 5 + specialist_action.token_usage

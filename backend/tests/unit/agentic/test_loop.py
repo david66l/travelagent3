@@ -17,8 +17,10 @@ from agentic.state import (
     AgentLedgerState,
     ArtifactRecord,
     BudgetLedger,
+    DecisionRecord,
     FactRecord,
     FailureRecord,
+    GoalCapability,
     GoalLedger,
     TaskGraph,
     TaskNode,
@@ -27,12 +29,20 @@ from agentic.trajectory import EpisodeRecorder, EpisodeReplayVerifier
 
 
 class ScriptedPolicy:
-    def __init__(self, actions: dict[str, str]) -> None:
+    def __init__(
+        self,
+        actions: dict[str, str],
+        arguments: dict[str, dict[str, Any]] | None = None,
+    ) -> None:
         self.actions = actions
+        self.arguments = arguments or {}
 
     async def propose(self, context: PolicyContext) -> PolicyAction:
         task_id = context.current_subtask["task_id"]
-        return PolicyAction(action=self.actions[task_id])
+        return PolicyAction(
+            action=self.actions[task_id],
+            arguments=dict(self.arguments.get(task_id, {})),
+        )
 
 
 class FailingPolicy:
@@ -230,6 +240,73 @@ def test_validation_summary_exposes_bounded_grounding_evidence():
         }
     ]
     assert "private_solver_trace" not in str(summary)
+
+
+def test_new_unscoped_validation_report_clears_stale_terminal_capability():
+    ledger = _ledger()
+    ledger.goal = ledger.goal.model_copy(
+        update={
+            "capability": GoalCapability(
+                status="infeasible",
+                evidence=["旧预算错误"],
+                actionable_alternatives=False,
+            )
+        }
+    )
+    report = ArtifactRecord(
+        artifact_id="validation-new",
+        artifact_type="validation_report",
+        payload={
+            "hard_pass": False,
+            "hard_violations": [
+                {"code": "POI_CLOSED_ON_DATE", "message": "目标日期临时闭馆"}
+            ],
+        },
+        goal_version=1,
+        plan_version=1,
+    )
+
+    BoundedAgentLoop._refresh_post_validation_capability(ledger, [report])
+
+    assert ledger.goal.capability.status == "needs_user"
+    assert ledger.goal.capability.evidence == ["目标日期临时闭馆"]
+    assert ledger.goal.capability.actionable_alternatives is None
+
+
+def test_solver_adjustable_failure_needs_user_when_real_retry_budget_is_exhausted():
+    ledger = _ledger(max_steps=2)
+    ledger.goal = ledger.goal.model_copy(
+        update={
+            "hard_constraints": {
+                "constraint_flexibility": {
+                    "schema_version": "constraint-flexibility.v1",
+                    "locked_constraints": [],
+                    "solver_adjustable_constraints": ["activity_schedule"],
+                    "relaxable_constraints": [],
+                    "relaxation_options": {},
+                }
+            }
+        }
+    )
+    report = ArtifactRecord(
+        artifact_id="validation-overlap",
+        artifact_type="validation_report",
+        payload={
+            "hard_pass": False,
+            "hard_violations": [
+                {
+                    "code": "ACTIVITY_TIME_OVERLAP",
+                    "message": "两个活动重叠40分钟",
+                }
+            ],
+        },
+        goal_version=1,
+        plan_version=1,
+    )
+
+    BoundedAgentLoop._refresh_post_validation_capability(ledger, [report])
+
+    assert ledger.goal.capability.status == "needs_user"
 
 
 @pytest.mark.asyncio
@@ -528,7 +605,22 @@ async def test_loop_detects_repeated_no_progress_action():
 @pytest.mark.asyncio
 async def test_verifier_repair_creates_new_plan_version_and_reopens_solver():
     ledger = AgentLedgerState(
-        goal=GoalLedger(original_request="Plan a trip"),
+        goal=GoalLedger(
+            original_request="Plan a trip",
+            hard_constraints={
+                "constraint_flexibility": {
+                    "schema_version": "constraint-flexibility.v1",
+                    "locked_constraints": [],
+                    "solver_adjustable_constraints": ["activity_schedule"],
+                    "relaxable_constraints": [],
+                    "relaxation_options": {},
+                }
+            },
+            capability=GoalCapability(
+                status="solvable",
+                evidence=["两个活动重叠40分钟"],
+            ),
+        ),
         task_graph=TaskGraph(
             goal_version=1,
             tasks=(
@@ -555,6 +647,23 @@ async def test_verifier_repair_creates_new_plan_version_and_reopens_solver():
                 ),
             ),
         ),
+        artifacts={
+            "validation": ArtifactRecord(
+                artifact_id="validation",
+                artifact_type="validation_report",
+                payload={
+                    "hard_pass": False,
+                    "hard_violations": [
+                        {
+                            "code": "ACTIVITY_TIME_OVERLAP",
+                            "message": "两个活动重叠40分钟",
+                        }
+                    ],
+                },
+                goal_version=1,
+                plan_version=1,
+            )
+        },
     )
 
     class RepairExecutor:
@@ -563,7 +672,10 @@ async def test_verifier_repair_creates_new_plan_version_and_reopens_solver():
 
     result = await BoundedAgentLoop().run(
         ledger,
-        policy=ScriptedPolicy({"review_itinerary": "retry_solve"}),
+        policy=ScriptedPolicy(
+            {"review_itinerary": "retry_solve"},
+            {"review_itinerary": {"reason": "两个活动重叠40分钟"}},
+        ),
         executor=RepairExecutor(),
         max_batches=1,
     )
@@ -573,6 +685,200 @@ async def test_verifier_repair_creates_new_plan_version_and_reopens_solver():
     assert result.ledger.task_graph.get("solve_itinerary").status == "ready"
     assert result.ledger.task_graph.get("validate_itinerary").status == "pending"
     assert result.ledger.task_graph.get("review_itinerary").status == "pending"
+
+
+@pytest.mark.asyncio
+async def test_controller_rejects_a_second_retry_even_if_policy_forces_it():
+    ledger = AgentLedgerState(
+        goal=GoalLedger(
+            original_request="Plan a trip",
+            hard_constraints={
+                "constraint_flexibility": {
+                    "schema_version": "constraint-flexibility.v1",
+                    "locked_constraints": [],
+                    "solver_adjustable_constraints": ["activity_schedule"],
+                    "relaxable_constraints": [],
+                    "relaxation_options": {},
+                }
+            },
+            capability=GoalCapability(
+                status="needs_user",
+                evidence=["两个活动重叠40分钟"],
+            ),
+        ),
+        task_graph=TaskGraph(
+            goal_version=1,
+            tasks=(
+                TaskNode(
+                    task_id="review_itinerary",
+                    goal="repair failed validation",
+                    status="ready",
+                    allowed_actions=("retry_solve", "ask_user"),
+                    max_attempts=1,
+                ),
+            ),
+        ),
+        artifacts={
+            "validation": ArtifactRecord(
+                artifact_id="validation",
+                artifact_type="validation_report",
+                payload={
+                    "hard_pass": False,
+                    "hard_violations": [
+                        {
+                            "code": "ACTIVITY_TIME_OVERLAP",
+                            "message": "两个活动重叠40分钟",
+                        }
+                    ],
+                },
+                goal_version=1,
+                plan_version=1,
+            )
+        },
+        decision_history=[
+            DecisionRecord(
+                task_id="review_itinerary",
+                action_id="first-retry",
+                action="retry_solve",
+                arguments={"strategy": "greedy"},
+                outcome_status="completed",
+                progress_made=True,
+            )
+        ],
+    )
+
+    class NeverCalledExecutor:
+        def __init__(self) -> None:
+            self.called = False
+
+        async def execute(self, *, task, action, ledger) -> ActionOutcome:
+            self.called = True
+            return ActionOutcome(loop_control="replan_local")
+
+    executor = NeverCalledExecutor()
+    result = await BoundedAgentLoop().run(
+        ledger,
+        policy=ScriptedPolicy(
+            {"review_itinerary": "retry_solve"},
+            {"review_itinerary": {"reason": "两个活动重叠40分钟"}},
+        ),
+        executor=executor,
+    )
+
+    assert executor.called is False
+    assert result.status == "failed"
+    assert result.ledger.failures[0].code == "ACTION_NOT_AUTHORIZED"
+
+
+def _relaxable_tradeoff_ledger() -> AgentLedgerState:
+    message = "总预算超出300元"
+    return AgentLedgerState(
+        goal=GoalLedger(
+            original_request="Plan a trip",
+            hard_constraints={
+                "constraint_flexibility": {
+                    "schema_version": "constraint-flexibility.v1",
+                    "locked_constraints": [],
+                    "solver_adjustable_constraints": [],
+                    "relaxable_constraints": ["total_budget"],
+                    "relaxation_options": {"total_budget": ["提高预算300元"]},
+                }
+            },
+            capability=GoalCapability(
+                status="infeasible",
+                evidence=[message],
+                actionable_alternatives=True,
+                alternatives=["提高预算300元"],
+            ),
+        ),
+        task_graph=TaskGraph(
+            goal_version=1,
+            tasks=(
+                TaskNode(
+                    task_id="review_itinerary",
+                    goal="repair failed validation",
+                    status="ready",
+                    allowed_actions=("propose_tradeoff", "abort"),
+                ),
+            ),
+        ),
+        artifacts={
+            "validation": ArtifactRecord(
+                artifact_id="validation",
+                artifact_type="validation_report",
+                payload={
+                    "hard_pass": False,
+                    "hard_violations": [
+                        {"code": "TOTAL_BUDGET_EXCEEDED", "message": message}
+                    ],
+                },
+                goal_version=1,
+                plan_version=1,
+            )
+        },
+    )
+
+
+@pytest.mark.asyncio
+async def test_tradeoff_authority_uses_immutable_controller_context_snapshot():
+    ledger = _relaxable_tradeoff_ledger()
+
+    class MutatingPolicy:
+        async def propose(self, context: PolicyContext) -> PolicyAction:
+            context.capability["alternatives"] = ["忽略预算直接继续"]
+            return PolicyAction(
+                action="propose_tradeoff",
+                arguments={"reason": "总预算超出300元"},
+                model_arguments={"reason": "总预算超出300元"},
+            )
+
+    class CapturingExecutor:
+        action: PolicyAction | None = None
+
+        async def execute(self, *, task, action, ledger) -> ActionOutcome:
+            self.action = action
+            return ActionOutcome(status="awaiting_user")
+
+    executor = CapturingExecutor()
+    recorder = EpisodeRecorder(
+        ledger,
+        environment_version="travel-env.v1",
+        validator_version="travel-validator.v1",
+        policy_name="mutating-policy",
+        policy_version="v1",
+    )
+    result = await BoundedAgentLoop().run(
+        ledger,
+        policy=MutatingPolicy(),
+        executor=executor,
+        recorder=recorder,
+    )
+
+    assert result.status == "interrupted"
+    assert executor.action is not None
+    assert executor.action.arguments == {
+        "reason": "总预算超出300元",
+        "options": ["提高预算300元"],
+    }
+    step = recorder.episode.steps[-1]
+    assert step.action.model_arguments == {"reason": "总预算超出300元"}
+    assert step.action.arguments["options"] == ["提高预算300元"]
+    assert step.action.controller_hydration_exact is True
+
+
+def test_tradeoff_is_removed_when_capability_and_latest_report_disagree():
+    ledger = _relaxable_tradeoff_ledger()
+    ledger.goal = ledger.goal.model_copy(
+        update={
+            "capability": ledger.goal.capability.model_copy(
+                update={"alternatives": ["减少一个非必去活动"]}
+            )
+        }
+    )
+    task = ledger.task_graph.get("review_itinerary")
+    artifacts = list(ledger.artifacts.values())
+
+    assert BoundedAgentLoop._runtime_allowed_actions(ledger, task, artifacts) == ["abort"]
 
 
 @pytest.mark.asyncio

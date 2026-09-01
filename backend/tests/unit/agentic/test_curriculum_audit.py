@@ -1,4 +1,6 @@
-from agentic.grpo_training import GRPOCorpusRow
+from types import SimpleNamespace
+
+from agentic.grpo_training import GRPOCorpusRow, to_trl_environment_rows
 from agentic.policy import PolicyOutputError
 from tests.unit.agentic.test_environment import _snapshot, _task
 
@@ -96,7 +98,7 @@ def test_verifier_repair_selection_supports_disjoint_target_offsets():
             row = _row("search", index).model_copy(deep=True)
             row.task.task_id = f"{target}-{index}"
             row.snapshot.hidden_test_facts["grpo_decision_state"] = {
-                "schema_version": "react-verifier-repair-decision.v1",
+                "schema_version": "react-verifier-repair-decision.v2",
                 "target_action": target,
             }
             rows.append(row)
@@ -202,6 +204,61 @@ class _InvalidHistoryPolicy:
         raise PolicyOutputError("invalid sampled completion")
 
 
+class _SingleActionHistoryPolicy:
+    async def propose_from_history(self, messages, *, tools, allowed_actions):
+        return SimpleNamespace(
+            action="search_pois",
+            arguments={"city": "广州", "query": "景点"},
+            inference_metrics=None,
+        )
+
+
+class _PublicDispatchAuditEnvironment:
+    def __init__(self):
+        self.public_calls = 0
+        self.direct_calls = 0
+        self.pending_audits = []
+        self._rollout = SimpleNamespace(marker="public-dispatch")
+
+    def reset(self, **kwargs):
+        return '{"policy_state":{"allowed_actions":["search_pois"]}}'
+
+    def search_pois(self, *, city, query):
+        self.public_calls += 1
+        return '{"done":true}'
+
+    def _act(self, action, arguments):
+        self.direct_calls += 1
+        raise AssertionError("offline audit must not bypass the public TRL method")
+
+    def _set_pending_model_action_audit(self, action):
+        self.pending_audits.append(action)
+
+    def get_reward(self):
+        return 1.0
+
+    @property
+    def rollout_record(self):
+        return self._rollout
+
+
+async def test_trl_history_audit_uses_public_schema_decorated_method():
+    environment = _PublicDispatchAuditEnvironment()
+
+    rollout = await rollout_trl_history(
+        _row("search", 98),
+        _SingleActionHistoryPolicy(),
+        environment_factories={"search": lambda: environment},
+        max_tool_calling_iterations=1,
+        transported_row=to_trl_environment_rows([_row("search", 98)])[0],
+    )
+
+    assert rollout.marker == "public-dispatch"
+    assert environment.public_calls == 1
+    assert environment.direct_calls == 0
+    assert len(environment.pending_audits) == 1
+
+
 async def test_trl_history_audit_scores_invalid_completion_as_failed_rollout():
     row = _row("search", 99)
     errors = []
@@ -210,6 +267,7 @@ async def test_trl_history_audit_scores_invalid_completion_as_failed_rollout():
         row,
         _InvalidHistoryPolicy(),
         policy_errors=errors,
+        transported_row=to_trl_environment_rows([row])[0],
     )
 
     assert rollout.episode.status == "failed"
@@ -230,6 +288,7 @@ async def test_trl_history_audit_scores_invalid_completion_as_failed_rollout():
     assert errors == [
         {
             "code": "POLICY_OUTPUT_ERROR",
+            "detail_code": None,
             "message": "invalid sampled completion",
             "raw_output": None,
         }

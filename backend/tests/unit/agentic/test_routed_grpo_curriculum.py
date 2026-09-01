@@ -2,6 +2,8 @@ import importlib.util
 import json
 from pathlib import Path
 
+import pytest
+
 from agentic.grpo_training import load_grpo_corpus
 
 
@@ -118,10 +120,10 @@ def test_reports_verifier_repair_action_distribution(tmp_path: Path):
     )
     rows = load_grpo_corpus(source / "train.jsonl")
     update, evaluation = rows[:2]
-    update.snapshot.hidden_test_facts["grpo_decision_state"] = {
+    update.snapshot.hidden_test_facts["grpo_decision_summary"] = {
         "target_action": "propose_tradeoff"
     }
-    evaluation.snapshot.hidden_test_facts["grpo_decision_state"] = {
+    evaluation.snapshot.hidden_test_facts["grpo_decision_summary"] = {
         "target_action": "abort"
     }
     (source / "train.jsonl").write_text(
@@ -156,3 +158,39 @@ def test_reports_verifier_repair_action_distribution(tmp_path: Path):
     assert manifest["train_update_actions"] == {"propose_tradeoff": 1}
     assert manifest["train_anchor_actions"] == {"abort": 1}
     assert manifest["train_actions"] == {"abort": 1, "propose_tradeoff": 1}
+
+
+def test_rejects_mixed_sampling_protocols_across_audit_reports(tmp_path: Path):
+    base_protocol = {
+        "checkpoint_adapter_sha256": "checkpoint-sha",
+        "audit_script_sha256": "script-sha",
+        "corpus_sha256": "corpus-sha",
+        "execution_mode": "react",
+        "seed_protocol": "sha256-task-sample-v1",
+        "temperature": 1.2,
+        "decoding_mode": "native-unconstrained",
+        "quantization": "nf4-double-quant",
+        "group_size": 8,
+        "max_new_tokens": 192,
+        "max_tool_calling_iterations": 1,
+        "reward_config_versions": ["hierarchical-b0.v2"],
+    }
+    reports = []
+    for index, temperature in enumerate((1.2, 1.0)):
+        report = tmp_path / f"audit-{index}.json"
+        report.write_text(
+            json.dumps(
+                {
+                    **base_protocol,
+                    "temperature": temperature,
+                    "decisions": [
+                        {"task_id": f"task-{index}", "route": "grpo_update"}
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        reports.append(report)
+
+    with pytest.raises(ValueError, match="sampling protocols differ"):
+        ROUTED_BUILDER._load_routes(reports)

@@ -21,6 +21,7 @@ from agentic.policy import (
     DecisionSpecialistRoutedAgentPolicy,
     RoutedAgentPolicy,
     ShadowComparingAgentPolicy,
+    VerifierRepairSpecialistRoutedAgentPolicy,
 )
 from schemas import Location, ScoredPOI, ToolResult, WeatherDay
 from tools.tool_executor import ToolExecutor
@@ -196,6 +197,46 @@ def test_configured_policy_builds_shared_base_decision_specialist(monkeypatch):
     assert _policy_identity(policy) == (
         "decision-specialist-native-tool-agent-policy",
         "generalist=travel-sft;poi_detail_specialist=travel-grpo-poi",
+    )
+
+
+def test_configured_policy_builds_shared_base_verifier_repair_specialist(monkeypatch):
+    created = []
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            created.append(kwargs)
+
+    monkeypatch.setattr(settings, "agentic_policy_backend", "api")
+    monkeypatch.setattr(settings, "agentic_policy_protocol", "native_tool")
+    monkeypatch.setattr(settings, "agentic_policy_routing_enabled", False)
+    monkeypatch.setattr(settings, "agentic_decision_specialist_enabled", False)
+    monkeypatch.setattr(settings, "agentic_verifier_repair_specialist_enabled", True)
+    monkeypatch.setattr(settings, "agentic_policy_model", "travel-sft")
+    monkeypatch.setattr(
+        settings,
+        "agentic_verifier_repair_specialist_model",
+        "travel-grpo-verifier-repair",
+    )
+    monkeypatch.setattr(settings, "vllm_base_url", "http://policy:8001/v1")
+    monkeypatch.setattr(settings, "vllm_api_key", "test-key")
+    monkeypatch.setattr("core.llm_client.LLMClient", FakeClient)
+
+    policy = _configured_policy()
+
+    assert isinstance(policy, VerifierRepairSpecialistRoutedAgentPolicy)
+    assert policy.generalist.model == "travel-sft"
+    assert policy.specialist.model == "travel-grpo-verifier-repair"
+    assert created == [
+        {
+            "base_url": "http://policy:8001/v1",
+            "api_key": "test-key",
+            "using_vllm": True,
+        }
+    ]
+    assert _policy_identity(policy) == (
+        "verifier-repair-specialist-native-tool-agent-policy",
+        "generalist=travel-sft;verifier_repair_specialist=travel-grpo-verifier-repair",
     )
 
 

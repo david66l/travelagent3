@@ -10,6 +10,7 @@ from agentic.training import (
     preflight_sft_termination_boundaries,
     select_sft_smoke_rows,
     to_conversational_prompt_completion,
+    to_rendered_prompt_completion,
 )
 
 
@@ -165,6 +166,23 @@ def test_conversational_rows_train_only_on_assistant_completion():
     assert converted[0]["completion"][0]["tool_calls"][0]["function"]["name"] == "get_weather"
     assert converted[0]["completion"][0]["tool_calls"][0]["function"]["arguments"] == {}
     assert converted[0]["tools"][0]["function"]["name"] == "get_weather"
+
+
+def test_rendered_rows_are_scalar_and_preserve_completion_boundary():
+    row = _example("train", 1)
+
+    rendered = to_rendered_prompt_completion(
+        [row.model_dump(mode="json")],
+        _QwenToolTokenizer(),
+    )
+
+    assert rendered == [
+        {
+            "prompt": "system|user|assistant",
+            "completion": "<tool_call>{}</tool_call>",
+        }
+    ]
+    assert all(isinstance(value, str) for value in rendered[0].values())
 
 
 def test_smoke_selection_round_robins_final_actions():

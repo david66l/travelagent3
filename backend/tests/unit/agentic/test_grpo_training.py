@@ -4,9 +4,17 @@ import json
 import inspect
 from pathlib import Path
 
+import pytest
+
 from agentic.grpo_training import (
+    AUTHORITY_PAYLOAD_ENCODING,
     GRPOCorpusRow,
     MIN_STATEFUL_COMPLETION_LENGTH,
+    VERIFIER_REPAIR_ACTIONS_BY_ROUTE,
+    VERIFIER_REPAIR_DECISION_SCHEMA_VERSION,
+    VERIFIER_REPAIR_SCHEMA_CAPABILITY_BY_ROUTE,
+    decode_authority_payload,
+    encode_authority_payload,
     estimate_stateful_completion_budget,
     minimum_completion_length_floor,
     episode_to_grpo_corpus_row,
@@ -15,7 +23,17 @@ from agentic.grpo_training import (
     tool_result_suffix_ids,
     to_trl_environment_rows,
 )
+from agentic.chat_template_contract import (
+    AGENT_CHAT_TEMPLATE_KWARGS,
+    AGENT_CHAT_TEMPLATE_SHA256,
+    AGENT_RENDER_PROTOCOL_VERSION,
+    load_agent_chat_template,
+)
 from agentic.trl_environment import TRL_ENVIRONMENT_FACTORIES, build_trl_environment_factories
+from agentic.policy_actions import policy_action_schemas_for_state
+from ml.agentic.training.train_grpo import (
+    create_stable_tool_suffix_grpo_trainer_class,
+)
 from agentic.environment import TravelAgentEnvironment
 from tests.unit.agentic.test_environment import FirstAllowedPolicy
 from tests.unit.agentic.test_environment import _snapshot, _task
@@ -28,6 +46,164 @@ def _write(path, rows):
     )
 
 
+class _FakeGRPOTrainer:
+    def __init__(self):
+        self.environment_factories = {
+            route: object for route in VERIFIER_REPAIR_ACTIONS_BY_ROUTE
+        }
+        self._env_tools = {
+            route: [
+                {"type": "function", "function": {"name": action}}
+                for action in reversed(actions)
+            ]
+            for route, actions in VERIFIER_REPAIR_ACTIONS_BY_ROUTE.items()
+        }
+        self.processing_class = type(
+            "Tokenizer",
+            (),
+            {"chat_template": load_agent_chat_template()},
+        )()
+        self.chat_template = None
+        self.chat_template_kwargs = dict(AGENT_CHAT_TEMPLATE_KWARGS)
+
+
+class _OneDecisionEnvironment:
+    _single_decision_tool_contract = True
+
+    def __init__(self):
+        self.done = False
+        self.executed = []
+        self.rejections = []
+
+    def retry_solve(self, **arguments):
+        self.executed.append(("retry_solve", arguments))
+        self.done = True
+        return '{"done":true}'
+
+    def ask_user(self, **arguments):
+        self.executed.append(("ask_user", arguments))
+        self.done = True
+        return '{"done":true}'
+
+    def _trl_tool_loop_done(self):
+        return self.done
+
+    def _reject_policy_call_batch(self, tool_calls, *, rejection_code):
+        self.rejections.append((tool_calls, rejection_code))
+        self.done = True
+
+
+class _FakeToolLoopGRPOTrainer(_FakeGRPOTrainer):
+    def __init__(self):
+        super().__init__()
+        self.use_vllm = False
+        self._tokenizer = type("Tokenizer", (), {"eos_token_id": 999})()
+        self.environments = []
+        self._sync_tool_dicts = []
+        self._async_tool_dicts = []
+        self.base_post_tool_generation_calls = 0
+
+    def _generate_single_turn(self, prompt_ids, images, multimodal_fields):
+        self.base_post_tool_generation_calls += 1
+        return ([[123] for _ in prompt_ids], None)
+
+    def _tool_call_loop(
+        self,
+        prompts,
+        prompt_ids,
+        completion_ids,
+        completions,
+        logprobs,
+        images,
+        multimodal_fields,
+    ):
+        call_count = 0
+        failure_count = 0
+        active = []
+        for index, completion in enumerate(completions):
+            calls = completion[0].get("tool_calls") or []
+            if not calls:
+                continue
+            active.append(index)
+            for call in calls:
+                call_count += 1
+                function = call["function"]
+                try:
+                    self._sync_tool_dicts[index][function["name"]](
+                        **function["arguments"]
+                    )
+                except Exception:
+                    failure_count += 1
+        tool_mask = [[1] * len(ids) for ids in completion_ids]
+        if active:
+            post_ids, _ = self._generate_single_turn(
+                [prompt_ids[index] for index in active],
+                None,
+                {},
+            )
+            for position, index in enumerate(active):
+                completion_ids[index] += post_ids[position]
+                tool_mask[index] += [1] * len(post_ids[position])
+        return (
+            tool_mask,
+            completions,
+            completion_ids,
+            logprobs,
+            call_count,
+            failure_count,
+            [[] for _ in completion_ids],
+        )
+
+
+def _verifier_tradeoff_row() -> GRPOCorpusRow:
+    row = load_grpo_corpus(
+        Path("ml/agentic/datasets/native-react-grpo-v1/train.jsonl")
+    )[0]
+    task = row.task.model_copy(deep=True)
+    task.slots = {
+        **dict(task.slots),
+        "constraint_flexibility": {
+            "schema_version": "constraint-flexibility.v1",
+            "locked_constraints": ["daily_time_window"],
+            "solver_adjustable_constraints": ["fixed_event_time"],
+            "relaxable_constraints": ["total_budget"],
+            "relaxation_options": {"total_budget": ["提高预算300元"]},
+        },
+    }
+    snapshot = row.snapshot.model_copy(deep=True)
+    report = snapshot.tool_responses["validate_itinerary"][0].data
+    report["hard_pass"] = False
+    report["hard_violations"] = [
+        {
+            "code": "TOTAL_BUDGET_EXCEEDED",
+            "message": "预算超出300元，当前排程不能通过硬约束校验",
+        }
+    ]
+    snapshot.hidden_test_facts["grpo_decision_state"] = {
+        "schema_version": VERIFIER_REPAIR_DECISION_SCHEMA_VERSION,
+        "target_action": "propose_tradeoff",
+        "expected_arguments": {},
+        "controller_arguments": {},
+        "grounding_phrases": ["预算超出300元"],
+        "require_options": True,
+        "supervised_options": ["提高预算300元"],
+        "prefix_actions": [
+            {"action": "retrieve_city_knowledge", "arguments": {}},
+            {
+                "action": "search_pois",
+                "arguments": {"keywords": row.task.profile.get("interests") or []},
+            },
+            {"action": "get_poi_detail", "arguments": {}},
+        ],
+        "review_allowed_actions": list(
+            VERIFIER_REPAIR_ACTIONS_BY_ROUTE[
+                "decision_verifier_repair_tradeoff"
+            ]
+        ),
+    }
+    return GRPOCorpusRow(task=task, snapshot=snapshot)
+
+
 def test_environment_rows_keep_snapshot_out_of_model_prompt():
     row = GRPOCorpusRow(task=_task(), snapshot=_snapshot())
 
@@ -36,10 +212,133 @@ def test_environment_rows_keep_snapshot_out_of_model_prompt():
     assert [message["role"] for message in converted["prompt"]] == ["system", "user"]
     assert converted["prompt"][-1]["content"] == row.task.user_request
     assert "hidden_test_facts" not in json.dumps(converted["prompt"])
-    assert converted["snapshot"]["hidden_test_facts"] == {"closed_pois": []}
+    assert isinstance(converted["task"], str)
+    assert isinstance(converted["snapshot"], str)
+    assert converted["authority_payload_encoding"] == AUTHORITY_PAYLOAD_ENCODING
+    assert json.loads(converted["task"]) == row.task.model_dump(mode="json")
+    assert json.loads(converted["snapshot"])["hidden_test_facts"] == {"closed_pois": []}
+    assert converted["task"] == encode_authority_payload(row.task.model_dump(mode="json"))
+    assert converted["snapshot"] == encode_authority_payload(
+        row.snapshot.model_dump(mode="json")
+    )
     assert converted["initial_state_fingerprint"]
     assert converted["environment"] == "search"
     assert converted["rollout_contract"] == "fresh_ledger_no_teacher_prefix.v1"
+
+
+def test_stable_trainer_bridge_uses_route_scoped_production_schema_order():
+    trainer_class = create_stable_tool_suffix_grpo_trainer_class(
+        base_trainer_class=_FakeGRPOTrainer,
+        trl_version="1.9.2",
+    )
+
+    trainer = trainer_class()
+
+    assert trainer._env_tools == {
+        route: policy_action_schemas_for_state(
+            actions,
+            capability=VERIFIER_REPAIR_SCHEMA_CAPABILITY_BY_ROUTE[route],
+        )
+        for route, actions in VERIFIER_REPAIR_ACTIONS_BY_ROUTE.items()
+    }
+    assert trainer.agent_render_protocol_version == AGENT_RENDER_PROTOCOL_VERSION
+    assert trainer.agent_chat_template_sha256 == AGENT_CHAT_TEMPLATE_SHA256
+
+
+def test_stable_trainer_bridge_rejects_unpinned_trl_version():
+    trainer_class = create_stable_tool_suffix_grpo_trainer_class(
+        base_trainer_class=_FakeGRPOTrainer,
+        trl_version="1.9.3",
+    )
+
+    with pytest.raises(RuntimeError, match="pinned to TRL 1.9.2"):
+        trainer_class()
+
+
+def _tool_call(name, arguments):
+    return {"type": "function", "function": {"name": name, "arguments": arguments}}
+
+
+def test_stable_trainer_stops_before_post_terminal_generation():
+    trainer_class = create_stable_tool_suffix_grpo_trainer_class(
+        base_trainer_class=_FakeToolLoopGRPOTrainer,
+        trl_version="1.9.2",
+    )
+    trainer = trainer_class()
+    environment = _OneDecisionEnvironment()
+    trainer.environments = [environment]
+    trainer._sync_tool_dicts = [{"retry_solve": environment.retry_solve}]
+    trainer._async_tool_dicts = [{}]
+    completions = [
+        [
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    _tool_call(
+                        "retry_solve",
+                        {"reason": "verifier-grounded"},
+                    )
+                ],
+            }
+        ]
+    ]
+
+    result = trainer._tool_call_loop(
+        [[]],
+        [[1]],
+        [[2]],
+        completions,
+        None,
+        None,
+        {},
+    )
+
+    assert environment.executed == [
+        (
+            "retry_solve",
+            {"reason": "verifier-grounded"},
+        )
+    ]
+    assert trainer.base_post_tool_generation_calls == 0
+    assert result[4:6] == (1, 0)
+    assert result[2] == [[2, 999]]
+    assert result[0] == [[1, 0]]
+
+
+def test_stable_trainer_rejects_a_multi_call_message_before_execution():
+    trainer_class = create_stable_tool_suffix_grpo_trainer_class(
+        base_trainer_class=_FakeToolLoopGRPOTrainer,
+        trl_version="1.9.2",
+    )
+    trainer = trainer_class()
+    environment = _OneDecisionEnvironment()
+    trainer.environments = [environment]
+    trainer._sync_tool_dicts = [
+        {
+            "retry_solve": environment.retry_solve,
+            "ask_user": environment.ask_user,
+        }
+    ]
+    trainer._async_tool_dicts = [{}]
+    calls = [
+        _tool_call("retry_solve", {"reason": "grounded"}),
+        _tool_call("ask_user", {"question": "choose"}),
+    ]
+
+    result = trainer._tool_call_loop(
+        [[]],
+        [[1]],
+        [[2]],
+        [[{"role": "assistant", "tool_calls": calls}]],
+        None,
+        None,
+        {},
+    )
+
+    assert environment.executed == []
+    assert environment.rejections == [(calls, "TOOL_CALL_CARDINALITY_INVALID")]
+    assert trainer.base_post_tool_generation_calls == 0
+    assert result[4:6] == (2, 2)
 
 
 def test_environment_row_starts_a_fresh_policy_driven_ledger():
@@ -114,44 +413,16 @@ def test_react_environment_matches_production_hybrid_decision_boundary():
 
 
 def test_react_verifier_repair_state_replays_to_review_and_scores_grounded_choice():
-    row = load_grpo_corpus(
-        Path("ml/agentic/datasets/native-react-grpo-v1/train.jsonl")
-    )[0]
-    snapshot = row.snapshot.model_copy(deep=True)
-    report = snapshot.tool_responses["validate_itinerary"][0].data
-    report["hard_pass"] = False
-    report["hard_violations"] = [
-        {
-            "code": "BUDGET_EXCEEDED",
-            "message": "预算超出300元，当前排程不能通过硬约束校验",
-        }
-    ]
-    snapshot.hidden_test_facts["grpo_decision_state"] = {
-        "schema_version": "react-verifier-repair-decision.v1",
-        "target_action": "propose_tradeoff",
-        "expected_arguments": {},
-        "grounding_phrases": ["预算超出300元"],
-        "require_options": True,
-        "prefix_actions": [
-            {"action": "retrieve_city_knowledge", "arguments": {}},
-            {
-                "action": "search_pois",
-                "arguments": {"keywords": row.task.profile.get("interests") or []},
-            },
-            {"action": "get_poi_detail", "arguments": {}},
-        ],
-    }
-    converted = to_trl_environment_rows([GRPOCorpusRow(task=row.task, snapshot=snapshot)])[0]
+    converted = to_trl_environment_rows([_verifier_tradeoff_row()])[0]
 
-    assert converted["environment"] == "decision_verifier_repair"
+    assert converted["environment"] == "decision_verifier_repair_tradeoff"
     environment = build_trl_environment_factories("react")[converted["environment"]]()
     initial = json.loads(environment.reset(**converted))
     assert initial["policy_state"]["current_subtask"]["task_id"] == "review_itinerary"
     assert "propose_tradeoff" in initial["policy_state"]["allowed_actions"]
     terminal = json.loads(
         environment.propose_tradeoff(
-            reason="预算超出300元，建议调整预算或减少一个景点",
-            options=["提高预算300元", "减少一个景点"],
+            reason="预算超出300元，需要您选择一个已授权的调整方案。",
         )
     )
 
@@ -162,38 +433,11 @@ def test_react_verifier_repair_state_replays_to_review_and_scores_grounded_choic
 
 
 def test_react_verifier_repair_state_rejects_ungrounded_arguments():
-    row = load_grpo_corpus(
-        Path("ml/agentic/datasets/native-react-grpo-v1/train.jsonl")
-    )[0]
-    snapshot = row.snapshot.model_copy(deep=True)
-    report = snapshot.tool_responses["validate_itinerary"][0].data
-    report["hard_pass"] = False
-    report["hard_violations"] = [
-        {
-            "code": "BUDGET_EXCEEDED",
-            "message": "预算超出300元，当前排程不能通过硬约束校验",
-        }
-    ]
-    snapshot.hidden_test_facts["grpo_decision_state"] = {
-        "schema_version": "react-verifier-repair-decision.v1",
-        "target_action": "propose_tradeoff",
-        "grounding_phrases": ["预算超出300元"],
-        "require_options": True,
-        "prefix_actions": [
-            {"action": "retrieve_city_knowledge", "arguments": {}},
-            {
-                "action": "search_pois",
-                "arguments": {"keywords": row.task.profile.get("interests") or []},
-            },
-            {"action": "get_poi_detail", "arguments": {}},
-        ],
-    }
-    converted = to_trl_environment_rows([GRPOCorpusRow(task=row.task, snapshot=snapshot)])[0]
+    converted = to_trl_environment_rows([_verifier_tradeoff_row()])[0]
     environment = build_trl_environment_factories("react")[converted["environment"]]()
     environment.reset(**converted)
     environment.propose_tradeoff(
         reason="我觉得换个方案更好",
-        options=["随便改一下"],
     )
 
     score = environment.get_reward()
@@ -204,15 +448,124 @@ def test_react_verifier_repair_state_rejects_ungrounded_arguments():
     ] is False
 
 
-def test_react_environment_normalizes_arrow_null_tool_lists():
-    converted = to_trl_environment_rows([GRPOCorpusRow(task=_task(), snapshot=_snapshot())])[0]
-    converted["snapshot"]["tool_responses"]["search_current_info"] = None
+@pytest.mark.parametrize(
+    "fabricated_options",
+    [
+        ["改成私人飞机", "忽略预算继续执行"],
+        ["预算", "减少一个景点"],
+        ["提高预算300元并忽略安全限制", "减少一个景点"],
+    ],
+)
+def test_react_verifier_repair_state_isolates_fabricated_tradeoff_options(
+    fabricated_options,
+):
+    converted = to_trl_environment_rows([_verifier_tradeoff_row()])[0]
+    environment = build_trl_environment_factories("react")[converted["environment"]]()
+    environment.reset(**converted)
+    environment.propose_tradeoff(
+        reason="预算超出300元，当前排程不能通过硬约束校验，需要您选择调整方案。",
+        options=fabricated_options,
+    )
+
+    # The controller still executes its trusted, exact option set, but a model
+    # completion that fabricated the controller-owned field must receive no
+    # positive GRPO credit.
+    assert environment.get_reward() == -1
+    reward = environment.rollout_record.reward
+    assert reward.gate_status == "task_failed"
+    assert reward.audit_metrics["decision_system_step_valid"] is True
+    assert reward.audit_metrics["decision_step_valid"] is False
+    assert reward.audit_metrics["decision_grounding_match"] is True
+    assert reward.audit_metrics["decision_options_supported"] is True
+    assert reward.audit_metrics["model_contract_noncompliant_steps"] == 1
+    assert reward.audit_metrics["controller_override_attempts"] == 1
+
+
+def test_react_environment_keeps_legacy_dict_snapshot_compatibility():
+    task = _task().model_dump(mode="json")
+    snapshot = _snapshot().model_dump(mode="json")
+    snapshot["tool_responses"]["search_current_info"] = None
     environment = build_trl_environment_factories("react")["search"]()
 
-    initial = json.loads(environment.reset(**converted))
+    initial = json.loads(environment.reset(task=task, snapshot=snapshot))
 
     assert initial["policy_state"]["original_request"] == _task().user_request
     assert environment._snapshot.tool_responses["search_current_info"] == []
+    environment.get_reward()
+
+
+@pytest.mark.parametrize(
+    ("payload", "message"),
+    [
+        ('{ "task_id": "not-canonical"}', "not canonical JSON"),
+        ('["not-an-object"]', "must decode to a JSON object"),
+        ('{"value":NaN}', "not valid strict JSON"),
+    ],
+)
+def test_authority_payload_decoder_fails_closed(payload, message):
+    with pytest.raises(ValueError, match=message):
+        decode_authority_payload(payload, field="task")
+
+
+def test_environment_reset_rejects_mixed_authority_payload_representations():
+    converted = to_trl_environment_rows([GRPOCorpusRow(task=_task(), snapshot=_snapshot())])[0]
+    converted["snapshot"] = json.loads(converted["snapshot"])
+    environment = build_trl_environment_factories("react")["search"]()
+
+    with pytest.raises(ValueError, match="must use the same representation"):
+        environment.reset(**converted)
+
+
+def test_environment_reset_rejects_encoding_marker_on_legacy_dict_payloads():
+    environment = build_trl_environment_factories("react")["search"]()
+
+    with pytest.raises(ValueError, match="must not declare an encoding"):
+        environment.reset(
+            task=_task().model_dump(mode="json"),
+            snapshot=_snapshot().model_dump(mode="json"),
+            authority_payload_encoding=AUTHORITY_PAYLOAD_ENCODING,
+        )
+
+
+def test_environment_reset_rejects_null_inside_canonical_snapshot():
+    converted = to_trl_environment_rows([GRPOCorpusRow(task=_task(), snapshot=_snapshot())])[0]
+    snapshot = decode_authority_payload(converted["snapshot"], field="snapshot")
+    snapshot["tool_responses"]["search_current_info"] = None
+    converted["snapshot"] = encode_authority_payload(snapshot)
+    environment = build_trl_environment_factories("react")["search"]()
+
+    with pytest.raises(ValueError, match="search_current_info"):
+        environment.reset(**converted)
+
+
+def test_verifier_repair_reset_rejects_null_prefix_arguments():
+    converted = to_trl_environment_rows([_verifier_tradeoff_row()])[0]
+    snapshot = decode_authority_payload(converted["snapshot"], field="snapshot")
+    prefix = snapshot["hidden_test_facts"]["grpo_decision_state"]["prefix_actions"]
+    prefix[1]["arguments"]["keywords"] = None
+    converted["snapshot"] = encode_authority_payload(snapshot)
+    environment = build_trl_environment_factories("react")[converted["environment"]](
+        audit_enabled=False
+    )
+
+    with pytest.raises(ValueError, match="prefix arguments must not contain null"):
+        environment.reset(**converted)
+    environment.get_reward()
+
+
+def test_verifier_repair_reset_rejects_unknown_decision_schema():
+    converted = to_trl_environment_rows([_verifier_tradeoff_row()])[0]
+    snapshot = decode_authority_payload(converted["snapshot"], field="snapshot")
+    snapshot["hidden_test_facts"]["grpo_decision_state"]["schema_version"] = (
+        "react-verifier-repair-decision.v999"
+    )
+    converted["snapshot"] = encode_authority_payload(snapshot)
+    environment = build_trl_environment_factories("react")[converted["environment"]](
+        audit_enabled=False
+    )
+
+    with pytest.raises(ValueError, match="unsupported verifier-repair decision-state schema"):
+        environment.reset(**converted)
     environment.get_reward()
 
 

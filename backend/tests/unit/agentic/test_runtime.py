@@ -146,6 +146,35 @@ def test_accessibility_and_negative_poi_constraints_are_hard_constraints():
     assert hard["food_taboos"] == ["花生"]
 
 
+def test_neutral_constraint_flexibility_is_projected_without_action_labels():
+    contract = {
+        "schema_version": "constraint-flexibility.v1",
+        "locked_constraints": ["total_budget"],
+        "solver_adjustable_constraints": ["activity_schedule"],
+        "relaxable_constraints": ["activity_set"],
+        "relaxation_options": {"activity_set": ["减少一个非必去活动"]},
+    }
+    result = initialize_agent_ledger(
+        {
+            "user_input": "预算锁定，活动顺序可以重排，必要时可以问我是否删普通活动",
+            "slots": {
+                "destination": "上海",
+                "travel_days": 2,
+                "constraint_flexibility": contract,
+            },
+            "missing_slots": [],
+        },
+        mode="agent",
+    )
+    hard = AgentLedgerState(**result["agent_ledger"]).goal.hard_constraints
+
+    assert hard["constraint_flexibility"] == contract
+    serialized = str(hard["constraint_flexibility"])
+    assert "target_action" not in serialized
+    assert "solver_retry_authorized" not in serialized
+    assert "stop_if_unresolved" not in serialized
+
+
 def test_agent_goal_uses_model_semantics_instead_of_request_keywords():
     without_model_semantics = initialize_agent_ledger(
         {

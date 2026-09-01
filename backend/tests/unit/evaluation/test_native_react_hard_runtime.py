@@ -216,6 +216,36 @@ def test_decision_specialist_requires_explicit_generalist(tmp_path: Path) -> Non
         validate_args(args)
 
 
+def test_verifier_repair_specialist_requires_generalist_and_is_mutually_exclusive(
+    tmp_path: Path,
+) -> None:
+    missing_generalist = parse_args(
+        [
+            "--output",
+            str(tmp_path / "report.json"),
+            "--verifier-repair-specialist-model",
+            "travel-grpo-repair",
+        ]
+    )
+    with pytest.raises(ValueError, match="--policy-model is required"):
+        validate_args(missing_generalist)
+
+    conflicting = parse_args(
+        [
+            "--output",
+            str(tmp_path / "report.json"),
+            "--policy-model",
+            "travel-sft",
+            "--decision-specialist-model",
+            "travel-grpo-poi",
+            "--verifier-repair-specialist-model",
+            "travel-grpo-repair",
+        ]
+    )
+    with pytest.raises(ValueError, match="only one authoritative"):
+        validate_args(conflicting)
+
+
 def test_report_has_cluster_ci_and_family_strata(tmp_path: Path) -> None:
     cases = build_cases()[:4]
     records = []

@@ -356,3 +356,23 @@ def test_policy_caused_argument_mismatch_is_invalid_even_if_episode_succeeds():
     assert reward.turn_rewards[0].future_credit_eligible is False
     assert "INVALID_MODEL_ACTION" in reward.turn_rewards[0].signals
     assert reward.audit_metrics["invalid_model_steps"] == 1
+
+
+@pytest.mark.parametrize(
+    ("model_contract_compliant", "controller_override_attempt"),
+    [(False, False), (True, True)],
+)
+def test_policy_contract_violation_cannot_receive_positive_episode_credit(
+    model_contract_compliant, controller_override_attempt
+):
+    episode = _episode()
+    episode.steps[0].action.model_contract_compliant = model_contract_compliant
+    episode.steps[0].action.controller_override_attempt = controller_override_attempt
+    _rehash(episode)
+
+    reward = HierarchicalRewardEngine().score(episode)
+
+    assert reward.gate_status == "task_failed"
+    assert reward.episode_reward <= -0.25
+    assert reward.audit_metrics["model_contract_failure"] is True
+    assert "MODEL_CONTRACT_NONCOMPLIANT" in reward.gate_reasons

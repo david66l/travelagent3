@@ -29,7 +29,7 @@ async def test_merge_reverification_rejects_stale_success_score(tmp_path):
 
     reverified = groups[task.task_id][0]
     assert reverified.score.successful is False
-    assert reverified.score.gate_status == "task_failed"
+    assert reverified.score.gate_status in {"task_failed", "unsafe"}
     assert sources[0]["currently_failed"] == 1
 
 

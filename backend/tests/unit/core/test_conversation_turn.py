@@ -6,7 +6,7 @@ import pytest
 
 from core.conversation_turn import process_user_turn, retain_agent_semantics_from_previous_turn
 from core.conversation_state import default_conversation_state
-from models.travel_slots import SlotParseOutput, TravelSlots
+from models.travel_slots import ConstraintFlexibilityContract, SlotParseOutput, TravelSlots
 
 
 def _make_parsed(**overrides) -> SlotParseOutput:
@@ -41,6 +41,28 @@ def test_slot_filling_retains_model_derived_agent_semantics_only_when_omitted():
     )
     assert explicitly_cleared.intent_kind == "itinerary"
     assert explicitly_cleared.information_needs == []
+
+
+def test_slot_filling_retains_neutral_constraint_contract_without_persisting_profile_defaults():
+    contract = ConstraintFlexibilityContract(
+        locked_constraints=["total_budget"],
+        solver_adjustable_constraints=["activity_schedule"],
+    )
+    filled = retain_agent_semantics_from_previous_turn(
+        TravelSlots(travel_days=2),
+        {"constraint_flexibility": contract.model_dump(mode="json")},
+    )
+
+    assert filled.constraint_flexibility == contract
+
+    fallback_slots = TravelSlots(travel_days=2).model_copy(
+        update={"constraint_flexibility": None}
+    )
+    cleared = retain_agent_semantics_from_previous_turn(
+        fallback_slots,
+        {"constraint_flexibility": contract.model_dump(mode="json")},
+    )
+    assert cleared.constraint_flexibility is None
 
 
 @pytest.mark.asyncio
@@ -79,6 +101,51 @@ async def test_process_user_turn_parses_and_updates_state():
     assert state["inferred_slots"] == {}
     assert "feasibility_report" in state
     assert state["turn"] == 1
+
+
+@pytest.mark.asyncio
+async def test_process_user_turn_keeps_constraint_contract_through_memory_resolution():
+    state = default_conversation_state()
+    state["user_id"] = "user-constraint"
+    contract = ConstraintFlexibilityContract(
+        locked_constraints=["total_budget"],
+        solver_adjustable_constraints=["activity_schedule"],
+        relaxable_constraints=["activity_set"],
+        relaxation_options={"activity_set": ["减少一个非必去活动"]},
+    )
+    parsed = _make_parsed(
+        confidence=0.94,
+        slots=TravelSlots(
+            destination="成都",
+            travel_days=3,
+            constraint_flexibility=contract,
+        ),
+    )
+    recall_payload = {
+        "source": "anonymous",
+        "short_term_profile": AsyncMock(model_dump=lambda **kw: {}),
+        "long_term_profile": AsyncMock(model_dump=lambda **kw: {}),
+        "merged_profile": AsyncMock(model_dump=lambda **kw: {}),
+        "recalled_profile": AsyncMock(model_dump=lambda **kw: {}),
+        "inferred_slots": {},
+        "confidence": 0.0,
+    }
+    with patch(
+        "core.conversation_turn.DemandParserAgent.parse",
+        new=AsyncMock(return_value=parsed),
+    ), patch(
+        "core.conversation_turn.ProfileRecallAgent.recall",
+        new=AsyncMock(return_value=recall_payload),
+    ):
+        result = await process_user_turn(
+            state,
+            "预算锁定，活动顺序可以重排，冲突时先问我是否减少普通活动",
+        )
+
+    expected = contract.model_dump(mode="json")
+    assert result.slots["constraint_flexibility"] == expected
+    assert state["slots"]["constraint_flexibility"] == expected
+    assert "constraint_flexibility" not in state["profile"].get("trip", {})
 
 
 @pytest.mark.asyncio
