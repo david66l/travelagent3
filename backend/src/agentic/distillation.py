@@ -10,7 +10,10 @@ from pydantic import BaseModel, Field, model_validator
 
 from agentic.environment import EnvironmentRollout
 from agentic.policy import AGENT_TOOL_POLICY_SYSTEM_PROMPT, policy_prompt_payload
-from agentic.policy_actions import policy_action_schemas
+from agentic.policy_actions import (
+    policy_action_schemas_for_state,
+    project_model_owned_arguments,
+)
 
 
 DISTILLATION_SCHEMA_VERSION = "teacher-distillation.v1"
@@ -92,10 +95,14 @@ def score_teacher_rollout(rollout: EnvironmentRollout) -> TeacherCandidateScore:
         if step.action.inference_metrics is not None
     )
     hard_pass = bool(reward.audit_metrics.get("hard_pass"))
+    model_contract_violations = sum(
+        not step.action.model_contract_compliant for step in policy_steps
+    )
     successful = bool(
         reward.gate_status == "passed"
         and reward.components.task > 0
         and reward.components.constraint > 0
+        and model_contract_violations == 0
     )
     return TeacherCandidateScore(
         trajectory_id=rollout.episode.trajectory_id,
@@ -108,7 +115,10 @@ def score_teacher_rollout(rollout: EnvironmentRollout) -> TeacherCandidateScore:
         tool_calls=sum(rollout.tool_call_counts.values()),
         completion_tokens=completion_tokens,
         duplicate_calls=int(reward.audit_metrics.get("duplicate_calls") or 0),
-        invalid_model_steps=int(reward.audit_metrics.get("invalid_model_steps") or 0),
+        invalid_model_steps=(
+            int(reward.audit_metrics.get("invalid_model_steps") or 0)
+            + model_contract_violations
+        ),
         request_latency_ms=round(request_latency_ms, 3),
     )
 
@@ -214,7 +224,10 @@ def build_preference_pair(
                 {"role": "system", "content": AGENT_TOOL_POLICY_SYSTEM_PROMPT},
                 {"role": "user", "content": context_json},
             ],
-            tools=policy_action_schemas(chosen_step.context.allowed_actions),
+            tools=policy_action_schemas_for_state(
+                chosen_step.context.allowed_actions,
+                capability=chosen_step.context.capability,
+            ),
             chosen=chosen_response,
             rejected=rejected_response,
             chosen_trajectory_id=chosen.rollout.episode.trajectory_id,
@@ -270,7 +283,10 @@ def _preference_reasons(
 def _context_hash(step: Any) -> str:
     payload = {
         "context": policy_prompt_payload(step.context),
-        "tools": policy_action_schemas(step.context.allowed_actions),
+        "tools": policy_action_schemas_for_state(
+            step.context.allowed_actions,
+            capability=step.context.capability,
+        ),
     }
     return _canonical_hash(payload)
 
@@ -284,7 +300,7 @@ def _assistant_response(step: Any) -> dict[str, Any]:
                 "type": "function",
                 "function": {
                     "name": step.action.action,
-                    "arguments": step.action.arguments,
+                    "arguments": project_model_owned_arguments(step.action),
                 },
             }
         ],

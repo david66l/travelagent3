@@ -16,6 +16,28 @@ from pydantic import BaseModel, Field
 
 
 VALIDATOR_VERSION = "travel-validator.v1"
+VALIDATOR_HARD_VIOLATION_CODES = frozenset(
+    {
+        "ACTIVITY_TIME_OVERLAP",
+        "CONSECUTIVE_DINING_ACTIVITIES",
+        "DAY_TIME_BOUNDARY_EXCEEDED",
+        "DUPLICATE_POI_VISIT",
+        "EMPTY_ITINERARY",
+        "FIXED_EVENT_DATE_MISMATCH",
+        "FIXED_EVENT_END_EXCEEDED",
+        "FIXED_EVENT_TIME_MISMATCH",
+        "INVALID_ACTIVITY_TIME",
+        "MAX_TRANSIT_EXCEEDED",
+        "MUST_NOT_VISIT_PRESENT",
+        "MUST_VISIT_MISSING",
+        "POI_CLOSED_DURING_VISIT",
+        "POI_CLOSED_ON_DATE",
+        "REQUIRED_RESERVATION_UNAVAILABLE",
+        "TOO_MANY_DINING_ACTIVITIES",
+        "TOTAL_BUDGET_EXCEEDED",
+        "TRAVEL_DAY_COUNT_MISMATCH",
+    }
+)
 _NON_POI_CATEGORIES = {"meal", "restaurant", "hotel", "transport", "rest"}
 _GENERIC_NAMES = {"早餐", "午餐", "晚餐", "酒店", "休息", "自由活动"}
 

@@ -3,12 +3,20 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import re
 import time
 from pathlib import Path
 from typing import Any, Literal
 
+from agentic.chat_template_contract import (
+    AGENT_CHAT_TEMPLATE_KWARGS,
+    AGENT_CHAT_TEMPLATE_SHA256,
+    AGENT_RENDER_PROTOCOL_VERSION,
+    install_agent_chat_template,
+    render_agent_tool_prompt,
+)
 from agentic.loop import PolicyAction, PolicyContext
 from agentic.policy import (
     AGENT_TOOL_POLICY_SYSTEM_PROMPT,
@@ -17,21 +25,27 @@ from agentic.policy import (
     policy_prompt_payload,
 )
 from agentic.policy_actions import (
-    policy_action_schemas,
-    policy_tool_call_json_schema,
+    controller_override_attempt,
+    policy_action_schemas_for_state,
+    policy_tool_call_json_schema_for_state,
     validate_policy_arguments,
+    validate_policy_arguments_for_state,
 )
 from core.inference_metrics import InferenceMetrics
 
 
-_TOOL_CALL_PATTERN = re.compile(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", re.DOTALL)
+_TOOL_CALL_ENVELOPE_PATTERN = re.compile(
+    r"\A\s*<tool_call>\s*(?P<payload>\{.*\})\s*</tool_call>\s*"
+    r"(?:(?:<\|im_end\|>|<\|endoftext\|>)\s*)?\Z",
+    re.DOTALL,
+)
 StructuredDecodingMode = Literal["native", "json_schema", "qwen_tool_envelope"]
 
 
 def parse_local_tool_call(text: str) -> tuple[str, dict[str, Any]]:
     """Parse Qwen-style native tool output without accepting prose as an action."""
-    match = _TOOL_CALL_PATTERN.search(text)
-    candidate = match.group(1) if match else text.strip()
+    match = _TOOL_CALL_ENVELOPE_PATTERN.fullmatch(text)
+    candidate = match.group("payload") if match else text.strip()
     try:
         payload = json.loads(candidate)
     except json.JSONDecodeError as exc:
@@ -40,11 +54,23 @@ def parse_local_tool_call(text: str) -> tuple[str, dict[str, Any]]:
             code="TOOL_CALL_PARSE_ERROR",
             raw_output=text,
         ) from exc
-    name = str(payload.get("name") or payload.get("action") or "").strip()
-    arguments = payload.get("arguments") or {}
-    if not name or not isinstance(arguments, dict):
+    if not isinstance(payload, dict):
         raise PolicyOutputError(
-            "local policy tool call is missing name or arguments",
+            "local policy tool call must be one JSON object",
+            code="TOOL_CALL_SHAPE_ERROR",
+            raw_output=text,
+        )
+    name_keys = [key for key in ("name", "action") if key in payload]
+    expected_keys = {name_keys[0], "arguments"} if len(name_keys) == 1 else set()
+    name = str(payload.get(name_keys[0]) or "").strip() if name_keys else ""
+    arguments = payload.get("arguments")
+    if (
+        not name
+        or not isinstance(arguments, dict)
+        or set(payload) != expected_keys
+    ):
+        raise PolicyOutputError(
+            "local policy tool call must contain exactly one name and arguments object",
             code="TOOL_CALL_SHAPE_ERROR",
             raw_output=text,
         )
@@ -98,6 +124,7 @@ class LocalCheckpointAgentPolicy:
         }:
             raise ValueError(f"unknown structured decoding mode: {self.structured_decoding_mode}")
         self._generation_lock = asyncio.Lock()
+        self._last_generation_audit: dict[str, Any] | None = None
         if do_sample and temperature <= 0:
             raise ValueError("sampled policy temperature must be positive")
         self._torch = torch
@@ -110,6 +137,10 @@ class LocalCheckpointAgentPolicy:
         )
         if not self.tokenizer.chat_template:
             raise RuntimeError("local checkpoint must provide a native chat template")
+        install_agent_chat_template(self.tokenizer)
+        self.render_protocol_version = AGENT_RENDER_PROTOCOL_VERSION
+        self.chat_template_sha256 = AGENT_CHAT_TEMPLATE_SHA256
+        self.chat_template_kwargs = dict(AGENT_CHAT_TEMPLATE_KWARGS)
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
         is_adapter = (Path(checkpoint) / "adapter_config.json").is_file()
@@ -134,7 +165,7 @@ class LocalCheckpointAgentPolicy:
         )
         self.model.eval()
         self._structured_backend: Any | None = None
-        self._structured_processor_cache: dict[tuple[str, ...], Any] = {}
+        self._structured_processor_cache: dict[str, Any] = {}
         if self.structured_decoding_mode != "native":
             try:
                 from outlines import from_transformers
@@ -153,7 +184,10 @@ class LocalCheckpointAgentPolicy:
                 "controller supplied no allowed actions",
                 code="CONTROLLER_ALLOWLIST_EMPTY",
             )
-        tools = policy_action_schemas(context.allowed_actions)
+        tools = policy_action_schemas_for_state(
+            context.allowed_actions,
+            capability=context.capability,
+        )
         messages = [
             {"role": "system", "content": AGENT_TOOL_POLICY_SYSTEM_PROMPT},
             {
@@ -169,6 +203,7 @@ class LocalCheckpointAgentPolicy:
             messages,
             tools=tools,
             allowed_actions=context.allowed_actions,
+            capability=context.capability,
         )
 
     async def propose_from_history(
@@ -177,6 +212,7 @@ class LocalCheckpointAgentPolicy:
         *,
         tools: list[dict[str, Any]],
         allowed_actions: list[str],
+        capability: dict[str, Any] | None = None,
     ) -> PolicyAction:
         """Sample one action from the same assistant/tool history TRL sees."""
         if not allowed_actions:
@@ -193,6 +229,7 @@ class LocalCheckpointAgentPolicy:
                 messages,
                 tools,
                 allowed_actions,
+                capability,
             )
 
     def set_rollout_seed(self, seed: int) -> None:
@@ -200,19 +237,26 @@ class LocalCheckpointAgentPolicy:
         self._torch.manual_seed(seed)
         self._torch.cuda.manual_seed_all(seed)
 
+    @property
+    def last_generation_audit(self) -> dict[str, Any] | None:
+        """Expose the latest raw local completion for offline audit evidence."""
+        return dict(self._last_generation_audit) if self._last_generation_audit else None
+
     def _propose_from_history_sync(
         self,
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]],
         allowed_actions: list[str],
+        capability: dict[str, Any] | None,
     ) -> PolicyAction:
-        encoded = self.tokenizer.apply_chat_template(
+        encoded = render_agent_tool_prompt(
+            self.tokenizer,
             messages,
             tools=tools,
             add_generation_prompt=True,
+            tokenize=True,
             return_dict=True,
             return_tensors="pt",
-            enable_thinking=False,
         )
         device = next(self.model.parameters()).device
         encoded = {key: value.to(device) for key, value in encoded.items()}
@@ -229,7 +273,7 @@ class LocalCheckpointAgentPolicy:
                 from transformers import LogitsProcessorList
 
                 generation_kwargs["logits_processor"] = LogitsProcessorList(
-                    [self._structured_logits_processor(allowed_actions)]
+                    [self._structured_logits_processor(allowed_actions, capability=capability)]
                 )
             generated = self.model.generate(
                 **encoded,
@@ -249,7 +293,25 @@ class LocalCheckpointAgentPolicy:
             completion_ids,
             skip_special_tokens=self.structured_decoding_mode == "json_schema",
         )
+        self._last_generation_audit = {
+            "schema_version": "local-policy-generation-audit.v1",
+            "raw_output": output,
+            "raw_output_sha256": hashlib.sha256(output.encode("utf-8")).hexdigest(),
+            "tool_call_open_count": output.count("<tool_call>"),
+            "tool_call_close_count": output.count("</tool_call>"),
+            "parser_contract": "exact-single-tool-call-envelope-or-json.v1",
+        }
         action, arguments = parse_local_tool_call(output)
+        raw_arguments = dict(arguments)
+        override_attempt = controller_override_attempt(action, raw_arguments)
+        self._last_generation_audit.update(
+            {
+                "parsed_action": action,
+                "model_raw_arguments": raw_arguments,
+                "controller_override_attempt": override_attempt,
+                "model_contract_compliant": not override_attempt,
+            }
+        )
         if action not in allowed_actions:
             raise PolicyOutputError(
                 f"local policy proposed {action}, allowed: {allowed_actions}",
@@ -257,16 +319,28 @@ class LocalCheckpointAgentPolicy:
                 raw_output=output,
             )
         try:
-            validated = validate_policy_arguments(action, arguments)
+            validated = (
+                validate_policy_arguments_for_state(
+                    action,
+                    arguments,
+                    capability=capability,
+                )
+                if capability is not None
+                else validate_policy_arguments(action, arguments)
+            )
         except ValueError as exc:
             raise PolicyOutputError(
                 str(exc),
                 code="POLICY_ARGUMENT_INVALID",
+                detail_code=getattr(exc, "rejection_code", None),
                 raw_output=output,
             ) from exc
         return PolicyAction(
             action=action,
             arguments=validated,
+            model_arguments=raw_arguments,
+            controller_override_attempt=override_attempt,
+            model_contract_compliant=not override_attempt,
             token_usage=int(completion_ids.numel()),
             inference_metrics=InferenceMetrics(
                 model=self.checkpoint,
@@ -278,14 +352,27 @@ class LocalCheckpointAgentPolicy:
             ),
         )
 
-    def _structured_logits_processor(self, allowed_actions: list[str]) -> Any:
+    def _structured_logits_processor(
+        self,
+        allowed_actions: list[str],
+        *,
+        capability: dict[str, Any] | None = None,
+    ) -> Any:
         """Compile one state-scoped JSON grammar without changing the prompt."""
         if self._structured_backend is None:
             raise RuntimeError("structured decoding is not enabled")
         cache = getattr(self, "_structured_processor_cache", None)
         if cache is None:
             cache = self._structured_processor_cache = {}
-        cache_key = tuple(allowed_actions)
+        schema_text = json.dumps(
+            policy_tool_call_json_schema_for_state(
+                allowed_actions,
+                capability=capability or {},
+            ),
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        cache_key = hashlib.sha256(schema_text.encode("utf-8")).hexdigest()
         cached = cache.get(cache_key)
         if cached is not None:
             # Outlines processors keep one guide cursor per generation.  The
@@ -296,11 +383,6 @@ class LocalCheckpointAgentPolicy:
             if callable(reset):
                 reset()
             return cached
-        schema_text = json.dumps(
-            policy_tool_call_json_schema(allowed_actions),
-            ensure_ascii=False,
-            separators=(",", ":"),
-        )
         if self.structured_decoding_mode == "json_schema":
             processor = self._structured_backend.get_json_schema_logits_processor(schema_text)
         elif self.structured_decoding_mode == "qwen_tool_envelope":

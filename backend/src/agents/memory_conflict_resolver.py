@@ -138,6 +138,7 @@ class MemoryConflictResolver:
             "transport_modes_requested",
             "information_needs",
             "current_info_queries",
+            "constraint_flexibility",
         ):
             if key in short_term:
                 resolved[key] = short_term[key]

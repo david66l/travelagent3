@@ -201,6 +201,8 @@ class Settings(BaseSettings):
     agentic_policy_model: str = ""
     agentic_decision_specialist_enabled: bool = False
     agentic_decision_specialist_model: str = ""
+    agentic_verifier_repair_specialist_enabled: bool = False
+    agentic_verifier_repair_specialist_model: str = ""
     agentic_policy_routing_enabled: bool = False
     agentic_student_policy_model: str = ""
     agentic_teacher_policy_model: str = ""

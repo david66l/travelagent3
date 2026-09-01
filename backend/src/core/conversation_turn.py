@@ -32,6 +32,7 @@ _AGENT_SEMANTIC_FIELDS = (
     "transport_modes_requested",
     "information_needs",
     "current_info_queries",
+    "constraint_flexibility",
 )
 
 

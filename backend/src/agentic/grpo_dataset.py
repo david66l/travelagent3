@@ -15,7 +15,10 @@ from pydantic import BaseModel, Field
 from agentic.environment import EnvironmentRollout
 from agentic.grpo import GRPOGroupAuditor, GRPOGroupDecision
 from agentic.policy import AGENT_TOOL_POLICY_SYSTEM_PROMPT, policy_prompt_payload
-from agentic.policy_actions import policy_action_schemas
+from agentic.policy_actions import (
+    policy_action_schemas_for_state,
+    project_model_owned_arguments,
+)
 from agentic.sft_dataset import SFTToolCall, SFTToolFunction
 
 
@@ -103,7 +106,10 @@ class GRPODatasetBuilder:
                     rollout.reward.turn_rewards,
                     strict=True,
                 ):
-                    if step.action.decision_source == "controller":
+                    if (
+                        step.action.decision_source == "controller"
+                        or not step.action.model_contract_compliant
+                    ):
                         continue
                     context = json.dumps(
                         policy_prompt_payload(step.context),
@@ -139,13 +145,16 @@ class GRPODatasetBuilder:
                                         SFTToolCall(
                                             function=SFTToolFunction(
                                                 name=step.action.action,
-                                                arguments=step.action.arguments,
+                                                arguments=project_model_owned_arguments(step.action),
                                             )
                                         ).model_dump()
                                     ],
                                 }
                             ],
-                            tools=policy_action_schemas(step.context.allowed_actions),
+                            tools=policy_action_schemas_for_state(
+                                step.context.allowed_actions,
+                                capability=step.context.capability,
+                            ),
                             episode_reward=rollout.reward.episode_reward,
                             trajectory_advantage=advantage,
                             local_process_signal=local_signal,

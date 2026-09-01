@@ -18,6 +18,12 @@ from agentic.policy import AGENT_TOOL_POLICY_SYSTEM_PROMPT
 from agentic.training import TrainingDependency, check_training_dependencies, load_jsonl
 from agentic.trajectory import redact_pii
 from agentic.trajectory import AgentEpisode, EpisodeReplayVerifier
+from agentic.verifier_repair import (
+    VERIFIER_REPAIR_ACTIONS,
+    constraint_handling_for_violation,
+    parse_constraint_flexibility,
+    relaxation_options_for_violation,
+)
 
 
 class GRPOCorpusRow(BaseModel):
@@ -64,6 +70,70 @@ MIN_POLICY_DRIVEN_TOOL_ITERATIONS = 11
 DEFAULT_POLICY_DRIVEN_TOOL_ITERATIONS = 16
 FRESH_LEDGER_ROLLOUT_CONTRACT = "fresh_ledger_no_teacher_prefix.v1"
 VERIFIED_DECISION_STATE_REPLAY_CONTRACT = "verified_decision_state_replay.v1"
+AUTHORITY_PAYLOAD_ENCODING = "canonical-json.v1"
+VERIFIER_REPAIR_DECISION_SCHEMA_VERSION = "react-verifier-repair-decision.v5"
+VERIFIER_REPAIR_ROUTE_BY_TARGET = {
+    "retry_solve": "decision_verifier_repair_retry",
+    "propose_tradeoff": "decision_verifier_repair_tradeoff",
+    "abort": "decision_verifier_repair_abort",
+}
+VERIFIER_REPAIR_ACTIONS_BY_ROUTE = {
+    "decision_verifier_repair_retry": (
+        "retry_solve",
+        "retrieve_city_knowledge",
+        "search_pois",
+        "get_poi_detail",
+        "get_weather",
+        "search_current_info",
+        "search_transport",
+        "get_route_matrix",
+        "ask_user",
+        "abort",
+    ),
+    "decision_verifier_repair_tradeoff": ("propose_tradeoff", "abort"),
+    "decision_verifier_repair_abort": ("abort",),
+}
+VERIFIER_REPAIR_SCHEMA_CAPABILITY_BY_ROUTE = {
+    "decision_verifier_repair_retry": {},
+    "decision_verifier_repair_tradeoff": {
+        "status": "infeasible",
+        "actionable_alternatives": True,
+        "alternatives": ["[CONTROLLER_AUTHORIZED_OPTION]"],
+    },
+    "decision_verifier_repair_abort": {},
+}
+
+
+def encode_authority_payload(payload: dict[str, Any]) -> str:
+    """Encode authority-bearing rollout state as an Arrow-safe scalar."""
+    return json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+
+
+def decode_authority_payload(payload: dict[str, Any] | str, *, field: str) -> dict[str, Any]:
+    """Decode a canonical JSON object, while preserving direct dict call sites."""
+    if isinstance(payload, dict):
+        return payload
+    if not isinstance(payload, str):
+        raise ValueError(f"{field} authority payload must be a dict or canonical JSON string")
+
+    def reject_non_finite(constant: str) -> None:
+        raise ValueError(f"non-finite JSON number {constant}")
+
+    try:
+        decoded = json.loads(payload, parse_constant=reject_non_finite)
+    except (json.JSONDecodeError, ValueError) as exc:
+        raise ValueError(f"{field} authority payload is not valid strict JSON") from exc
+    if not isinstance(decoded, dict):
+        raise ValueError(f"{field} authority payload must decode to a JSON object")
+    if encode_authority_payload(decoded) != payload:
+        raise ValueError(f"{field} authority payload is not canonical JSON")
+    return decoded
 
 
 def minimum_completion_length_floor(rows: list[GRPOCorpusRow]) -> int:
@@ -202,7 +272,7 @@ def load_grpo_corpus(path: Path) -> list[GRPOCorpusRow]:
 
 
 def to_trl_environment_rows(rows: list[GRPOCorpusRow]) -> list[dict[str, Any]]:
-    """Build fresh-rollout rows without assistant or tool trajectory prefixes."""
+    """Build rows whose authority-bearing state survives Arrow round-trips exactly."""
     converted = []
     for row in rows:
         decision_state = row.snapshot.hidden_test_facts.get("grpo_decision_state")
@@ -221,19 +291,20 @@ def to_trl_environment_rows(rows: list[GRPOCorpusRow]) -> list[dict[str, Any]]:
         )
         converted.append(
             {
-            "prompt": prompt,
-            "task": row.task.model_dump(mode="json"),
-            "snapshot": row.snapshot.model_dump(mode="json"),
-            "environment": _environment_route(row.task, row.snapshot),
-            "task_id": row.task.task_id,
-            "difficulty": row.task.difficulty,
-            "initial_state_fingerprint": environment_fingerprint(row.task, row.snapshot),
-            "rollout_contract": (
-                VERIFIED_DECISION_STATE_REPLAY_CONTRACT
-                if replay_prompt
-                else FRESH_LEDGER_ROLLOUT_CONTRACT
-            ),
-        }
+                "prompt": prompt,
+                "task": encode_authority_payload(row.task.model_dump(mode="json")),
+                "snapshot": encode_authority_payload(row.snapshot.model_dump(mode="json")),
+                "authority_payload_encoding": AUTHORITY_PAYLOAD_ENCODING,
+                "environment": _environment_route(row.task, row.snapshot),
+                "task_id": row.task.task_id,
+                "difficulty": row.task.difficulty,
+                "initial_state_fingerprint": environment_fingerprint(row.task, row.snapshot),
+                "rollout_contract": (
+                    VERIFIED_DECISION_STATE_REPLAY_CONTRACT
+                    if replay_prompt
+                    else FRESH_LEDGER_ROLLOUT_CONTRACT
+                ),
+            }
         )
     return converted
 
@@ -332,18 +403,35 @@ def _budget_probe_action(
             for item in decision_state.get("grounding_phrases") or []
             if str(item).strip()
         ]
-        reason = grounding[0] if grounding else "当前校验结果需要有界修复"
+        from agentic.reason_quality import build_grounded_repair_reason
+
+        visible_messages = list(decision_state.get("prompt_messages") or [])
+        evidence = ""
+        if visible_messages:
+            try:
+                transition = json.loads(str(visible_messages[-1].get("content") or "{}"))
+                state = transition.get("policy_state") or {}
+                reports = [
+                    item
+                    for item in state.get("relevant_artifacts") or []
+                    if isinstance(item, dict)
+                    and item.get("artifact_type") == "validation_report"
+                ]
+                violations = reports[-1].get("violations") or [] if reports else []
+                if violations:
+                    evidence = str(violations[0].get("message") or "")
+            except (AttributeError, TypeError, ValueError, json.JSONDecodeError):
+                evidence = ""
+        if not evidence:
+            evidence = "；".join(grounding) or "当前校验结果需要有界修复"
+        reason = build_grounded_repair_reason(evidence, target)
         if target == "retry_solve":
-            return target, {
-                "strategy": str(
-                    (decision_state.get("expected_arguments") or {}).get(
-                        "strategy", "greedy"
-                    )
-                ),
-                "reason": reason,
-            }
+            return target, {"reason": reason}
         if target == "propose_tradeoff":
-            return target, {"reason": reason, "options": ["调整一个冲突约束"]}
+            # ``options`` is controller-owned in v4.  The sizing probe must
+            # exercise the same model-visible call shape as a real rollout,
+            # otherwise it fabricates a noncompliant completion by design.
+            return target, {"reason": reason}
         if target == "abort":
             return target, {"reason": reason}
     preferred = next(
@@ -376,7 +464,6 @@ def _budget_probe_action(
         reasons = list(row.task.feasibility_report.get("reasons") or [])
         return preferred, {
             "reason": str(reasons[0] if reasons else "当前约束不可行"),
-            "options": [],
         }
     if preferred == "abort":
         return preferred, {"reason": "没有安全且可行的替代方案"}
@@ -497,8 +584,24 @@ def _environment_route(
         target_action = str(decision_state.get("target_action") or "")
         if target_action == "get_poi_detail":
             return "decision_get_poi_detail"
-        if target_action in {"retry_solve", "propose_tradeoff", "abort"}:
-            return "decision_verifier_repair"
+        route = VERIFIER_REPAIR_ROUTE_BY_TARGET.get(target_action)
+        if route is not None:
+            schema_version = str(decision_state.get("schema_version") or "")
+            if schema_version != VERIFIER_REPAIR_DECISION_SCHEMA_VERSION:
+                raise ValueError(
+                    "unsupported verifier-repair decision-state schema: "
+                    f"{schema_version or 'missing'}"
+                )
+            review_allowed_actions = decision_state.get("review_allowed_actions")
+            expected_actions = VERIFIER_REPAIR_ACTIONS_BY_ROUTE[route]
+            if not isinstance(review_allowed_actions, list) or tuple(
+                str(action) for action in review_allowed_actions
+            ) != expected_actions:
+                raise ValueError(
+                    "verifier-repair review action contract does not match route: "
+                    f"{target_action or 'missing'}"
+                )
+            return route
         raise ValueError(f"unsupported GRPO decision-state target: {target_action or 'missing'}")
     if task.missing_slots:
         return "clarification"
@@ -559,6 +662,131 @@ def preflight_grpo_corpus(
                 errors.append(f"PII_DETECTED:{prefix}")
             if _contains_unicode_replacement(payload):
                 errors.append(f"TEXT_ENCODING_CORRUPT:{prefix}")
+            decision_state = row.snapshot.hidden_test_facts.get("grpo_decision_state")
+            target = (
+                str(decision_state.get("target_action") or "")
+                if isinstance(decision_state, dict)
+                else ""
+            )
+            decision_schema = (
+                str(decision_state.get("schema_version") or "")
+                if isinstance(decision_state, dict)
+                else ""
+            )
+            if target in VERIFIER_REPAIR_ACTIONS:
+                if decision_schema != VERIFIER_REPAIR_DECISION_SCHEMA_VERSION:
+                    errors.append(
+                        "VERIFIER_REPAIR_DECISION_SCHEMA_INVALID:"
+                        f"{prefix}:{decision_schema or 'missing'}"
+                    )
+                    continue
+                route = VERIFIER_REPAIR_ROUTE_BY_TARGET.get(target)
+                review_allowed_actions = decision_state.get("review_allowed_actions")
+                expected_actions = (
+                    VERIFIER_REPAIR_ACTIONS_BY_ROUTE.get(route, ())
+                    if route is not None
+                    else ()
+                )
+                if not isinstance(review_allowed_actions, list) or tuple(
+                    str(action) for action in review_allowed_actions
+                ) != expected_actions:
+                    errors.append(
+                        "VERIFIER_REPAIR_ACTION_CONTRACT_MISMATCH:"
+                        f"{prefix}:{target}"
+                    )
+                    continue
+                contract = parse_constraint_flexibility(
+                    row.task.slots.get("constraint_flexibility")
+                )
+                if contract is None:
+                    errors.append(f"VERIFIER_REPAIR_FLEXIBILITY_CONTRACT_INVALID:{prefix}")
+                validation_responses = row.snapshot.tool_responses.get(
+                    "validate_itinerary"
+                ) or []
+                violations = (
+                    validation_responses[0].data.get("hard_violations") or []
+                    if validation_responses
+                    else []
+                )
+                if len(violations) != 1 or not isinstance(violations[0], dict):
+                    errors.append(f"VERIFIER_REPAIR_VIOLATION_CONTRACT_INVALID:{prefix}")
+                elif contract is not None:
+                    handling = constraint_handling_for_violation(
+                        str(violations[0].get("code") or ""),
+                        contract,
+                    )
+                    expected_target = {
+                        "solver_adjustable": "retry_solve",
+                        "relaxable": "propose_tradeoff",
+                        "locked": "abort",
+                    }.get(handling)
+                    if expected_target != target:
+                        errors.append(
+                            "VERIFIER_REPAIR_TARGET_CONTRACT_MISMATCH:"
+                            f"{prefix}:{target}:{expected_target or 'unsupported'}"
+                        )
+                    expected_arguments = decision_state.get("expected_arguments")
+                    expected_controller_arguments = decision_state.get("controller_arguments")
+                    supervised_options = decision_state.get("supervised_options")
+                    require_options = decision_state.get("require_options")
+                    grounding_phrases = decision_state.get("grounding_phrases")
+                    expected_option_contract = relaxation_options_for_violation(
+                        str(violations[0].get("code") or ""), contract
+                    )
+                    expected_argument_keys: set[str] = set()
+                    if (
+                        not isinstance(expected_arguments, dict)
+                        or set(expected_arguments) != expected_argument_keys
+                        or "options" in expected_arguments
+                    ):
+                        errors.append(
+                            f"VERIFIER_REPAIR_MODEL_ARGUMENT_CONTRACT_INVALID:{prefix}"
+                        )
+                    expected_controller_keys = (
+                        {"strategy"} if target == "retry_solve" else set()
+                    )
+                    if (
+                        not isinstance(expected_controller_arguments, dict)
+                        or set(expected_controller_arguments) != expected_controller_keys
+                        or (
+                            target == "retry_solve"
+                            and expected_controller_arguments.get("strategy") != "greedy"
+                        )
+                    ):
+                        errors.append(
+                            f"VERIFIER_REPAIR_CONTROLLER_ARGUMENT_CONTRACT_INVALID:{prefix}"
+                        )
+                    if (
+                        not isinstance(grounding_phrases, list)
+                        or not grounding_phrases
+                        or not all(
+                            isinstance(item, str) and item.strip()
+                            for item in grounding_phrases
+                        )
+                    ):
+                        errors.append(
+                            f"VERIFIER_REPAIR_GROUNDING_CONTRACT_INVALID:{prefix}"
+                        )
+                    if target == "propose_tradeoff":
+                        if (
+                            require_options is not True
+                            or not isinstance(supervised_options, list)
+                            or supervised_options != expected_option_contract
+                            or not supervised_options
+                            or len(supervised_options) > 3
+                            or any(
+                                not isinstance(item, str) or not item.strip()
+                                for item in supervised_options
+                            )
+                            or len(supervised_options) != len(set(supervised_options))
+                        ):
+                            errors.append(
+                                f"VERIFIER_REPAIR_CONTROLLER_OPTION_CONTRACT_INVALID:{prefix}"
+                            )
+                    elif require_options is not False or supervised_options not in ([], None):
+                        errors.append(
+                            f"VERIFIER_REPAIR_NONTRADEOFF_OPTIONS_PRESENT:{prefix}"
+                        )
             if row.task.missing_slots:
                 continue
             if row.task.feasibility_report.get("feasible", True) is False:

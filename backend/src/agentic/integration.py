@@ -16,6 +16,7 @@ from agentic.policy import (
     RoutedAgentPolicy,
     SelfRepairingAgentPolicy,
     ShadowComparingAgentPolicy,
+    VerifierRepairSpecialistRoutedAgentPolicy,
 )
 from agentic.state import AgentLedgerState
 from agentic.trajectory import AgentEpisode, EpisodeRecorder
@@ -279,17 +280,30 @@ def _configured_policy() -> AgentPolicy:
     if settings.agentic_policy_backend == "local_checkpoint":
         return _configured_local_policy()
     if settings.agentic_policy_protocol == "native_tool":
-        if settings.agentic_decision_specialist_enabled:
+        if (
+            settings.agentic_decision_specialist_enabled
+            or settings.agentic_verifier_repair_specialist_enabled
+        ):
             if settings.agentic_policy_routing_enabled:
                 raise RuntimeError(
                     "decision-specialist and student/teacher routing cannot be enabled together"
                 )
+            if (
+                settings.agentic_decision_specialist_enabled
+                and settings.agentic_verifier_repair_specialist_enabled
+            ):
+                raise RuntimeError(
+                    "POI-detail and verifier-repair specialists cannot both be authoritative"
+                )
             generalist_model = settings.agentic_policy_model.strip()
-            specialist_model = settings.agentic_decision_specialist_model.strip()
+            specialist_model = (
+                settings.agentic_decision_specialist_model.strip()
+                if settings.agentic_decision_specialist_enabled
+                else settings.agentic_verifier_repair_specialist_model.strip()
+            )
             if not generalist_model or not specialist_model:
                 raise RuntimeError(
-                    "AGENTIC_POLICY_MODEL and AGENTIC_DECISION_SPECIALIST_MODEL are required "
-                    "when AGENTIC_DECISION_SPECIALIST_ENABLED=true"
+                    "AGENTIC_POLICY_MODEL and the enabled specialist model are required"
                 )
             from core.llm_client import LLMClient
 
@@ -298,20 +312,21 @@ def _configured_policy() -> AgentPolicy:
                 api_key=settings.vllm_api_key,
                 using_vllm=True,
             )
-            return DecisionSpecialistRoutedAgentPolicy(
-                NativeToolAgentPolicy(
-                    shared_client,
-                    model=generalist_model,
-                    temperature=0.0,
-                    max_tokens=settings.agentic_student_max_tokens,
-                ),
-                NativeToolAgentPolicy(
-                    shared_client,
-                    model=specialist_model,
-                    temperature=0.0,
-                    max_tokens=settings.agentic_student_max_tokens,
-                ),
+            generalist = NativeToolAgentPolicy(
+                shared_client,
+                model=generalist_model,
+                temperature=0.0,
+                max_tokens=settings.agentic_student_max_tokens,
             )
+            specialist = NativeToolAgentPolicy(
+                shared_client,
+                model=specialist_model,
+                temperature=0.0,
+                max_tokens=settings.agentic_student_max_tokens,
+            )
+            if settings.agentic_decision_specialist_enabled:
+                return DecisionSpecialistRoutedAgentPolicy(generalist, specialist)
+            return VerifierRepairSpecialistRoutedAgentPolicy(generalist, specialist)
         if settings.agentic_policy_routing_enabled:
             student_model = settings.agentic_student_policy_model.strip()
             teacher_model = settings.agentic_teacher_policy_model.strip()
@@ -411,6 +426,13 @@ def _policy_identity(policy: AgentPolicy) -> tuple[str, str]:
         return (
             "decision-specialist-native-tool-agent-policy",
             f"generalist={generalist};poi_detail_specialist={specialist}",
+        )
+    if isinstance(policy, VerifierRepairSpecialistRoutedAgentPolicy):
+        generalist = getattr(policy.generalist, "model", None) or "configured"
+        specialist = getattr(policy.specialist, "model", None) or "configured"
+        return (
+            "verifier-repair-specialist-native-tool-agent-policy",
+            f"generalist={generalist};verifier_repair_specialist={specialist}",
         )
     if isinstance(policy, ShadowComparingAgentPolicy):
         champion_name, champion_version = _policy_identity(policy.champion)

@@ -86,6 +86,7 @@ def _project_goal(state: dict[str, Any]) -> GoalLedger:
             "has_wheelchair",
             "has_pregnant",
             "food_taboos",
+            "constraint_flexibility",
         )
         if (item := value(key)) not in (None, "", [])
     }

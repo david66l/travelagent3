@@ -12,6 +12,7 @@ from agentic.distillation import (
     TeacherPreferencePair,
     build_preference_pair,
 )
+from agentic.policy_actions import project_model_owned_arguments
 
 
 CASCADE_DISTILLATION_SCHEMA_VERSION = "cascade-distillation.v1"
@@ -175,7 +176,7 @@ def first_policy_action_signature(candidate: TeacherCandidateRecord) -> str | No
     for step in candidate.rollout.episode.steps:
         if step.action.decision_source == "controller":
             continue
-        arguments = step.action.arguments
+        arguments = project_model_owned_arguments(step.action)
         normalized = _canonical_value(arguments)
         return f"{step.action.action}:{normalized}"
     return None

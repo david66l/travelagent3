@@ -12,7 +12,20 @@ from urllib.parse import urlsplit
 from pydantic import BaseModel, Field
 
 from agentic.loop import PolicyAction, PolicyContext, PolicyRouteTrace, PolicyShadowTrace
-from agentic.policy_actions import policy_action_schemas, validate_policy_arguments
+from agentic.policy_actions import (
+    controller_override_attempt,
+    controller_tradeoff_options,
+    model_visible_policy_actions,
+    policy_action_schemas_for_state,
+    validate_policy_arguments_for_state,
+)
+from agentic.verifier_repair import (
+    VERIFIER_REPAIR_ACTIONS,
+    VERIFIER_REPAIR_VIOLATION_CODES,
+    constraint_handling_for_violation,
+    parse_constraint_flexibility,
+    relaxation_options_for_violation,
+)
 from core.inference_metrics import InferenceMetrics
 from core.llm_client import LLMClient
 from core.settings import settings
@@ -29,10 +42,12 @@ class PolicyOutputError(ValueError):
         message: str,
         *,
         code: str = "POLICY_OUTPUT_ERROR",
+        detail_code: str | None = None,
         raw_output: str | None = None,
     ) -> None:
         super().__init__(message)
         self.code = code
+        self.detail_code = detail_code
         # Keep offline diagnostics bounded; callers must not rely on this as
         # part of the online policy contract.
         self.raw_output = raw_output[:2000] if raw_output is not None else None
@@ -166,14 +181,30 @@ def _validate_repairable_action(context: PolicyContext, action: PolicyAction) ->
             f"policy proposed {action.action}, allowed: {context.allowed_actions}",
             code="ACTION_NOT_ALLOWED",
         )
+    raw_arguments = dict(
+        action.model_arguments if action.model_arguments is not None else action.arguments
+    )
     try:
-        arguments = validate_policy_arguments(action.action, action.arguments)
+        arguments = validate_policy_arguments_for_state(
+            action.action,
+            raw_arguments,
+            capability=context.capability,
+        )
     except ValueError as exc:
         raise PolicyOutputError(
             str(exc),
             code="ARGUMENT_VALIDATION_FAILED",
+            detail_code=getattr(exc, "rejection_code", None),
         ) from exc
-    normalized = action.model_copy(update={"arguments": arguments})
+    override_attempt = controller_override_attempt(action.action, raw_arguments)
+    normalized = action.model_copy(
+        update={
+            "arguments": arguments,
+            "model_arguments": raw_arguments,
+            "controller_override_attempt": override_attempt,
+            "model_contract_compliant": not override_attempt,
+        }
+    )
     if _repeats_failed_action_without_progress(context, normalized):
         raise PolicyOutputError(
             "policy repeated an action and arguments that already failed without progress",
@@ -532,7 +563,7 @@ def constrain_policy_context(context: PolicyContext) -> PolicyContext:
             )
         ):
             constrained = (
-                _research_tradeoff_actions(allowed)
+                _research_tradeoff_actions(context, allowed)
                 if _research_recovery_exhausted(context, gap_actions)
                 else gap_actions
             )
@@ -561,8 +592,12 @@ def constrain_policy_context(context: PolicyContext) -> PolicyContext:
                 constrained = [action for action in allowed if action == "accept_itinerary"]
             else:
                 constrained = [action for action in allowed if action != "accept_itinerary"]
+    constrained = model_visible_policy_actions(
+        constrained,
+        capability=context.capability,
+    )
     updates: dict[str, Any] = {}
-    if constrained and constrained != allowed:
+    if constrained != allowed:
         current_subtask = dict(context.current_subtask)
         current_subtask["allowed_actions"] = constrained
         updates.update(
@@ -636,11 +671,16 @@ def _terminal_capability_actions(context: PolicyContext, allowed: list[str]) -> 
     return terminal
 
 
-def _research_tradeoff_actions(allowed: list[str]) -> list[str]:
+def _research_tradeoff_actions(context: PolicyContext, allowed: list[str]) -> list[str]:
     """Prefer asking the user over silently abandoning an evidence-limited plan."""
-    tradeoff = [action for action in allowed if action == "propose_tradeoff"]
-    if tradeoff:
-        return tradeoff
+    # A research failure does not by itself authorize changing user constraints.
+    # If the capability report supplies exact alternatives the model may explain
+    # them; otherwise retain the fail-closed abort action instead of presenting
+    # an empty policy surface after model-visible authority filtering.
+    if controller_tradeoff_options(context.capability) is not None:
+        tradeoff = [action for action in allowed if action == "propose_tradeoff"]
+        if tradeoff:
+            return tradeoff
     return [action for action in allowed if action == "abort"]
 
 
@@ -932,6 +972,182 @@ class DecisionSpecialistRoutedAgentPolicy:
             )
 
 
+def is_verifier_repair_specialist_state(context: PolicyContext) -> bool:
+    """Recognize bounded review states using policy-visible verifier artifacts only."""
+    if str(context.current_subtask.get("task_id") or "") != "review_itinerary":
+        return False
+    if context.missing_information or context.capability.get("status") == "needs_user":
+        return False
+    if not (VERIFIER_REPAIR_ACTIONS & set(context.allowed_actions)):
+        return False
+    contract = parse_constraint_flexibility(
+        context.hard_constraints.get("constraint_flexibility")
+    )
+    if contract is None:
+        return False
+    reports = [
+        artifact
+        for artifact in context.relevant_artifacts
+        if str(artifact.get("artifact_type") or "") == "validation_report"
+    ]
+    if not reports or reports[-1].get("hard_pass") is not False:
+        return False
+    violations = reports[-1].get("violations") or []
+    if not isinstance(violations, list) or len(violations) != 1:
+        return False
+    violation_codes = {
+        str(code)
+        for code in reports[-1].get("violation_codes") or []
+        if str(code).strip()
+    }
+    visible_violation_codes = {
+        str(item.get("code"))
+        for item in violations
+        if isinstance(item, dict) and str(item.get("code") or "").strip()
+    }
+    # Fail closed for mixed reports.  A supported scheduling violation plus a
+    # closure/reservation failure still requires the generalist's search or
+    # clarification actions, which this bounded specialist was not trained on.
+    if (
+        violation_codes != visible_violation_codes
+        or len(violation_codes) != 1
+        or not violation_codes <= VERIFIER_REPAIR_VIOLATION_CODES
+    ):
+        return False
+    violation = violations[0]
+    code = next(iter(violation_codes))
+    message = str(violation.get("message") or "").strip()
+    if not message or context.capability.get("evidence") != [message]:
+        return False
+    handling = constraint_handling_for_violation(code, contract)
+    if handling is None:
+        return False
+    retry_count = int(
+        (context.current_subtask.get("action_attempt_counts") or {}).get(
+            "retry_solve", 0
+        )
+        or 0
+    )
+    if handling == "solver_adjustable":
+        capability_matches = (
+            context.capability.get("status") == "solvable" and retry_count == 0
+        )
+    elif handling == "relaxable":
+        authorized_options = relaxation_options_for_violation(code, contract)
+        capability_matches = (
+            bool(authorized_options)
+            and context.capability.get("status") == "infeasible"
+            and context.capability.get("actionable_alternatives") is True
+            and context.capability.get("alternatives") == authorized_options
+        )
+    else:
+        capability_matches = (
+            context.capability.get("status") == "infeasible"
+            and context.capability.get("actionable_alternatives") is False
+            and not context.capability.get("alternatives")
+        )
+    if not capability_matches:
+        return False
+    return any(
+        str(artifact.get("artifact_type") or "") == "solver_result"
+        for artifact in context.relevant_artifacts
+    )
+
+
+class VerifierRepairSpecialistRoutedAgentPolicy:
+    """Bound one verifier-repair adapter to its measured three-action support."""
+
+    def __init__(self, generalist: Any, specialist: Any) -> None:
+        self.generalist = generalist
+        self.specialist = specialist
+        self._last_route: ContextVar[PolicyRouteDecision | None] = ContextVar(
+            f"agent_verifier_repair_specialist_route_{id(self)}", default=None
+        )
+
+    @property
+    def last_route(self) -> PolicyRouteDecision | None:
+        return self._last_route.get()
+
+    def set_rollout_seed(self, seed: int) -> None:
+        for policy in (self.generalist, self.specialist):
+            setter = getattr(policy, "set_rollout_seed", None)
+            if callable(setter):
+                setter(seed)
+
+    async def propose(self, context: PolicyContext) -> PolicyAction:
+        if not is_verifier_repair_specialist_state(context):
+            route = PolicyRouteDecision(
+                target="teacher",
+                family="complex",
+                reason="state is outside verified verifier-repair specialist support",
+            )
+            self._last_route.set(route)
+            action = await self.generalist.propose(context)
+            return _with_route_trace(action, route, executed_target="teacher")
+
+        route = PolicyRouteDecision(
+            target="student",
+            family="recovery",
+            reason="failed verifier report is inside bounded three-action repair support",
+        )
+        self._last_route.set(route)
+        specialist_token_usage = 0
+        try:
+            action = _normalize_policy_action(await self.specialist.propose(context))
+            specialist_token_usage = action.token_usage
+            if (
+                action.action not in VERIFIER_REPAIR_ACTIONS
+                or action.action not in context.allowed_actions
+            ):
+                raise PolicyOutputError(
+                    f"Verifier-repair specialist returned unsupported action: {action.action}",
+                    code="SPECIALIST_SCOPE_VIOLATION",
+                )
+            raw_arguments = dict(
+                action.model_arguments if action.model_arguments is not None else action.arguments
+            )
+            try:
+                arguments = validate_policy_arguments_for_state(
+                    action.action,
+                    raw_arguments,
+                    capability=context.capability,
+                )
+            except ValueError as exc:
+                raise PolicyOutputError(
+                    str(exc),
+                    code="ARGUMENT_VALIDATION_FAILED",
+                    detail_code=getattr(exc, "rejection_code", None),
+                ) from exc
+            override_attempt = controller_override_attempt(action.action, raw_arguments)
+            action = action.model_copy(
+                update={
+                    "arguments": arguments,
+                    "model_arguments": raw_arguments,
+                    "controller_override_attempt": override_attempt,
+                    "model_contract_compliant": not override_attempt,
+                }
+            )
+            return _with_route_trace(action, route, executed_target="student")
+        except Exception as exc:
+            error_code = str(getattr(exc, "code", type(exc).__name__))
+            fallback_route = route.model_copy(
+                update={"fallback_used": True, "fallback_error_code": error_code}
+            )
+            self._last_route.set(fallback_route)
+            logger.warning(
+                "Verifier-repair specialist failed; falling back to SFT generalist: %s",
+                error_code,
+            )
+            fallback = _with_route_trace(
+                await self.generalist.propose(context),
+                fallback_route,
+                executed_target="teacher",
+            )
+            return fallback.model_copy(
+                update={"token_usage": fallback.token_usage + specialist_token_usage}
+            )
+
+
 class ShadowComparingAgentPolicy:
     """Run a challenger beside the champion without changing executed actions."""
 
@@ -1038,6 +1254,9 @@ with retry_budget_remaining greater than zero, retry the failed action supplied
 by the controller. Otherwise, when capability.status is infeasible, unsafe, or
 missing_tool, do not continue planning: call propose_tradeoff when the context
 supports actionable alternatives; otherwise call abort.
+For propose_tradeoff, generate only a grounded conflict reason. Never generate
+an options field or hide a relaxation proposal inside the reason; the controller
+injects the exact verifier-authorized options after policy inference.
 When capability.status is needs_user or missing_information is non-empty, call
 ask_user immediately instead of capability_check. Ask one concise question for
 the missing user-provided field.
@@ -1057,9 +1276,12 @@ If finalize_research is rejected, act on each verifier code instead of retrying
 it unchanged.
 If policy_feedback is present, correct the cited schema, allowlist or repeated
 no-progress error instead of returning the same failed call.
-Questions, tradeoff reasons and options are user-visible. Write them concisely
+Questions and tradeoff reasons are user-visible. Write them concisely
 in the user's language and never expose internal action names, verifier codes,
 artifact identifiers, policy state, retry counters or implementation details.
+For propose_tradeoff, generate only a grounded conflict reason and never put a
+relaxation proposal in that reason. The controller injects the exact authorized
+options; the model must not generate an options field.
 Use only argument keys declared by the selected function's JSON schema; never
 invent or copy controller-owned fields such as city, trusted_city, max_results,
 candidate_poi_ids, constraints, facts, matrices or itineraries."""
@@ -1087,7 +1309,10 @@ class ApiAgentPolicy:
                         "content": json.dumps(
                             {
                                 "context": policy_prompt_payload(context),
-                                "action_contracts": policy_action_schemas(context.allowed_actions),
+                                "action_contracts": policy_action_schemas_for_state(
+                                    context.allowed_actions,
+                                    capability=context.capability,
+                                ),
                             },
                             ensure_ascii=False,
                             separators=(",", ":"),
@@ -1106,12 +1331,25 @@ class ApiAgentPolicy:
                 code="ACTION_NOT_ALLOWED",
             )
         try:
-            arguments = validate_policy_arguments(decision.action, decision.arguments)
+            arguments = validate_policy_arguments_for_state(
+                decision.action,
+                decision.arguments,
+                capability=context.capability,
+            )
         except ValueError as exc:
-            raise PolicyOutputError(str(exc), code="ARGUMENT_VALIDATION_FAILED") from exc
+            raise PolicyOutputError(
+                str(exc),
+                code="ARGUMENT_VALIDATION_FAILED",
+                detail_code=getattr(exc, "rejection_code", None),
+            ) from exc
+        raw_arguments = dict(decision.arguments)
+        override_attempt = controller_override_attempt(decision.action, raw_arguments)
         return PolicyAction(
             action=decision.action,
             arguments=arguments,
+            model_arguments=raw_arguments,
+            controller_override_attempt=override_attempt,
+            model_contract_compliant=not override_attempt,
             token_usage=int(getattr(self.client, "last_token_usage", 0) or 0),
             inference_metrics=_last_inference_metrics(self.client),
         )
@@ -1163,7 +1401,10 @@ class NativeToolAgentPolicy:
                         ),
                     },
                 ],
-                policy_action_schemas(context.allowed_actions),
+                policy_action_schemas_for_state(
+                    context.allowed_actions,
+                    capability=context.capability,
+                ),
                 temperature=self.temperature,
                 max_tokens=self.max_tokens,
                 task_type="agent_policy",
@@ -1179,12 +1420,25 @@ class NativeToolAgentPolicy:
                 code="ACTION_NOT_ALLOWED",
             )
         try:
-            arguments = validate_policy_arguments(decision.action, decision.arguments)
+            arguments = validate_policy_arguments_for_state(
+                decision.action,
+                decision.arguments,
+                capability=context.capability,
+            )
         except ValueError as exc:
-            raise PolicyOutputError(str(exc), code="ARGUMENT_VALIDATION_FAILED") from exc
+            raise PolicyOutputError(
+                str(exc),
+                code="ARGUMENT_VALIDATION_FAILED",
+                detail_code=getattr(exc, "rejection_code", None),
+            ) from exc
+        raw_arguments = dict(decision.arguments)
+        override_attempt = controller_override_attempt(decision.action, raw_arguments)
         return PolicyAction(
             action=decision.action,
             arguments=arguments,
+            model_arguments=raw_arguments,
+            controller_override_attempt=override_attempt,
+            model_contract_compliant=not override_attempt,
             token_usage=int(getattr(self.client, "last_token_usage", 0) or 0),
             inference_metrics=_last_inference_metrics(self.client),
         )
@@ -1307,7 +1561,10 @@ def minimize_controller_hydrated_payload(payload: dict[str, Any]) -> dict[str, A
     allowed = list(payload.get("allowed_actions") or [])
     if len(allowed) != 1:
         return payload
-    schemas = policy_action_schemas(allowed)
+    schemas = policy_action_schemas_for_state(
+        allowed,
+        capability=dict(payload.get("capability") or {}),
+    )
     if len(schemas) != 1:
         return payload
     function = schemas[0].get("function") or {}

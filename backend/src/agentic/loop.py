@@ -14,6 +14,7 @@ from uuid import uuid4
 from pydantic import BaseModel, Field
 
 from agentic.observations import ObservationEnvelope
+from agentic.policy_actions import authorize_policy_action, controller_tradeoff_options
 from agentic.scheduler import ScheduledBatch, TaskScheduler
 from agentic.state import (
     AgentLedgerState,
@@ -22,12 +23,18 @@ from agentic.state import (
     DecisionRecord,
     FactRecord,
     FailureRecord,
+    GoalCapability,
     PlanVersion,
     StateTransitionError,
     TaskGraphController,
     TaskNode,
 )
 from agentic.termination import CompletionGuard
+from agentic.verifier_repair import (
+    constraint_handling_for_violation,
+    parse_constraint_flexibility,
+    relaxation_options_for_violation,
+)
 from agentic.verifier import SubtaskVerifier
 from core.inference_metrics import InferenceMetrics
 
@@ -105,6 +112,14 @@ class PolicyAction(BaseModel):
     shadow_trace: PolicyShadowTrace | None = None
     repair_attempts: int = Field(default=0, ge=0)
     repair_error_codes: list[str] = Field(default_factory=list)
+    # ``arguments`` is the authorized/executed payload.  These fields preserve
+    # the policy-authored payload so safety and model quality can be audited
+    # independently when the controller hydrates trusted arguments.
+    model_arguments: dict[str, Any] | None = None
+    controller_override_attempt: bool = False
+    model_contract_compliant: bool = True
+    controller_hydration_exact: bool | None = None
+    controller_hydrated_fields: list[str] = Field(default_factory=list)
 
 
 class ActionOutcome(BaseModel):
@@ -219,8 +234,12 @@ class BoundedAgentLoop:
                 )
                 async with asyncio.timeout(remaining_seconds):
                     proposals = await asyncio.gather(
-                        *(policy.propose(context) for context in contexts)
+                        *(policy.propose(context.model_copy(deep=True)) for context in contexts)
                     )
+                proposals = [
+                    authorize_policy_action(context, proposal)
+                    for context, proposal in zip(contexts, proposals, strict=True)
+                ]
                 policy_latency_ms = int((time.monotonic() - policy_started) * 1000)
                 ledger.budget = ledger.budget.consume(
                     episode_steps=len(proposals),
@@ -391,6 +410,31 @@ class BoundedAgentLoop:
                     error_message=f"{action.action} is not allowed for {task.task_id}",
                 ),
             )
+        now = datetime.now(UTC)
+        current_artifacts = [
+            artifact
+            for artifact in ledger.artifacts.values()
+            if artifact.goal_version == ledger.goal.goal_version
+            and artifact.plan_version == ledger.task_graph.plan_version
+            and (artifact.expires_at is None or artifact.expires_at > now)
+        ]
+        runtime_allowed = self._runtime_allowed_actions(
+            ledger,
+            task,
+            current_artifacts,
+        )
+        if action.action not in runtime_allowed:
+            return _TaskExecution(
+                task_id=task.task_id,
+                action=action,
+                outcome=ActionOutcome(
+                    status="failed",
+                    error_code="ACTION_NOT_AUTHORIZED",
+                    error_message=(
+                        f"{action.action} is not authorized by the current runtime state"
+                    ),
+                ),
+            )
         if action.action == "abort":
             return _TaskExecution(
                 task_id=task.task_id,
@@ -482,6 +526,7 @@ class BoundedAgentLoop:
                 ledger.facts[fact.fact_id] = fact
             for artifact in outcome.artifacts:
                 ledger.artifacts[artifact.artifact_id] = artifact
+            self._refresh_post_validation_capability(ledger, outcome.artifacts)
 
             if outcome.loop_control is not None:
                 if not progress_made:
@@ -561,6 +606,102 @@ class BoundedAgentLoop:
                     },
                 )
         return None
+
+    @staticmethod
+    def _refresh_post_validation_capability(
+        ledger: AgentLedgerState,
+        artifacts: list[ArtifactRecord],
+    ) -> None:
+        """Derive capability from neutral user constraints and verifier evidence."""
+        report = next(
+            (
+                artifact
+                for artifact in reversed(artifacts)
+                if artifact.artifact_type == "validation_report"
+            ),
+            None,
+        )
+        if report is None:
+            return
+        if report.payload.get("hard_pass") is True:
+            ledger.goal = ledger.goal.model_copy(
+                update={"capability": GoalCapability(status="solvable")}
+            )
+            return
+
+        violations = [
+            item
+            for item in report.payload.get("hard_violations") or []
+            if isinstance(item, dict)
+        ]
+        visible_messages = [
+            str(item.get("message") or "").strip()
+            for item in violations
+            if str(item.get("message") or "").strip()
+        ]
+        # Clear capability derived from any older validation round before
+        # assessing the new report. Unknown/malformed/multi-violation states
+        # therefore fail closed to the generalist ask-user path instead of
+        # inheriting a stale terminal decision.
+        ledger.goal = ledger.goal.model_copy(
+            update={
+                "capability": GoalCapability(
+                    status="needs_user",
+                    evidence=visible_messages,
+                )
+            }
+        )
+        if len(violations) != 1:
+            return
+        code = str(violations[0].get("code") or "").strip()
+        message = str(violations[0].get("message") or "").strip()
+        if not code or not message:
+            return
+
+        contract = parse_constraint_flexibility(
+            ledger.goal.hard_constraints.get("constraint_flexibility")
+        )
+        if contract is None:
+            return
+        handling = constraint_handling_for_violation(code, contract)
+        if handling is None:
+            return
+
+        if handling == "solver_adjustable":
+            retry_count = sum(
+                item.action == "retry_solve" for item in ledger.decision_history
+            )
+            retry_budget_available = (
+                retry_count == 0
+                and ledger.budget.remaining_episode_steps >= 3
+                and ledger.budget.used_solver_calls < ledger.budget.max_solver_calls
+            )
+            if not retry_budget_available:
+                # The user did not authorize a boundary change. Once the real
+                # step/solver retry budget has been consumed, ask instead of
+                # looping or pretending that another solve is executable.
+                capability = GoalCapability(status="needs_user", evidence=[message])
+            else:
+                capability = GoalCapability(status="solvable", evidence=[message])
+        elif handling == "relaxable":
+            allowed_relaxations = relaxation_options_for_violation(code, contract)
+            if not allowed_relaxations:
+                return
+            capability = GoalCapability(
+                status="infeasible",
+                evidence=[message],
+                actionable_alternatives=True,
+                alternatives=allowed_relaxations,
+            )
+        elif handling == "locked":
+            capability = GoalCapability(
+                status="infeasible",
+                evidence=[message],
+                actionable_alternatives=False,
+            )
+        else:  # defensive fail-closed branch for future schema extensions
+            return
+        ledger.goal = ledger.goal.model_copy(update={"capability": capability})
 
     @staticmethod
     def _assert_current_versions(ledger: AgentLedgerState, outcome: ActionOutcome) -> None:
@@ -917,8 +1058,90 @@ class BoundedAgentLoop:
             )
             if report is not None and report.payload.get("hard_pass") is True:
                 return [action for action in allowed if action == "accept_itinerary"]
-            return [action for action in allowed if action != "accept_itinerary"]
+            allowed = [action for action in allowed if action != "accept_itinerary"]
+            if not BoundedAgentLoop._retry_solve_authorized(ledger, report):
+                allowed = [action for action in allowed if action != "retry_solve"]
+            if not BoundedAgentLoop._propose_tradeoff_authorized(ledger, report):
+                allowed = [action for action in allowed if action != "propose_tradeoff"]
+            return allowed
         return allowed
+
+    @staticmethod
+    def _propose_tradeoff_authorized(
+        ledger: AgentLedgerState,
+        report: ArtifactRecord | None,
+    ) -> bool:
+        """Bind terminal alternatives to the latest single verifier violation."""
+        if report is None or report.payload.get("hard_pass") is not False:
+            return False
+        violations = [
+            item
+            for item in report.payload.get("hard_violations") or []
+            if isinstance(item, dict)
+        ]
+        if len(violations) != 1:
+            return False
+        code = str(violations[0].get("code") or "").strip()
+        message = str(violations[0].get("message") or "").strip()
+        contract = parse_constraint_flexibility(
+            ledger.goal.hard_constraints.get("constraint_flexibility")
+        )
+        if (
+            not code
+            or not message
+            or contract is None
+            or constraint_handling_for_violation(code, contract) != "relaxable"
+        ):
+            return False
+        expected_options = relaxation_options_for_violation(code, contract)
+        capability = ledger.goal.capability.model_dump(mode="json")
+        return bool(
+            expected_options
+            and controller_tradeoff_options(capability) == expected_options
+            and capability.get("evidence") == [message]
+        )
+
+    @staticmethod
+    def _retry_solve_authorized(
+        ledger: AgentLedgerState,
+        report: ArtifactRecord | None,
+    ) -> bool:
+        """Controller-side authorization for one bounded solver repair."""
+        if report is None or report.payload.get("hard_pass") is not False:
+            return False
+        violations = [
+            item
+            for item in report.payload.get("hard_violations") or []
+            if isinstance(item, dict)
+        ]
+        if len(violations) != 1:
+            return False
+        code = str(violations[0].get("code") or "").strip()
+        message = str(violations[0].get("message") or "").strip()
+        contract = parse_constraint_flexibility(
+            ledger.goal.hard_constraints.get("constraint_flexibility")
+        )
+        if (
+            not code
+            or not message
+            or contract is None
+            or constraint_handling_for_violation(code, contract)
+            != "solver_adjustable"
+        ):
+            return False
+        if (
+            ledger.goal.capability.status != "solvable"
+            or ledger.goal.capability.evidence != [message]
+        ):
+            return False
+        retry_count = sum(
+            item.action == "retry_solve" for item in ledger.decision_history
+        )
+        return bool(
+            retry_count == 0
+            and ledger.budget.remaining_episode_steps >= 3
+            and ledger.budget.used_solver_calls < ledger.budget.max_solver_calls
+        )
 
     @staticmethod
     def _event(

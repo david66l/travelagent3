@@ -94,6 +94,48 @@ def to_conversational_prompt_completion(
     return converted
 
 
+def to_rendered_prompt_completion(
+    rows: list[dict[str, Any]],
+    tokenizer: Any,
+    *,
+    chat_template_kwargs: dict[str, Any] | None = None,
+) -> list[dict[str, str]]:
+    """Render audited tool calls before Arrow so nested schemas cannot union-fill.
+
+    Hugging Face Arrow infers one struct schema for every nested ``arguments``
+    object.  Mixing actions can therefore add null keys from other actions.
+    Scalar prompt/completion strings preserve the canonical tool envelope while
+    retaining TRL's completion-only loss boundary.
+    """
+    rendered_rows: list[dict[str, str]] = []
+    template_kwargs = dict(chat_template_kwargs or {"enable_thinking": False})
+    for index, row in enumerate(to_conversational_prompt_completion(rows)):
+        prompt = row["prompt"]
+        messages = [*prompt, *row["completion"]]
+        kwargs = {"tools": row["tools"], **template_kwargs}
+        prompt_text = tokenizer.apply_chat_template(
+            prompt,
+            tokenize=False,
+            add_generation_prompt=True,
+            **kwargs,
+        )
+        full_text = tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=False,
+            **kwargs,
+        )
+        if not isinstance(prompt_text, str) or not isinstance(full_text, str):
+            raise ValueError(f"row {index} chat template did not return text")
+        if not full_text.startswith(prompt_text):
+            raise ValueError(f"row {index} rendered completion does not preserve prompt prefix")
+        completion_text = full_text[len(prompt_text) :]
+        if not completion_text:
+            raise ValueError(f"row {index} rendered completion is empty")
+        rendered_rows.append({"prompt": prompt_text, "completion": completion_text})
+    return rendered_rows
+
+
 def select_sft_smoke_rows(rows: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
     """Select a deterministic action-stratified subset for bounded smoke runs."""
     if limit <= 0 or limit >= len(rows):

@@ -173,6 +173,19 @@ class HierarchicalRewardEngine:
             and bool(step.context.missing_information)
             for step in parsed.steps
         )
+        # A controller may safely hydrate an authorized payload, but a
+        # policy-authored contract violation must never earn positive episode
+        # credit merely because that controller-side sanitation made execution
+        # succeed.  Controller-originated recovery actions have no model
+        # payload to score, so they remain outside this gate.
+        model_contract_failure = any(
+            step.action.decision_source != "controller"
+            and (
+                not step.action.model_contract_compliant
+                or step.action.controller_override_attempt
+            )
+            for step in parsed.steps
+        )
 
         if unsafe_reasons:
             gate_status: Literal["passed", "unsafe", "hard_constraint_failed", "task_failed"] = (
@@ -191,6 +204,7 @@ class HierarchicalRewardEngine:
             or termination_contract_reasons
             or termination_argument_mismatch
             or needs_user_action_mismatch
+            or model_contract_failure
         ):
             gate_status = "task_failed"
             total = min(
@@ -229,6 +243,7 @@ class HierarchicalRewardEngine:
                     + (["TERMINATION_ACTION_MISMATCH"] if termination_action_mismatch else [])
                     + termination_contract_reasons
                     + (["TERMINATION_ARGUMENT_MISMATCH"] if termination_argument_mismatch else [])
+                    + (["MODEL_CONTRACT_NONCOMPLIANT"] if model_contract_failure else [])
                 )
             ),
             components=components,
@@ -245,6 +260,15 @@ class HierarchicalRewardEngine:
                 "duplicate_calls": duplicate_count,
                 "information_gain_steps": sum(item.information_gain for item in turn_rewards),
                 "invalid_model_steps": sum(item.validity == "invalid" for item in turn_rewards),
+                "model_contract_noncompliant_steps": sum(
+                    not step.action.model_contract_compliant for step in parsed.steps
+                ),
+                "controller_override_attempts": sum(
+                    step.action.controller_override_attempt for step in parsed.steps
+                ),
+                "controller_hydration_exact_steps": sum(
+                    step.action.controller_hydration_exact is True for step in parsed.steps
+                ),
                 "external_failure_steps": sum(
                     item.validity == "external_failure" for item in turn_rewards
                 ),
@@ -261,6 +285,7 @@ class HierarchicalRewardEngine:
                 "termination_contract_incomplete": bool(termination_contract_reasons),
                 "termination_argument_mismatch": termination_argument_mismatch,
                 "needs_user_action_mismatch": needs_user_action_mismatch,
+                "model_contract_failure": model_contract_failure,
                 "quality_drives_training": self.config.quality_weight > 0,
             },
         )
@@ -369,7 +394,10 @@ def _turn_rewards(episode: AgentEpisode, terminal_kind: str) -> list[TurnReward]
             item.tool_call_id and item.schema_version == episode.observation_schema_version
             for item in step.observations
         )
-        action_valid = action in step.context.allowed_actions
+        action_valid = (
+            action in step.context.allowed_actions
+            and step.action.model_contract_compliant
+        )
         format_score = 1.0 if action_valid and (not is_tool or observations_valid) else -1.0
 
         state_changed = step.state_before_hash != step.state_after_hash
@@ -386,6 +414,8 @@ def _turn_rewards(episode: AgentEpisode, terminal_kind: str) -> list[TurnReward]
             signals.append("NO_INFORMATION_GAIN")
         if step.action.repair_attempts:
             signals.append("POLICY_SELF_REPAIRED")
+        if not step.action.model_contract_compliant:
+            signals.append("MODEL_CONTRACT_NONCOMPLIANT")
 
         if not action_valid:
             tool_score = -1.0

@@ -92,7 +92,8 @@ origin；演出时间地点、天气和营业时间属于工具可发现事实�
         "event_query": null,
         "transport_modes_requested": [],
         "information_needs": [],
-        "current_info_queries": []
+        "current_info_queries": [],
+        "constraint_flexibility": null
     },
     "missing_slots": ["destination", "travel_days"],
     "clarifying_question": "您需要把以下信息告诉我：目的地、玩几天。"
@@ -126,6 +127,15 @@ origin；演出时间地点、天气和营业时间属于工具可发现事实�
 16. 明确出现孕妇或轮椅使用者时，分别设置 has_pregnant=true、has_wheelchair=true；不得被画像中的默认 false 覆盖
 17. 用户明确给出步行或通勤分钟上限时原样提取到 max_walk_minutes/max_transit_minutes，不得替换成系统默认值
 18. “疲劳度低/不耐累”设置 fatigue_preference=low；“避开人群/不喜欢拥挤”设置 avoid_crowds=true
+19. 只有用户明确说明某类约束能否调整时，才输出 constraint_flexibility；否则必须为 null。其结构固定为：
+    - schema_version="constraint-flexibility.v1"
+    - locked_constraints：用户明确禁止改变的约束
+    - solver_adjustable_constraints：用户允许系统在现有边界内自行重排，但不能放宽边界的约束
+    - relaxable_constraints：发生冲突时可先提出方案、等待用户确认后再改变的约束
+    - relaxation_options：只能记录用户明确授权的调整范围，key 必须属于 relaxable_constraints
+20. 约束枚举只能是 activity_schedule、activity_set、daily_time_window、fixed_event_time、max_transit_minutes、total_budget。三个约束列表必须互斥；未提及的约束不要猜测。
+21. constraint_flexibility 只描述用户事实，严禁输出任何期望执行动作、场景类别或终止策略字段。
+22. 例：“总预算不能增加；活动顺序可在原时间窗内重排；若还是冲突，可以先让我选择是否减少非必去活动”应分别映射为 locked_constraints=["total_budget"]、solver_adjustable_constraints=["activity_schedule"]、relaxable_constraints=["activity_set"]，并把获准选项写到 relaxation_options.activity_set。
 
 ## 多轮信息收集（重要）
 - 「当前用户画像」里已有 destination / travel_days 等时，用户本轮只补充一个字段（如「5000块」「明天从济南出发」「2个人」「不带娃」），intent 仍为 generate_itinerary，只更新对应 slots
@@ -256,10 +266,23 @@ class DemandParserAgent:
             # Rule-based sentiment override when LLM returns neutral
             if parsed.sentiment == "neutral":
                 parsed.sentiment = self._detect_sentiment(user_input)
+            # A low-confidence broad parse is not sufficient authority to alter
+            # user constraints.  Clearing the contract makes downstream routing
+            # fail closed to the generalist/clarification path.
+            if parsed.confidence < 0.65:
+                parsed.slots = parsed.slots.model_copy(
+                    update={"constraint_flexibility": None}
+                )
         except Exception as exc:
             logger.warning("LLM demand parsing failed; using deterministic fallback: %s", exc)
             parsed = self._fallback_parse(user_input)
             parsed.parse_source = "deterministic_fallback"
+            # Mark the field as explicitly cleared so multi-turn semantic
+            # retention cannot resurrect an old authorization after parser
+            # failure.
+            parsed.slots = parsed.slots.model_copy(
+                update={"constraint_flexibility": None}
+            )
 
         parsed = self._normalize_intent_during_gathering(parsed, known_profile, user_input)
         parsed = self._enrich_slots_from_text(parsed, user_input)

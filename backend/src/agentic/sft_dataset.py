@@ -15,7 +15,11 @@ from pydantic import BaseModel, Field
 
 from agentic.loop import NO_TOOL_ACTIONS
 from agentic.policy import AGENT_TOOL_POLICY_SYSTEM_PROMPT, policy_prompt_payload
-from agentic.policy_actions import policy_action_schemas, validate_policy_arguments
+from agentic.policy_actions import (
+    policy_action_schemas_for_state,
+    project_model_owned_arguments,
+    validate_policy_arguments,
+)
 from agentic.trajectory import AgentEpisode, EpisodeReplayVerifier
 from tools.tool_definitions import TOOL_NAME_TO_MODEL
 
@@ -235,6 +239,8 @@ class SFTDatasetBuilder:
             if step.action.decision_source == "controller":
                 continue
             action = step.action.action
+            if not step.action.model_contract_compliant:
+                errors.append("L2_MODEL_CONTRACT_NONCOMPLIANT")
             if action not in step.context.allowed_actions:
                 errors.append("L2_ACTION_NOT_ALLOWED")
             errors.extend(self._argument_errors(action, step.action.arguments))
@@ -396,13 +402,16 @@ class SFTDatasetBuilder:
                                 SFTToolCall(
                                     function=SFTToolFunction(
                                         name=step.action.action,
-                                        arguments=step.action.arguments,
+                                        arguments=project_model_owned_arguments(step.action),
                                     )
                                 )
                             ],
                         ),
                     ],
-                    tools=policy_action_schemas(step.context.allowed_actions),
+                    tools=policy_action_schemas_for_state(
+                        step.context.allowed_actions,
+                        capability=step.context.capability,
+                    ),
                 )
             )
         return result
@@ -584,7 +593,7 @@ def _policy_step_signature(step: Any) -> str:
             "goal_version": step.context.goal_version,
             "plan_version": step.context.plan_version,
             "action": step.action.action,
-            "arguments": step.action.arguments,
+            "arguments": project_model_owned_arguments(step.action),
         }
     )
 

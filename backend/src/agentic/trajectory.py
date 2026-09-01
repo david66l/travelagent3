@@ -15,7 +15,7 @@ from agentic.observations import ObservationEnvelope
 from agentic.state import AgentLedgerState
 
 
-EPISODE_SCHEMA_VERSION = "agent-episode.v2"
+EPISODE_SCHEMA_VERSION = "agent-episode.v3"
 _PHONE = re.compile(r"(?<![A-Za-z0-9])(?:\+?86[- ]?)?1[3-9]\d{9}(?![A-Za-z0-9])")
 _EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 _ID_CARD = re.compile(r"(?<![A-Za-z0-9])\d{17}[\dXx](?![A-Za-z0-9])")
@@ -82,6 +82,21 @@ def episode_content_hash(episode: AgentEpisode) -> str:
             action = step.get("action")
             if isinstance(action, dict):
                 action.pop("inference_metrics", None)
+    if episode.schema_version in {"agent-episode.v1", "agent-episode.v2"}:
+        # Controller/model argument separation was introduced with v3.  Older
+        # append-only records did not serialize these defaulted PolicyAction
+        # fields, so remove them before verifying their historical hash.
+        for step in payload.get("steps", []):
+            action = step.get("action")
+            if isinstance(action, dict):
+                for field in {
+                    "model_arguments",
+                    "controller_override_attempt",
+                    "model_contract_compliant",
+                    "controller_hydration_exact",
+                    "controller_hydrated_fields",
+                }:
+                    action.pop(field, None)
     return _canonical_hash(payload)
 
 
