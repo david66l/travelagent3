@@ -1,6 +1,6 @@
 # TravelAgent2
 
-AI全栈自主规划旅游Agent。6 Agent LangGraph架构 + OR-Tools CP-SAT + pgvector。
+AI 全栈自主规划旅游 Agent。LangGraph 编排（16 类节点 + 10 个职能 Agent 模块）+ Bounded Agent Loop（Policy/Controller/Executor/Verifier 四权分立）+ OR-Tools CP-SAT + pgvector。
 
 ## 项目结构
 
