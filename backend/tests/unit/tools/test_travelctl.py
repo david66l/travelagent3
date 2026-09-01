@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import sys
 from pathlib import Path
 
 _TRAVELCTL = Path(__file__).resolve().parents[4] / "scripts" / "travelctl.py"
@@ -45,3 +46,22 @@ def test_run_script_forwards_argv_and_exit_code(tmp_path, monkeypatch):
     fake_ok = tmp_path / "audit_ok.py"
     fake_ok.write_text("print('ok')\n", encoding="utf-8")
     assert travelctl.run_script(fake_ok, []) == 0
+
+
+def test_run_script_handles_string_system_exit_and_restores_argv(tmp_path, capsys):
+    fake = tmp_path / "audit_boom.py"
+    fake.write_text('raise SystemExit("boom: config missing")\n', encoding="utf-8")
+    argv_before = list(sys.argv)
+    code = travelctl.run_script(fake, [])
+    assert code == 1
+    assert "boom: config missing" in capsys.readouterr().err
+    assert sys.argv == argv_before
+
+
+def test_first_docstring_line_skips_shebang(tmp_path):
+    script = tmp_path / "evaluate_shebang.py"
+    script.write_text(
+        '#!/usr/bin/env python3\n"""Help after shebang."""\n\nx = 1\n',
+        encoding="utf-8",
+    )
+    assert travelctl._first_docstring_line(script) == "Help after shebang."

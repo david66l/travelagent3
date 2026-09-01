@@ -69,15 +69,22 @@ def normalize_verb(verb: str) -> str:
 def discover_scripts() -> dict[str, list[dict[str, str]]]:
     """Return ``{verb: [{subject, file, help}]}`` for the supported verbs."""
     registry: dict[str, list[dict[str, str]]] = {verb: [] for verb in SUPPORTED_VERBS}
+    seen: set[tuple[str, str]] = set()
     for path in sorted(SCRIPTS_DIR.glob("*.py")):
         stem = path.stem
-        verb, _, rest = stem.partition("_")
-        verb = normalize_verb(verb)
+        raw_verb, _, rest = stem.partition("_")
+        verb = normalize_verb(raw_verb)
         if verb not in registry or not rest:
             continue
+        subject = _stem_to_subject(rest)
+        # A canonical file (evaluate_x) and an alias file (eval_x) with the
+        # same subject must not produce duplicate index entries.
+        if (verb, subject) in seen:
+            continue
+        seen.add((verb, subject))
         registry[verb].append(
             {
-                "subject": _stem_to_subject(rest),
+                "subject": subject,
                 "file": path.name,
                 "help": _first_docstring_line(path),
             }
@@ -90,13 +97,30 @@ def _first_docstring_line(path: Path) -> str:
         content = path.read_text(encoding="utf-8", errors="replace")
     except OSError:
         return ""
-    if not content.startswith('"""'):
+    # Skip shebang/coding lines so scripts that put #! first still get help.
+    lines = content.splitlines()
+    while lines and lines[0].startswith(("#!", "# -*-")):
+        lines = lines[1:]
+    if not lines or not lines[0].lstrip().startswith('"""'):
         return ""
-    end = content.find('"""', 3)
-    if end == -1:
-        return ""
-    first = content[3:end].strip().splitlines()
-    return first[0].strip() if first else ""
+    first = lines[0].lstrip()[3:]
+    if first.endswith('"""'):
+        first = first[:-3]
+    first = first.strip()
+    if first:
+        return _console_safe(first)
+    for line in lines[1:]:
+        if '"""' in line:
+            break
+        if line.strip():
+            return _console_safe(line.strip())
+    return ""
+
+
+def _console_safe(text: str) -> str:
+    """Keep the index printable under legacy console encodings (e.g. GBK)."""
+    encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
+    return text.encode(encoding, errors="replace").decode(encoding, errors="replace")
 
 
 def resolve_script(verb: str, subject: str) -> Path | None:
@@ -107,12 +131,26 @@ def resolve_script(verb: str, subject: str) -> Path | None:
 
 
 def run_script(script: Path, forward_args: list[str]) -> int:
-    """Execute a legacy script in-process with forwarded arguments."""
+    """Execute a legacy script in-process with forwarded arguments.
+
+    The target script's ``sys.argv`` is restored afterwards; other process
+    state it may mutate (``sys.path``, signal handlers, atexit hooks) is not
+    isolated, so do not chain multiple dispatches in one process.
+    """
+    saved_argv = sys.argv
     sys.argv = [str(script), *forward_args]
     try:
         runpy.run_path(str(script), run_name="__main__")
-    except SystemExit as exc:  # argparse errors and explicit exits
-        return int(exc.code or 0)
+    except SystemExit as exc:
+        # argparse errors exit with 2; scripts may exit with ints or messages.
+        if exc.code is None:
+            return 0
+        if isinstance(exc.code, int):
+            return exc.code
+        print(exc.code, file=sys.stderr)
+        return 1
+    finally:
+        sys.argv = saved_argv
     return 0
 
 
@@ -148,8 +186,16 @@ def main() -> int:
     registry = discover_scripts()
     verb = normalize_verb(args.verb)
 
-    if args.verb == "list" or args.subject is None:
-        _print_index(registry, None if args.verb == "list" else verb)
+    if args.verb == "list":
+        _print_index(registry, normalize_verb(args.subject) if args.subject else None)
+        return 0
+    if args.subject is None:
+        if args.forward and args.forward[0].startswith("-"):
+            parser.error(
+                "a subject is required before forwarded flags: "
+                f"travelctl {args.verb} <subject> {' '.join(args.forward)}"
+            )
+        _print_index(registry, verb)
         return 0
 
     script = resolve_script(verb, args.subject)
