@@ -16,10 +16,10 @@ k8s/secrets/
 k8s/secret.local.yaml
 models/
 # Python domain models are source code; the broad model-weight rule above must
-# not hide newly added application schemas.
+# not hide application schemas.  The whole package is small (no weights) and a
+# fresh clone must import `models.attraction` etc. without missing files.
 !backend/src/models/
-backend/src/models/*
-!backend/src/models/travel_slots.py
+!backend/src/models/**
 celerybeat-*
 *.db-shm
 *.db-wal
@@ -63,3 +63,4 @@ ml/agentic/datasets/*/
 ml/agentic/checkpoints/**/adapter_model.safetensors
 ml/agentic/checkpoints/**/checkpoint-*/
 ml/agentic/checkpoints/**/ref/
+backend/src/models/__pycache__/
