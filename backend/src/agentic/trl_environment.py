@@ -358,6 +358,9 @@ class _TRLTravelEnvironmentBase:
             ),
         )
         self._runner = _SessionLoopThread()
+        # H-002: when replaying a frozen decision state this is pinned to
+        # the snapshot authoring moment; None keeps the live wall clock.
+        self._frozen_moment: datetime | None = None
         self._transition = self._runner.run(self._session.start())
         if self._transition.done or self._transition.next_context is None:
             raise RuntimeError("environment task has no policy-owned decision")
@@ -463,6 +466,16 @@ class _TRLTravelEnvironmentBase:
             tool_call_counts=(dict(self._backend.call_counts) if self._backend is not None else {}),
         )
 
+    async def _run_under_frozen_clock(self, step: Any) -> Any:
+        """Execute one session step inside the frozen reference clock.
+
+        The session loop lives on its own thread and ``run_coroutine_threadsafe``
+        does not propagate the caller's contextvars, so the frozen moment is
+        carried on the instance and entered here on the session thread.
+        """
+        with frozen_reference_time(self._frozen_moment):
+            return await step
+
     def _act(self, action: str, arguments: dict[str, Any]) -> str:
         session = self._require_session()
         validated = validate_policy_arguments(action, arguments)
@@ -476,23 +489,24 @@ class _TRLTravelEnvironmentBase:
             else dict(arguments)
         )
         runner = self._require_runner()
-        transition = runner.run(
-            session.submit(
-                PolicyAction(
-                    action=action,
-                    arguments=validated,
-                    model_arguments=model_arguments,
-                    controller_override_attempt=bool(
-                        pending and pending.get("controller_override_attempt")
-                    ),
-                    model_contract_compliant=(
-                        bool(pending.get("model_contract_compliant"))
-                        if pending is not None
-                        else True
-                    ),
-                )
+        step = session.submit(
+            PolicyAction(
+                action=action,
+                arguments=validated,
+                model_arguments=model_arguments,
+                controller_override_attempt=bool(
+                    pending and pending.get("controller_override_attempt")
+                ),
+                model_contract_compliant=(
+                    bool(pending.get("model_contract_compliant"))
+                    if pending is not None
+                    else True
+                ),
             )
         )
+        if self._frozen_moment is not None:
+            step = self._run_under_frozen_clock(step)
+        transition = runner.run(step)
         self._transition = transition
         self._audit(
             "action",
@@ -1276,19 +1290,19 @@ class _TRLReactVerifierRepairDecisionEnvironmentBase(_TRLTravelEnvironmentBase):
         # TTLs must be evaluated against that moment, not the wall clock, or
         # the recorded prefix silently stops reaching itinerary review once
         # the calendar crosses a requirement boundary.
-        with frozen_reference_time(self._frozen_reference_moment()):
-            for item in decision_state.get("prefix_actions") or []:
-                if not isinstance(item, dict):
-                    raise ValueError("decision-state prefix action must be an object")
-                raw_arguments = item.get("arguments")
-                if not isinstance(raw_arguments, dict):
-                    raise ValueError("decision-state prefix arguments must be an object")
-                if any(value is None for value in raw_arguments.values()):
-                    raise ValueError("decision-state prefix arguments must not contain null")
-                prefix_arguments = dict(raw_arguments)
-                rendered = self._act(str(item.get("action") or ""), prefix_arguments)
-                if json.loads(rendered).get("done") is True:
-                    raise ValueError("decision-state prefix terminated before the target")
+        self._frozen_moment = self._frozen_reference_moment()
+        for item in decision_state.get("prefix_actions") or []:
+            if not isinstance(item, dict):
+                raise ValueError("decision-state prefix action must be an object")
+            raw_arguments = item.get("arguments")
+            if not isinstance(raw_arguments, dict):
+                raise ValueError("decision-state prefix arguments must be an object")
+            if any(value is None for value in raw_arguments.values()):
+                raise ValueError("decision-state prefix arguments must not contain null")
+            prefix_arguments = dict(raw_arguments)
+            rendered = self._act(str(item.get("action") or ""), prefix_arguments)
+            if json.loads(rendered).get("done") is True:
+                raise ValueError("decision-state prefix terminated before the target")
         session = self._require_session()
         self._decision_step_start = len(session.recorder.episode.steps)
         self._decision_contract = decision_state
