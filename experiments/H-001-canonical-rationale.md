@@ -58,3 +58,22 @@
 - 同构性审计: 语料 vs 最新 loop 五层一致（prompt/schema/template/completion/版本）
 - 教师正确性审计: 300 行合同一致性 100%
 - 探针产物: 服务器 h001-canonical-probe-h24-stop12 / h001-canonical-probe-full24 + h001-zero-optimizer-diagnostic-v1/
+
+## 行为评测结果（2026-09-02 补记，H-002 修复解锁后）
+
+| 指标 | v11 旧教材@12 | canonical@24 | 判定 |
+|---|---|---|---|
+| action_accuracy | 0.925 | **0.975** | ✅ 过门（≥0.81），retry_solve 0.5→**0.9**（+40pp，最大单项改善） |
+| reason_grounding | 0.537 | 0.525 | ❌ 未达 <10 失败预测 |
+| full_success | 0.013 | 0.050 | ❌ 未达 ≥0.60 |
+| mean_reward | 0.512 | 0.570 | ↑ |
+
+失败样本归因：模型生成时**抄写 prompt 里 tool schema 的英文描述**（"The controller
+injects the exact verifier-authorized alternatives..."）而非输出中文连接词 —— prompt 内
+工具描述构成强复制先验，与 NLL 2.34 的连接词模式在采样温度 0.8 下竞争仍未占优。
+
+**结论：假设部分成立** —— 连接词确实变得可学（NLL 4.51→2.34 单调下降；动作面大幅
+受益），但 24 步不足以让连接词模式在生成时压过复制先验。下一步（预登记）：h48 探针
+（48 步 = 完整 2 epoch）验证连接词模式是否在生成中占优；若仍被复制先验压制，则升级
+为"prompt 工具描述与完成语的竞争"问题（对应 P1-2 约束解码的又一论据：grammar 约束
+可以直接封死抄描述的模式）。
