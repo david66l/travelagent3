@@ -8,7 +8,6 @@ phrases, and the selected public action.
 
 from __future__ import annotations
 
-import hashlib
 import re
 from typing import Any
 
@@ -101,6 +100,24 @@ _RATIONALE_PREFIXES = {
     ),
 }
 
+# One deterministic connector per action (H-001).  Every call site that
+# recomputes a canonical reason for equality checks (SFT warm-start builder,
+# DPO preference builder, DPO trainer validation, GRPO replay probe, reason
+# audit) must agree, so the connector cannot fork by violation code unless
+# every site threads the code through together.
+_CANONICAL_RATIONALE_BY_ACTION: dict[str, str] = {
+    "retry_solve": "该问题仍可在现有约束内修复，应先调整顺序并进行一次有界重算",
+    "propose_tradeoff": "现有要求无法同时满足，需要您从已授权的调整方案中作出选择",
+    "abort": "相关约束均已锁定且没有安全可行的调整空间，因此必须停止规划",
+}
+
+for _action, _canonical in _CANONICAL_RATIONALE_BY_ACTION.items():
+    if _canonical not in _RATIONALE_PREFIXES[_action]:
+        raise RuntimeError(
+            "canonical repair rationale must come from the audited prefix pool: "
+            f"{_action}"
+        )
+
 
 def normalize_reason_text(value: Any) -> str:
     rendered = str(value or "")
@@ -117,6 +134,27 @@ def repair_reason_rationale_prefixes(target_action: str) -> tuple[str, ...]:
         ) from exc
 
 
+def canonical_repair_rationale(target_action: str) -> str:
+    """Return the single deterministic rationale connector for a repair action.
+
+    H-001 contract: the teacher reason must be a deterministic function of its
+    inputs so the completion prefix stays learnable.  The earlier curriculum
+    selected one of eight prefixes via ``sha256(action:evidence)``, which made
+    the prefix tokens unpredictable by construction (measured prefix NLL 4.51
+    vs evidence 0.057 on the v11 checkpoint) and left reason-quality SFT in a
+    corner where SFT cannot converge, zero-variance GRPO cannot push, and the
+    lexical eval only accepts licensed wording.  One canonical connector per
+    action removes that entropy; user-visible variety is carried by the
+    grounded evidence, not the connector.
+    """
+    try:
+        return _CANONICAL_RATIONALE_BY_ACTION[target_action]
+    except KeyError as exc:
+        raise ValueError(
+            f"unsupported verifier-repair action: {target_action}"
+        ) from exc
+
+
 def build_grounded_repair_reason(evidence: str, target_action: str) -> str:
     """Create a public teacher reason without model-owned controller fields.
 
@@ -124,18 +162,13 @@ def build_grounded_repair_reason(evidence: str, target_action: str) -> str:
     curricula used ``evidence + rationale``; a continued adapter could then
     reproduce its old evidence-only completion and terminate before learning
     the new rationale.  Rationale-first wording removes that prefix shortcut
-    while preserving every user-visible evidence anchor.
+    while preserving every user-visible evidence anchor.  The connector is
+    the canonical one for the action (see :func:`canonical_repair_rationale`).
     """
     evidence = str(evidence or "").strip().rstrip("。.!！")
     if not evidence:
         raise ValueError("verifier evidence is required for a repair reason")
-    suffixes = repair_reason_rationale_prefixes(target_action)
-    index = int(
-        hashlib.sha256(f"{target_action}:{evidence}".encode("utf-8")).hexdigest()[:8],
-        16,
-    ) % len(suffixes)
-    rationale = suffixes[index]
-    return f"{rationale}：{evidence}。"
+    return f"{canonical_repair_rationale(target_action)}：{evidence}。"
 
 
 def verifier_reason_quality_checks(

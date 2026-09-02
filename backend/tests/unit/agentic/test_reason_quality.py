@@ -76,7 +76,10 @@ def test_internal_action_name_is_rejected_from_user_visible_reason():
     assert checks["reason_public_language"] is False
 
 
-def test_teacher_reason_has_deterministic_but_nonconstant_wording():
+def test_teacher_reason_uses_one_deterministic_canonical_connector():
+    # H-001: the hash-randomized prefix was unlearnable by construction
+    # (prefix NLL 4.51 vs evidence 0.057); the connector is now a fixed
+    # deterministic function of the action, and evidence carries the variety.
     first = build_grounded_repair_reason(EVIDENCE, "retry_solve")
     assert first == build_grounded_repair_reason(EVIDENCE, "retry_solve")
     variants = {
@@ -86,4 +89,17 @@ def test_teacher_reason_has_deterministic_but_nonconstant_wording():
         )
         for minutes in range(20, 80)
     }
-    assert len({reason.split("：", 1)[0] for reason in variants}) >= 4
+    connectors = {reason.split("：", 1)[0] for reason in variants}
+    assert connectors == {"该问题仍可在现有约束内修复，应先调整顺序并进行一次有界重算"}
+    assert len(variants) == 60  # evidence varies -> full reasons stay unique
+
+
+@pytest.mark.parametrize("target", ["retry_solve", "propose_tradeoff", "abort"])
+def test_canonical_connector_comes_from_the_audited_prefix_pool(target):
+    from agentic.reason_quality import (
+        canonical_repair_rationale,
+        repair_reason_rationale_prefixes,
+    )
+
+    canonical = canonical_repair_rationale(target)
+    assert canonical in repair_reason_rationale_prefixes(target)
