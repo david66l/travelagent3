@@ -24,7 +24,10 @@ sys.path.insert(0, str(REPO_ROOT / "backend" / "src"))
 
 from agentic.grpo_training import GRPOCorpusRow, load_grpo_corpus  # noqa: E402
 from agentic.policy_actions import validate_policy_arguments  # noqa: E402
-from agentic.reason_quality import verifier_reason_quality_checks  # noqa: E402
+from agentic.reason_quality import (  # noqa: E402
+    canonical_repair_rationale,
+    verifier_reason_quality_checks,
+)
 from agentic.sft_dataset import DatasetManifest, SFTExample  # noqa: E402
 from scripts.build_verifier_repair_sft_warmstart import (  # noqa: E402
     _decision_example,
@@ -810,10 +813,13 @@ def _optimization_balance_report(
     if set(cell_distribution) - {2, 3}:
         errors.append("OPTIMIZATION_SOURCE_ACTION_CELL_INVALID")
     if any(
-        metrics["unique"] < 4 or metrics["max_rate"] > 0.25
-        for metrics in prefix_metrics.values()
+        set(values) != {canonical_repair_rationale(action)}
+        for action, values in prefixes.items()
     ):
-        errors.append("OPTIMIZATION_RATIONALE_PREFIX_DIVERSITY_INVALID")
+        # H-001: the connector is one deterministic canonical string per
+        # action; the old diversity gate enforced the abolished
+        # sha256-randomized prefix curriculum and is intentionally inverted.
+        errors.append("OPTIMIZATION_RATIONALE_PREFIX_NOT_CANONICAL")
     return {
         "action_counts": dict(sorted(action_counts.items())),
         "source_contribution_distribution": dict(sorted(source_distribution.items())),
