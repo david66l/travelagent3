@@ -330,7 +330,13 @@ class _TRLTravelEnvironmentBase:
         self._task = parsed_task
         self._snapshot = parsed_snapshot
         self._task_id = parsed_task.task_id
-        initialized = initialize_agent_ledger(
+        # H-002: pin before the ledger initializes — the react task graph
+        # materializes declared research requirements (weather window) here.
+        # The ledger initializes on the caller thread, so the frozen context
+        # must be entered directly (contextvars do not cross threads).
+        self._frozen_moment: datetime | None = self._frozen_reference_moment()
+        with frozen_reference_time(self._frozen_moment):
+            initialized = initialize_agent_ledger(
             {
                 "user_input": parsed_task.user_request,
                 "slots": parsed_task.slots,
@@ -358,11 +364,6 @@ class _TRLTravelEnvironmentBase:
             ),
         )
         self._runner = _SessionLoopThread()
-        # H-002: resolve the frozen authoring moment BEFORE the session
-        # starts, because the task graph (declared research requirements,
-        # including the ten-day weather window) is materialized during
-        # session.start() on the session thread.
-        self._frozen_moment: datetime | None = self._frozen_reference_moment()
         start = self._session.start()
         if self._frozen_moment is not None:
             start = self._run_under_frozen_clock(start)
