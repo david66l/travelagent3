@@ -1,7 +1,7 @@
 # H-001 canonical rationale SFT 重训（预登记假设卡）
 
 - **日期**: 2026-09-01
-- **状态**: 进行中（诊断阶段）
+- **状态**: ✅ 验证通过（2026-09-02，h48）
 - **变更**: 教师 reason 前缀从 `sha256(action:evidence) % 8` 随机选择改为**每动作唯一 canonical 连接词**（`reason_quality.py::canonical_repair_rationale`）
 - **设计降级说明**: 原计划 (action × violation_code) 18 槽查表，降级为每动作 1 条 —— 5 个调用点（warmstart/DPO builder/DPO trainer 校验/GRPO 探针/审计）都用此函数做相等校验，按码分叉要求全部站点同步取码，一致性风险大；动作级唯一已满足可学习性（LIMA：一致性 > 多样性），多样性由 evidence 承载
 
@@ -77,3 +77,21 @@ injects the exact verifier-authorized alternatives..."）而非输出中文连�
 （48 步 = 完整 2 epoch）验证连接词模式是否在生成中占优；若仍被复制先验压制，则升级
 为"prompt 工具描述与完成语的竞争"问题（对应 P1-2 约束解码的又一论据：grammar 约束
 可以直接封死抄描述的模式）。
+
+
+## 最终结果（2026-09-02，h48 = 48 步完整 2 epoch）
+
+| 指标 | v11 旧教材基线 | h48 canonical | 假设卡预测 | 判定 |
+|---|---|---|---|---|
+| full_success_rate | 0.013 | **0.887** | ≥0.60 | ✅ 大幅超预期 |
+| action_accuracy | 0.925 | **1.000** | ≥0.81 | ✅ |
+| reason_grounding_rate | 0.537 | **0.950** | （等价口径 <10 失败） | ✅ 4/80 |
+| model_contract_compliance | 1.0 | 1.000 | — | ✅ |
+| mean_reward | 0.512 | 0.966 | — | ✅ |
+| rationale_prefix NLL | 4.510 | **0.018**（12步3.18→24步2.34→48步0.018） | 可压缩 | ✅ 完全压缩 |
+
+分动作 full_success：abort 0.90 / tradeoff 0.883 / retry 0.90（均匀，无短板）。
+评测口径：internal-dev 80 题、源状态与训练集不相交、温度 0.8、单采样 —— 泛化而非记忆。
+六连败（v8-v13）以 +87pp 的 full_success 提升收场；根因-修复-验证闭环完整。
+遗留：~9 个失败样本（4 个 grounding 未命中 + 部分长证据截断嫌疑），待失败分类学细查；
+正式晋升仍需走 selector 硬门与独立盲审流程。
