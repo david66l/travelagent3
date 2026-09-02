@@ -358,10 +358,15 @@ class _TRLTravelEnvironmentBase:
             ),
         )
         self._runner = _SessionLoopThread()
-        # H-002: when replaying a frozen decision state this is pinned to
-        # the snapshot authoring moment; None keeps the live wall clock.
-        self._frozen_moment: datetime | None = None
-        self._transition = self._runner.run(self._session.start())
+        # H-002: resolve the frozen authoring moment BEFORE the session
+        # starts, because the task graph (declared research requirements,
+        # including the ten-day weather window) is materialized during
+        # session.start() on the session thread.
+        self._frozen_moment: datetime | None = self._frozen_reference_moment()
+        start = self._session.start()
+        if self._frozen_moment is not None:
+            start = self._run_under_frozen_clock(start)
+        self._transition = self._runner.run(start)
         if self._transition.done or self._transition.next_context is None:
             raise RuntimeError("environment task has no policy-owned decision")
         self._reward = None
@@ -465,6 +470,38 @@ class _TRLTravelEnvironmentBase:
             reward=self._reward,
             tool_call_counts=(dict(self._backend.call_counts) if self._backend is not None else {}),
         )
+
+    def _frozen_reference_moment(self) -> datetime | None:
+        """Best-effort authoring time of the frozen snapshot, if recorded."""
+        latest: datetime | None = None
+        try:
+            payload = self._snapshot.model_dump(mode="json") if self._snapshot else None
+        except (AttributeError, TypeError, ValueError):
+            payload = None
+        if not isinstance(payload, dict):
+            return None
+
+        def visit(node: Any) -> None:
+            nonlocal latest
+            if isinstance(node, dict):
+                for key, value in node.items():
+                    if key in {"queried_at", "retrieved_at", "created_at", "generated_at"} and isinstance(value, str):
+                        try:
+                            moment = datetime.fromisoformat(value.replace("Z", "+00:00"))
+                        except ValueError:
+                            continue
+                        if moment.tzinfo is None:
+                            moment = moment.replace(tzinfo=UTC)
+                        if latest is None or moment > latest:
+                            latest = moment
+                    else:
+                        visit(value)
+            elif isinstance(node, list):
+                for item in node:
+                    visit(item)
+
+        visit(payload)
+        return latest
 
     async def _run_under_frozen_clock(self, step: Any) -> Any:
         """Execute one session step inside the frozen reference clock.
@@ -1216,37 +1253,6 @@ class _TRLReactVerifierRepairDecisionEnvironmentBase(_TRLTravelEnvironmentBase):
         self._decision_step_start = 0
         self._decision_contract: dict[str, Any] = {}
 
-    def _frozen_reference_moment(self) -> datetime | None:
-        """Best-effort authoring time of the frozen snapshot, if recorded."""
-        latest: datetime | None = None
-        try:
-            payload = self._snapshot.model_dump(mode="json") if self._snapshot else None
-        except (AttributeError, TypeError, ValueError):
-            payload = None
-        if not isinstance(payload, dict):
-            return None
-
-        def visit(node: Any) -> None:
-            nonlocal latest
-            if isinstance(node, dict):
-                for key, value in node.items():
-                    if key in {"queried_at", "retrieved_at", "created_at", "generated_at"} and isinstance(value, str):
-                        try:
-                            moment = datetime.fromisoformat(value.replace("Z", "+00:00"))
-                        except ValueError:
-                            continue
-                        if moment.tzinfo is None:
-                            moment = moment.replace(tzinfo=UTC)
-                        if latest is None or moment > latest:
-                            latest = moment
-                    else:
-                        visit(value)
-            elif isinstance(node, list):
-                for item in node:
-                    visit(item)
-
-        visit(payload)
-        return latest
 
     def reset(self, **kwargs: Any) -> str:
         rendered = super().reset(**kwargs)
@@ -1290,7 +1296,6 @@ class _TRLReactVerifierRepairDecisionEnvironmentBase(_TRLTravelEnvironmentBase):
         # TTLs must be evaluated against that moment, not the wall clock, or
         # the recorded prefix silently stops reaching itinerary review once
         # the calendar crosses a requirement boundary.
-        self._frozen_moment = self._frozen_reference_moment()
         for item in decision_state.get("prefix_actions") or []:
             if not isinstance(item, dict):
                 raise ValueError("decision-state prefix action must be an object")
