@@ -12,6 +12,9 @@ from pathlib import Path
 from typing import Any, Callable, Literal
 
 from agentic.action_executor import TravelActionExecutor
+from datetime import UTC, datetime
+
+from agentic.clock import frozen_reference_time
 from agentic.environment import (
     EnvironmentRollout,
     EnvironmentSnapshot,
@@ -1199,6 +1202,38 @@ class _TRLReactVerifierRepairDecisionEnvironmentBase(_TRLTravelEnvironmentBase):
         self._decision_step_start = 0
         self._decision_contract: dict[str, Any] = {}
 
+    def _frozen_reference_moment(self) -> datetime | None:
+        """Best-effort authoring time of the frozen snapshot, if recorded."""
+        latest: datetime | None = None
+        try:
+            payload = self._snapshot.model_dump(mode="json") if self._snapshot else None
+        except (AttributeError, TypeError, ValueError):
+            payload = None
+        if not isinstance(payload, dict):
+            return None
+
+        def visit(node: Any) -> None:
+            nonlocal latest
+            if isinstance(node, dict):
+                for key, value in node.items():
+                    if key in {"queried_at", "retrieved_at", "created_at", "generated_at"} and isinstance(value, str):
+                        try:
+                            moment = datetime.fromisoformat(value.replace("Z", "+00:00"))
+                        except ValueError:
+                            continue
+                        if moment.tzinfo is None:
+                            moment = moment.replace(tzinfo=UTC)
+                        if latest is None or moment > latest:
+                            latest = moment
+                    else:
+                        visit(value)
+            elif isinstance(node, list):
+                for item in node:
+                    visit(item)
+
+        visit(payload)
+        return latest
+
     def reset(self, **kwargs: Any) -> str:
         rendered = super().reset(**kwargs)
         snapshot = self._snapshot
@@ -1236,18 +1271,24 @@ class _TRLReactVerifierRepairDecisionEnvironmentBase(_TRLTravelEnvironmentBase):
             raise ValueError(
                 "verifier-repair decision metadata does not match route action contract"
             )
-        for item in decision_state.get("prefix_actions") or []:
-            if not isinstance(item, dict):
-                raise ValueError("decision-state prefix action must be an object")
-            raw_arguments = item.get("arguments")
-            if not isinstance(raw_arguments, dict):
-                raise ValueError("decision-state prefix arguments must be an object")
-            if any(value is None for value in raw_arguments.values()):
-                raise ValueError("decision-state prefix arguments must not contain null")
-            prefix_arguments = dict(raw_arguments)
-            rendered = self._act(str(item.get("action") or ""), prefix_arguments)
-            if json.loads(rendered).get("done") is True:
-                raise ValueError("decision-state prefix terminated before the target")
+        # H-002: the state is frozen at authoring time.  Date-relative
+        # evidence requirements (the ten-day weather window) and freshness
+        # TTLs must be evaluated against that moment, not the wall clock, or
+        # the recorded prefix silently stops reaching itinerary review once
+        # the calendar crosses a requirement boundary.
+        with frozen_reference_time(self._frozen_reference_moment()):
+            for item in decision_state.get("prefix_actions") or []:
+                if not isinstance(item, dict):
+                    raise ValueError("decision-state prefix action must be an object")
+                raw_arguments = item.get("arguments")
+                if not isinstance(raw_arguments, dict):
+                    raise ValueError("decision-state prefix arguments must be an object")
+                if any(value is None for value in raw_arguments.values()):
+                    raise ValueError("decision-state prefix arguments must not contain null")
+                prefix_arguments = dict(raw_arguments)
+                rendered = self._act(str(item.get("action") or ""), prefix_arguments)
+                if json.loads(rendered).get("done") is True:
+                    raise ValueError("decision-state prefix terminated before the target")
         session = self._require_session()
         self._decision_step_start = len(session.recorder.episode.steps)
         self._decision_contract = decision_state

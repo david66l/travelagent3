@@ -13,6 +13,7 @@ import unicodedata
 from datetime import UTC, date, datetime, timedelta
 from pydantic import BaseModel, Field
 
+from agentic.clock import reference_now, reference_today
 from agentic.state import AgentLedgerState, ArtifactRecord, GoalLedger, TaskGraph, TaskNode
 
 
@@ -67,7 +68,7 @@ def infer_research_requirements(goal: GoalLedger) -> ResearchRequirements:
     start_date = hard.get("start_date")
     if start_date:
         try:
-            delta = (date.fromisoformat(str(start_date)) - date.today()).days
+            delta = (date.fromisoformat(str(start_date)) - reference_today()).days
             requires_weather = requires_weather or 0 <= delta <= 10
         except ValueError:
             pass
@@ -126,7 +127,7 @@ class ResearchSufficiencyVerifier:
             "event_search_result": 24,
             "transport_search_result": 2,
         }
-        now = datetime.now(UTC)
+        now = reference_now()
         for artifact_type, ttl_hours in freshness_hours.items():
             matches = by_type.get(artifact_type) or []
             if not matches:
