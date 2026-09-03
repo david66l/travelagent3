@@ -51,7 +51,7 @@ TravelAgent2 接收用户的自然语言旅行需求。FastAPI 先持久化 `Pla
 
 主请求链路为：`POST 消息 → PlanningJob 事务提交 → Celery/LangGraph → PlanningJobEvent → SSE 重放`。FastAPI 进程内不保存任务完成状态；Redis Pub/Sub 丢失时，SSE 仍可从 PostgreSQL 事件日志恢复。
 
-核心规划闭环为：`结构化意图识别/补槽 → ReAct 模型逐轮选工具 → Guard/工具执行 → Observation/Facts/Artifacts → 证据充分性检查 → CP-SAT/Greedy → 硬 Verifier → 继续搜索、重试、重规划、询问或安全终止 → 用户确认/修改`。每个串行动作或安全的并行只读批次都形成可恢复 checkpoint；同一 Agent Ledger 保存预算、失败、动作历史和版本化证据，避免失败后无界循环或偷偷切回旧 Planner。旧 `controller_first`/`policy_driven` DAG 只保留为消融基线，不是生产默认入口。
+核心规划闭环为：`结构化意图识别/补槽 → ReAct 模型逐轮选工具 → Guard/工具执行 → Observation/Facts/Artifacts → 证据充分性检查 → CP-SAT/Greedy → 硬 Verifier → 继续搜索、重试、重规划、询问或安全终止 → 用户确认/修改`。每个串行动作或安全的并行只读批次都形成可恢复 checkpoint；同一 Agent Ledger 保存预算、失败、动作历史和版本化证据，避免失败后无界循环或偷偷切回旧 Planner。旧 `controller_first`/`policy_driven` 模式与确定性 DAG 已**归档**至 `backend/src/agentic/legacy/`（仅用于历史语料/消融复现，代码默认与生产入口均为 `react` 单一执行模式）。
 
 K8s 部署清单位于 [`k8s/`](k8s/) 目录：
 

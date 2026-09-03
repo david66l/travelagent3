@@ -1,4 +1,8 @@
-"""Deterministic task-graph planning for the Agent Loop MVP."""
+"""Archived legacy DAG planner (ablation baseline, pre-ReAct era).
+
+Deterministic task-graph planning for the Agent Loop MVP.  Moved verbatim
+from ``agentic/planner`` when the runtime collapsed to the react mode.
+"""
 
 from __future__ import annotations
 

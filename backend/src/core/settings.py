@@ -196,7 +196,7 @@ class Settings(BaseSettings):
     agentic_policy_protocol: Literal["json", "native_tool"] = "json"
     # Environment/deployment selects ``react`` for the new production path;
     # the code default preserves historical DAG replay compatibility.
-    agentic_execution_mode: Literal["controller_first", "policy_driven", "react"] = "policy_driven"
+    agentic_execution_mode: Literal["controller_first", "policy_driven", "react"] = "react"
     agentic_policy_repair_attempts: int = Field(default=1, ge=0, le=2)
     agentic_policy_model: str = ""
     agentic_decision_specialist_enabled: bool = False

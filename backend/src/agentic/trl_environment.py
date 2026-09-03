@@ -252,8 +252,12 @@ class _TRLTravelEnvironmentBase:
         self,
         *,
         audit_enabled: bool = True,
-        execution_mode: GRPOExecutionMode = "policy_driven",
+        execution_mode: GRPOExecutionMode = "react",
     ) -> None:
+        # Retired modes (policy_driven / controller_first) are archived in
+        # agentic.legacy; live wiring only ever passes "react". Validation
+        # lives at the factory and composition root so archived classes can
+        # still be constructed verbatim for ablation reproduction.
         if execution_mode not in {"policy_driven", "controller_first", "react"}:
             raise ValueError(f"unsupported GRPO execution mode: {execution_mode}")
         self._session: InteractiveAgentSession | None = None
@@ -358,9 +362,7 @@ class _TRLTravelEnvironmentBase:
             policy_name=f"trl-grpo-{self.execution_mode}",
             policy_version="online-rollout",
             automatic_action=(
-                controller_policy_action
-                if self.execution_mode in {"controller_first", "react"}
-                else None
+                None if self.execution_mode == "policy_driven" else controller_policy_action
             ),
         )
         self._runner = _SessionLoopThread()
@@ -747,26 +749,6 @@ class _SessionLoopThread:
             self.thread.join(timeout=2)
         if not self.loop.is_closed():
             self.loop.close()
-
-
-class TRLSearchEnvironment(_TRLTravelEnvironmentBase):
-    """Controller-first baseline exposing only the delegated search decision."""
-
-    def __init__(self, *, audit_enabled: bool = True) -> None:
-        super().__init__(audit_enabled=audit_enabled, execution_mode="controller_first")
-
-    def search_pois(
-        self,
-        keywords: list[str] | None = None,
-    ) -> str:
-        """Search POIs using grounded preferences.
-
-        Args:
-            keywords: Grounded preference keywords.
-        Returns:
-            The verified transition and next policy state, if any.
-        """
-        return self._act("search_pois", {"keywords": keywords or []})
 
 
 class TRLClarificationEnvironment(_TRLTravelEnvironmentBase):
@@ -1812,25 +1794,18 @@ def _decision_option_matches(submitted: str, expected: str) -> bool:
 
 
 def build_trl_environment_factories(
-    execution_mode: GRPOExecutionMode = "policy_driven",
+    execution_mode: GRPOExecutionMode = "react",
 ) -> dict[str, Callable[..., _TRLTravelEnvironmentBase]]:
-    """Build route-compatible factories for a declared train/serve contract."""
-    if execution_mode == "policy_driven":
-        return {
-            "search": TRLPolicyDrivenEnvironment,
-            "search_current": TRLPolicyDrivenEnvironment,
-            "search_transport": TRLPolicyDrivenEnvironment,
-            "clarification": TRLPolicyDrivenEnvironment,
-            "tradeoff": TRLPolicyDrivenEnvironment,
-        }
-    if execution_mode == "controller_first":
-        return {
-            "search": TRLSearchEnvironment,
-            "search_current": TRLSearchEnvironment,
-            "search_transport": TRLSearchEnvironment,
-            "clarification": TRLClarificationEnvironment,
-            "tradeoff": TRLTradeoffEnvironment,
-        }
+    """Build route-compatible factories for a declared train/serve contract.
+
+    react is the production contract; the retired policy_driven /
+    controller_first modes delegate to ``agentic.legacy.environments`` so
+    archived corpora can still be reproduced.
+    """
+    if execution_mode != "react":
+        from agentic.legacy.environments import build_legacy_environment_factories
+
+        return build_legacy_environment_factories(execution_mode)
     if execution_mode == "react":
         return {
             "search": TRLReactEnvironment,
@@ -1848,11 +1823,6 @@ def build_trl_environment_factories(
     raise ValueError(f"unsupported GRPO execution mode: {execution_mode}")
 
 
-# Production-aligned default. Narrow controller-first classes remain available
-# only for an explicit cost/latency baseline.
-TRLTravelEnvironment = TRLPolicyDrivenEnvironment
-TRL_ENVIRONMENT_FACTORIES = build_trl_environment_factories("policy_driven")
-
 
 __all__ = [
     "FRESH_LEDGER_ROLLOUT_CONTRACT",
@@ -1867,10 +1837,7 @@ __all__ = [
     "TRLReactVerifierRetryDecisionEnvironment",
     "TRLReactVerifierTradeoffDecisionEnvironment",
     "TRLReactTransportEnvironment",
-    "TRLSearchEnvironment",
     "TRLTradeoffEnvironment",
-    "TRLTravelEnvironment",
-    "TRL_ENVIRONMENT_FACTORIES",
     "build_trl_environment_factories",
     "canonical_trl_tool_schemas",
 ]

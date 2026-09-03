@@ -17,7 +17,6 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 from generate_teacher_distillation import (  # noqa: E402
     load_holdout_contract,
     model_payload_hash,
-    select_candidate_group,
 )
 
 from agentic.distillation import (  # noqa: E402

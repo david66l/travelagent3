@@ -23,9 +23,6 @@ from agentic.policy import (
     ShadowComparingAgentPolicy,
     VerifierRepairSpecialistRoutedAgentPolicy,
 )
-from schemas import Location, ScoredPOI, ToolResult, WeatherDay
-from tools.tool_executor import ToolExecutor
-from agentic.action_executor import TravelActionExecutor
 from data.collectors.amap import AmapCollector
 from core.settings import settings
 
@@ -430,34 +427,6 @@ async def test_agent_branch_projects_verified_solver_draft_for_legacy_output():
     assert result["agent_episode"]["content_hash"]
 
 
-@pytest.mark.asyncio
-async def test_controller_first_runtime_delegates_only_real_decision_nodes(monkeypatch):
-    initialized = initialize_agent_ledger(
-        {
-            "user_input": "Plan one day in Shanghai",
-            "slots": {"destination": "Shanghai", "travel_days": 1},
-        },
-        mode="agent",
-    )
-    policy = RecordingGoalDirectedPolicy()
-    monkeypatch.setattr(settings, "agentic_execution_mode", "controller_first")
-
-    result = await run_agent_branch(
-        initialized,
-        policy=policy,
-        executor=SuccessfulExecutor(),
-    )
-
-    assert result["agent_status"] == "awaiting_confirmation"
-    assert result["agent_execution_mode"] == "controller_first"
-    assert [context.current_subtask["task_id"] for context in policy.contexts] == [
-        "search_candidates",
-        "search_candidates",
-    ]
-    sources = [step["action"]["decision_source"] for step in result["agent_episode"]["steps"]]
-    assert sources.count("policy") == 2
-    assert sources.count("controller") == 9
-
 
 @pytest.mark.asyncio
 async def test_react_runtime_keeps_deterministic_gates_controller_owned():
@@ -488,75 +457,6 @@ async def test_react_runtime_keeps_deterministic_gates_controller_owned():
     assert sources.count("controller") == 9
 
 
-@pytest.mark.asyncio
-async def test_policy_driven_agent_branch_delegates_every_task_action_to_model_policy():
-    initialized = initialize_agent_ledger(
-        {
-            "user_input": "Plan one day in Shanghai",
-            "slots": {"destination": "Shanghai", "travel_days": 1},
-        },
-        mode="agent",
-    )
-    policy = RecordingGoalDirectedPolicy()
-
-    result = await run_agent_branch(
-        initialized,
-        policy=policy,
-        executor=SuccessfulExecutor(),
-        execution_mode="policy_driven",
-    )
-
-    assert result["agent_status"] == "awaiting_confirmation"
-    assert result["agent_execution_mode"] == "policy_driven"
-    assert len(policy.contexts) == 11
-    assert [step["action"]["decision_source"] for step in result["agent_episode"]["steps"]] == [
-        "policy"
-    ] * 11
-
-
-@pytest.mark.asyncio
-async def test_single_step_branch_checkpoints_and_resumes_one_episode():
-    state = initialize_agent_ledger(
-        {
-            "user_input": "Plan one day in Shanghai",
-            "slots": {"destination": "Shanghai", "travel_days": 1},
-        },
-        mode="agent",
-    )
-    policy = RecordingGoalDirectedPolicy()
-
-    observed_step_counts: list[int] = []
-    episode_ids: set[str] = set()
-    for _ in range(16):
-        patch = await run_agent_branch(
-            state,
-            policy=policy,
-            executor=SuccessfulExecutor(),
-            execution_mode="policy_driven",
-            single_step=True,
-        )
-        state = {**state, **patch}
-        observed_step_counts.append(len(state["agent_episode"]["steps"]))
-        episode_ids.add(state["agent_episode"]["trajectory_id"])
-        if state["agent_status"] != "running":
-            break
-
-    assert state["agent_status"] == "awaiting_confirmation"
-    assert observed_step_counts[-1] == 11
-    assert all(
-        current > previous
-        for previous, current in zip(observed_step_counts, observed_step_counts[1:])
-    )
-    assert (
-        max(
-            current - previous
-            for previous, current in zip(observed_step_counts, observed_step_counts[1:])
-        )
-        <= 2
-    )  # one checkpoint may contain a safe parallel read-only batch
-    assert len(episode_ids) == 1
-    assert state["agent_episode"]["status"] == "interrupted"
-    assert state["agent_episode"]["content_hash"]
 
 
 @pytest.mark.asyncio
@@ -647,77 +547,3 @@ async def test_policy_failure_exposes_terminal_error_for_observability():
     assert result["agent_error"] == "RuntimeError: policy endpoint unavailable"
 
 
-@pytest.mark.asyncio
-async def test_agent_branch_runs_real_route_solver_and_validator_stack():
-    initialized = initialize_agent_ledger(
-        {
-            "user_input": "Plan one day in Shanghai",
-            "slots": {"destination": "Shanghai", "travel_days": 1},
-        },
-        mode="agent",
-    )
-    tools = ToolExecutor()
-    candidates = [
-        {
-            "name": "Museum",
-            "category": "attraction",
-            "score": 0.9,
-            "location": {"lat": 31.23, "lng": 121.47},
-            "ticket_price": 0,
-            "open_time": "08:00",
-            "close_time": "18:00",
-        },
-        {
-            "name": "Park",
-            "category": "attraction",
-            "score": 0.8,
-            "location": {"lat": 31.24, "lng": 121.48},
-            "ticket_price": 0,
-            "open_time": "08:00",
-            "close_time": "18:00",
-        },
-    ]
-    tools._poi.run = AsyncMock(
-        return_value=ToolResult(data=candidates, data_source="built_in", confidence=1)
-    )
-    scored = [
-        ScoredPOI(
-            name=item["name"],
-            category=item["category"],
-            score=item["score"],
-            location=Location(**item["location"]),
-            ticket_price=item["ticket_price"],
-            open_time=item["open_time"],
-            close_time=item["close_time"],
-        )
-        for item in candidates
-    ]
-    tools._poi.search_pois = AsyncMock(
-        side_effect=lambda city, keywords, category=None: [
-            item for item in scored if item.name in keywords
-        ]
-    )
-    tools._weather.query = AsyncMock(
-        return_value=[
-            WeatherDay(
-                date="2026-08-12",
-                condition="sunny",
-                temp_high=30,
-                temp_low=24,
-                precipitation_chance=0,
-                data_source="built_in",
-                is_fallback=True,
-            )
-        ]
-    )
-
-    result = await run_agent_branch(
-        initialized,
-        policy=FirstAllowedPolicy(),
-        executor=TravelActionExecutor(tools),
-    )
-
-    assert result["agent_status"] == "awaiting_confirmation"
-    assert result["solve_status"] in {"optimal", "fallback"}
-    assert result["validation_report"]["hard_pass"] is True
-    assert result["itinerary"]

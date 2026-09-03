@@ -2,7 +2,7 @@ import json
 
 from agentic.corpus_generation import build_curriculum_case
 from agentic.grpo_training import GRPOCorpusRow
-from agentic.trl_environment import TRLSearchEnvironment
+from agentic.legacy.environments import TRLSearchEnvironment
 from scripts.build_stage3_multiturn_rl_corpus import build
 from scripts.build_stage3_multiturn_rl_corpus import derive_multiturn_recovery
 

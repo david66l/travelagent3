@@ -14,7 +14,6 @@ sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / "backend" / "src"))
 
 from evaluation.external_benchmark import (  # noqa: E402
-    BenchmarkSplit,
     ExternalBenchmarkCase,
     ForbiddenCorpusDocument,
     annotation_agreement,

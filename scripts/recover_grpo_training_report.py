@@ -58,7 +58,7 @@ def main() -> int:
     parser.add_argument("--corpus-dir", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--source-model", type=Path, required=True)
-    parser.add_argument("--execution-mode", default="policy_driven")
+    parser.add_argument("--execution-mode", default="react")
     parser.add_argument("--credit-mode", default="trajectory_b0")
     parser.add_argument("--num-generations", type=int, default=8)
     parser.add_argument(

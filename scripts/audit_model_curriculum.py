@@ -1041,8 +1041,8 @@ def main() -> int:
     parser.add_argument("--temperature", type=float, default=0.8)
     parser.add_argument(
         "--execution-mode",
-        choices=("policy_driven", "controller_first", "react"),
-        default="policy_driven",
+        choices=("react",),
+        default="react",
     )
     parser.add_argument(
         "--max-tool-calling-iterations",

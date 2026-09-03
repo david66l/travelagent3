@@ -29,7 +29,8 @@ from agentic.chat_template_contract import (
     AGENT_RENDER_PROTOCOL_VERSION,
     load_agent_chat_template,
 )
-from agentic.trl_environment import TRL_ENVIRONMENT_FACTORIES, build_trl_environment_factories
+from agentic.legacy.environments import TRL_ENVIRONMENT_FACTORIES, TRLTravelEnvironment
+from agentic.trl_environment import build_trl_environment_factories
 from agentic.policy_actions import policy_action_schemas_for_state
 from ml.agentic.training.train_grpo import (
     create_stable_tool_suffix_grpo_trainer_class,
@@ -343,7 +344,7 @@ def test_stable_trainer_rejects_a_multi_call_message_before_execution():
 
 def test_environment_row_starts_a_fresh_policy_driven_ledger():
     converted = to_trl_environment_rows([GRPOCorpusRow(task=_task(), snapshot=_snapshot())])[0]
-    environment = TRL_ENVIRONMENT_FACTORIES[converted["environment"]]()
+    environment = TRLTravelEnvironment()  # archived policy_driven default
 
     initial = json.loads(environment.reset(**converted))
 
@@ -659,7 +660,7 @@ def test_completion_budget_measures_real_stateful_tool_suffix():
     report = estimate_stateful_completion_budget(
         [row],
         _CharacterChatTokenizer(),
-        TRL_ENVIRONMENT_FACTORIES,
+        {**TRL_ENVIRONMENT_FACTORIES},  # archived policy_driven wiring
     )
 
     assert report.sampled_tasks == 1

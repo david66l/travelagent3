@@ -2,7 +2,7 @@
 
 import pytest
 
-from agentic.planner import DefaultTaskGraphPlanner
+from agentic.legacy.planner_dag import DefaultTaskGraphPlanner
 from agentic.scheduler import TaskScheduler
 from agentic.state import GoalLedger, TaskGraph, TaskGraphController, TaskNode
 

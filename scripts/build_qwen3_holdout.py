@@ -16,7 +16,7 @@ sys.path.insert(0, str(REPO_ROOT / "backend" / "src"))
 from agentic.grpo_training import GRPOCorpusRow, load_grpo_corpus  # noqa: E402
 from agentic.policy import AGENT_TOOL_POLICY_SYSTEM_PROMPT  # noqa: E402
 from agentic.policy_actions import policy_action_schemas  # noqa: E402
-from agentic.trl_environment import TRL_ENVIRONMENT_FACTORIES  # noqa: E402
+from agentic.legacy.environments import TRL_ENVIRONMENT_FACTORIES  # noqa: E402
 from evaluation.inference_benchmark import VLLMBenchmarkCase  # noqa: E402
 
 

@@ -1,6 +1,6 @@
 """Tests for trigger-based local replanning."""
 
-from agentic.planner import DefaultTaskGraphPlanner
+from agentic.legacy.planner_dag import DefaultTaskGraphPlanner
 from agentic.replanner import ReplanDecider
 from agentic.state import AgentLedgerState, GoalLedger, TaskGraphController
 

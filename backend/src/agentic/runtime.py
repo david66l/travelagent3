@@ -7,7 +7,6 @@ import re
 from datetime import date, timedelta
 from typing import Any, Literal
 
-from agentic.planner import DefaultTaskGraphPlanner
 from agentic.state import (
     AgentLedgerState,
     BudgetLedger,
@@ -31,11 +30,18 @@ logger = logging.getLogger(__name__)
 
 
 def _configured_task_graph_planner(mode: TaskGraphMode = "configured"):
-    """Select the production ReAct graph while preserving legacy baselines."""
+    """Select the production ReAct graph.
+
+    The deterministic legacy DAG planner is archived in
+    ``agentic.legacy.planner_dag`` and only serves reproduction of the
+    retired policy_driven mode (never the react production default).
+    """
     if mode == "react" or (mode == "configured" and settings.agentic_execution_mode == "react"):
         from agentic.react import ReactTaskGraphPlanner
 
         return ReactTaskGraphPlanner()
+    from agentic.legacy.planner_dag import DefaultTaskGraphPlanner
+
     return DefaultTaskGraphPlanner()
 
 

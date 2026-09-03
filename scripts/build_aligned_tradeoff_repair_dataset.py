@@ -23,7 +23,7 @@ from agentic.sft_dataset import (  # noqa: E402
     SFTToolCall,
     SFTToolFunction,
 )
-from agentic.trl_environment import TRL_ENVIRONMENT_FACTORIES  # noqa: E402
+from agentic.legacy.environments import TRL_ENVIRONMENT_FACTORIES  # noqa: E402
 
 
 def task_family(row: GRPOCorpusRow) -> str:

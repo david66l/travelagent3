@@ -9,14 +9,15 @@ from agentic.environment import (
     EnvironmentTask,
     SnapshotToolResponse,
     SnapshotToolExecutor,
-    TravelAgentEnvironment,
     create_rollout_group,
 )
 from agentic.loop import PolicyAction, PolicyContext
 from agentic.trl_environment import (
     TRLClarificationEnvironment,
-    TRLSearchEnvironment,
     TRLTradeoffEnvironment,
+)
+from agentic.legacy.environments import (  # archived pre-react modes
+    TRLSearchEnvironment,
     TRLTravelEnvironment,
 )
 
@@ -114,24 +115,6 @@ def _snapshot() -> EnvironmentSnapshot:
         hidden_test_facts={"closed_pois": []},
     )
 
-
-async def test_snapshot_rollout_produces_replayable_rewarded_episode():
-    rollout = await TravelAgentEnvironment(_task(), _snapshot()).rollout(FirstAllowedPolicy())
-
-    assert rollout.episode.status == "interrupted"
-    assert rollout.episode.termination_reason == "awaiting_user"
-    assert rollout.reward.gate_status == "passed"
-    assert rollout.reward.episode_reward > 0
-    assert rollout.tool_call_counts == {
-        "get_weather": 1,
-        "search_pois": 1,
-        "get_poi_detail": 1,
-        "get_route_matrix": 1,
-        "solve_itinerary": 1,
-        "validate_itinerary": 1,
-    }
-    observations = [item for step in rollout.episode.steps for item in step.observations]
-    assert all(item.snapshot_version == "snapshot-2026-08-12-v1" for item in observations)
 
 
 async def test_group_members_share_fingerprint_but_not_tool_counters():
@@ -278,90 +261,6 @@ async def test_context_tolerant_keyword_contract_ignores_only_out_of_contract_co
     assert unexpected[0]["observation"]["error"]["code"] == ("SNAPSHOT_ARGUMENT_MISMATCH")
 
 
-async def test_trl_environment_runs_production_loop_and_six_component_reward():
-    environment = TRLTravelEnvironment()
-
-    initial = json.loads(
-        environment.reset(
-            task=_task().model_dump(mode="json"),
-            snapshot=_snapshot().model_dump(mode="json"),
-        )
-    )
-    assert initial["policy_state"]["allowed_actions"] == [
-        "capability_check",
-        "ask_user",
-        "propose_tradeoff",
-        "abort",
-    ]
-
-    transitions = [
-        json.loads(environment.capability_check()),
-        json.loads(environment.get_weather()),
-        json.loads(environment.search_pois()),
-        json.loads(environment.accept_candidates()),
-        json.loads(environment.get_poi_detail()),
-        json.loads(environment.get_route_matrix()),
-        json.loads(environment.solve_itinerary()),
-        json.loads(environment.validate_itinerary()),
-        json.loads(environment.accept_itinerary()),
-        json.loads(environment.compose_draft()),
-    ]
-    terminal = json.loads(environment.finish())
-    reward = environment.get_reward()
-
-    assert terminal["done"] is True
-    assert terminal["termination_reason"] == "awaiting_user"
-    assert reward > 0
-    assert environment.reward_record is not None
-    assert environment.reward_record.gate_status == "passed"
-    policy_steps = [
-        step
-        for step in environment._session.recorder.episode.steps
-        if step.action.decision_source != "controller"
-    ]
-    assert all(transition["done"] is False for transition in transitions)
-    assert [step.action.action for step in policy_steps] == [
-        "capability_check",
-        "get_weather",
-        "search_pois",
-        "accept_candidates",
-        "get_poi_detail",
-        "get_route_matrix",
-        "solve_itinerary",
-        "validate_itinerary",
-        "accept_itinerary",
-        "compose_draft",
-        "finish",
-    ]
-    assert set(environment.reward_record.components.model_dump()) == {
-        "task",
-        "constraint",
-        "format",
-        "tool",
-        "grounding",
-        "efficiency",
-        "quality",
-    }
-
-
-async def test_trl_environment_rejects_out_of_state_action_without_state_write():
-    environment = TRLTravelEnvironment()
-    environment.reset(
-        task=_task().model_dump(mode="json"),
-        snapshot=_snapshot().model_dump(mode="json"),
-    )
-
-    transition = json.loads(environment._act("get_weather", {}))
-
-    assert transition["done"] is False
-    assert transition["last_transition"]["verification"]["error_code"] == "ACTION_NOT_ALLOWED"
-    assert transition["policy_state"]["allowed_actions"] == [
-        "capability_check",
-        "ask_user",
-        "propose_tradeoff",
-        "abort",
-    ]
-    environment.get_reward()
 
 
 def test_trl_policy_driven_environment_rejects_teacher_trajectory_prefix():
@@ -378,39 +277,6 @@ def test_trl_policy_driven_environment_rejects_teacher_trajectory_prefix():
             ],
         )
 
-
-def test_trl_rollout_audit_records_each_verified_turn_and_reward(tmp_path, monkeypatch):
-    audit_path = tmp_path / "rollouts.jsonl"
-    monkeypatch.setenv("AGENTIC_GRPO_AUDIT_PATH", str(audit_path))
-    environment = TRLTravelEnvironment()
-    environment.reset(
-        task=_task().model_dump(mode="json"),
-        snapshot=_snapshot().model_dump(mode="json"),
-    )
-    environment.capability_check()
-    environment.get_weather()
-    environment.search_pois()
-    environment.accept_candidates()
-    environment.get_poi_detail()
-    environment.get_route_matrix()
-    environment.solve_itinerary()
-    environment.validate_itinerary()
-    environment.accept_itinerary()
-    environment.compose_draft()
-    environment.finish()
-    environment.get_reward()
-
-    records = [json.loads(line) for line in audit_path.read_text(encoding="utf-8").splitlines()]
-    reward_record = records[-1]
-
-    assert reward_record["event"] == "reward"
-    assert reward_record["execution_mode"] == "policy_driven"
-    assert reward_record["rollout_contract"] == "fresh_ledger_no_teacher_prefix.v1"
-    assert len(reward_record["steps"]) == 11
-    assert all(step["verification"] for step in reward_record["steps"])
-    assert all(step["turn_reward"] is not None for step in reward_record["steps"])
-    assert reward_record["steps"][0]["decision_cardinality"] == 4
-    assert reward_record["steps"][1]["decision_cardinality"] == 1
 
 
 def test_trl_environments_expose_only_state_specific_policy_tools():

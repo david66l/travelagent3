@@ -5,7 +5,7 @@ from pathlib import Path
 from agentic.grpo_training import load_grpo_corpus, preflight_grpo_corpus
 from agentic.corpus_generation import build_curriculum_case
 from agentic.grpo_training import GRPOCorpusRow
-from agentic.trl_environment import TRLSearchEnvironment
+from agentic.legacy.environments import TRLSearchEnvironment
 
 
 SCRIPT = (

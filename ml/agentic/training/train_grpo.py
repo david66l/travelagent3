@@ -611,7 +611,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--execution-mode",
-        choices=("policy_driven", "controller_first", "react"),
+        choices=("react",),
         default="react",
         help=(
             "react matches production: the model owns research/recovery choices while "
