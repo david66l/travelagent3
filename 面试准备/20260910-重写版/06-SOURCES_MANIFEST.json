@@ -1,0 +1,186 @@
+{
+  "schema_version": 1,
+  "article_number": 6,
+  "title": "DPO、RL 选择与评测：从偏好信号到发布证据",
+  "review_date": "2026-09-10",
+  "project_root": "E:/A_Louis/TravelAgent2",
+  "method": "Lightweight static source and archived-report review, with primary papers for method definitions. No training, inference, model loading, dataset generation, tests, cloud connections, deployment, or protected/sealed case reads.",
+  "artifact": {
+    "path": "E:/A_Louis/TravelAgent2/面试准备/20260910-重写版/06-DPO与RL选择及评测.md",
+    "sha256": "d5715e3f375026f30bd95b31108b3fff9120f63f97764f3ad2965ab268930e53",
+    "bytes": 65316,
+    "characters": 30675,
+    "lines": 1205
+  },
+  "source_files": [
+    {
+      "path": "experiments/H-003-frontier-grpo.md",
+      "absolute_path": "E:/A_Louis/TravelAgent2/experiments/H-003-frontier-grpo.md",
+      "purpose": "旧前沿 GRPO、回归门与统计修正",
+      "kind": "historical_report",
+      "sha256": "86d4e5b66f6a4614b114c437d4eda4ee91258877f8d8287670d1e9cb54901337",
+      "bytes": 5390
+    },
+    {
+      "path": "experiments/H-004-dpo-reason-repair.md",
+      "absolute_path": "E:/A_Louis/TravelAgent2/experiments/H-004-dpo-reason-repair.md",
+      "purpose": "旧理由 DPO、偏好拟合与任务失败的差距",
+      "kind": "historical_report",
+      "sha256": "382efac6aae3dcdcbbbaaf53c4d231a394b4e65e71561b8c8b58461dd30efb2b",
+      "bytes": 2710
+    },
+    {
+      "path": "experiments/posttraining-roadmap-v2.md",
+      "absolute_path": "E:/A_Louis/TravelAgent2/experiments/posttraining-roadmap-v2.md",
+      "purpose": "职责拆分、同栈与双指标；明确已被后续路线接替",
+      "kind": "historical_report",
+      "sha256": "f618582e01b295dc6b9a3cb213d90900f16c7c58f49b437cbcad2f6c470ccce9",
+      "bytes": 28637
+    },
+    {
+      "path": "C:/Users/Rain/Documents/Codex/2026-09-05/kan/reports/project-complete-explanation-20260909-v2/TravelAgent2_项目全景说明.md",
+      "absolute_path": "C:/Users/Rain/Documents/Codex/2026-09-05/kan/reports/project-complete-explanation-20260909-v2/TravelAgent2_项目全景说明.md",
+      "purpose": "最新偏好构造、训练、同机结果、旧故障与发布决定",
+      "kind": "archived_secondary_report",
+      "sha256": "9737dd2237364fca18d8daea39aa9b8ff463f91f3eecfcd89ae838180a128f63",
+      "bytes": 70699
+    },
+    {
+      "path": "scripts/evaluate_preference_logprobs.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/scripts/evaluate_preference_logprobs.py",
+      "purpose": "平均 Token 与完整序列概率差的不同口径",
+      "kind": "source",
+      "sha256": "89d6309490a08011fe145e0ceb7bca8b698cc96fa25bea918a3f069368d3e66b",
+      "bytes": 10210
+    },
+    {
+      "path": "backend/src/agentic/reward.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/agentic/reward.py",
+      "purpose": "默认权重、终态门、过程分、grounding 与效率边界",
+      "kind": "source",
+      "sha256": "e27d7959b0e4f99286cd7879f475c9b4df584c064f7e1200053cce2e10aa06f5",
+      "bytes": 30958
+    },
+    {
+      "path": "backend/src/agentic/grpo.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/agentic/grpo.py",
+      "purpose": "组一致性、标准差、课程路由与逐轮信用",
+      "kind": "source",
+      "sha256": "169d0d10cf3b71373f441ee8c20ba2a3fdddb3d60f4a63af3ff0a3dbdd895906",
+      "bytes": 11830
+    },
+    {
+      "path": "backend/src/agentic/turn_credit.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/agentic/turn_credit.py",
+      "purpose": "模型 Token 分段、按轮比较与无效 / 外部失败处理",
+      "kind": "source",
+      "sha256": "cee3d098c1b7a5f215625179fdb1bd1d1dae963565cd75aca11dbaa6c70b400a",
+      "bytes": 9127
+    },
+    {
+      "path": "ml/agentic/training/turn_credit_trainer.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/ml/agentic/training/turn_credit_trainer.py",
+      "purpose": "TRL 逐轮信用适配与对齐诊断",
+      "kind": "source",
+      "sha256": "56e9e3a1494c0e3e78eb32e6b3ac9565d2a22442bcdfa7194721c826958b595f",
+      "bytes": 15832
+    },
+    {
+      "path": "backend/src/agentic/grpo_training.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/agentic/grpo_training.py",
+      "purpose": "数据格式、环境与 split 预检、旧回放拒绝",
+      "kind": "source",
+      "sha256": "1e2f0fdc03ad22051f17f31f4ab1cf97bedbf9b11fb58f255d5fad2f51510808",
+      "bytes": 25265
+    },
+    {
+      "path": "ml/agentic/training/train_grpo.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/ml/agentic/training/train_grpo.py",
+      "purpose": "rollout-only、聚合配置、Token Mask、产物与信用门",
+      "kind": "source",
+      "sha256": "9972bcf5c99470f7b51f80d767ec158ce30c31c1eec9a01d98f5551302aec970",
+      "bytes": 50843
+    },
+    {
+      "path": "backend/src/evaluation/posttraining_promotion_protocol.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/evaluation/posttraining_promotion_protocol.py",
+      "purpose": "规则、来源、readiness 与访问日志审核",
+      "kind": "source",
+      "sha256": "600f84c32b141837e20eaf4ba8009197fee9659f46efe7bb9f9f84a506ee8e12",
+      "bytes": 16037
+    },
+    {
+      "path": "evals/promotion-val-v1/protocol.json",
+      "absolute_path": "E:/A_Louis/TravelAgent2/evals/promotion-val-v1/protocol.json",
+      "purpose": "指标、统计、来源与访问预算",
+      "kind": "configuration",
+      "sha256": "f0d8f53dd7014ed5c8f59313b76f9888c1a62798a3d73157c413f098819435c0",
+      "bytes": 2501
+    },
+    {
+      "path": "evals/promotion-val-v1/readiness.json",
+      "absolute_path": "E:/A_Louis/TravelAgent2/evals/promotion-val-v1/readiness.json",
+      "purpose": "该历史目录保存的准备状态",
+      "kind": "configuration",
+      "sha256": "8c0fe8d4f936b2dfecf8e8ce495652bcf75a9c24fb1abbd29d29f586be5f4bb1",
+      "bytes": 538
+    },
+    {
+      "path": "evals/promotion-val-v1/README.md",
+      "absolute_path": "E:/A_Louis/TravelAgent2/evals/promotion-val-v1/README.md",
+      "purpose": "历史晋升协议的解释与保护范围",
+      "kind": "historical_report",
+      "sha256": "7c0f697ce7fbfe52d451cbc5d3c74d104f528625217e2ef35a386b6ccd4396a2",
+      "bytes": 3066
+    },
+    {
+      "path": "C:/Users/Rain/Documents/Codex/2026-09-05/kan/reports/project-complete-explanation-20260909-v2/DOCUMENT_MANIFEST.json",
+      "absolute_path": "C:/Users/Rain/Documents/Codex/2026-09-05/kan/reports/project-complete-explanation-20260909-v2/DOCUMENT_MANIFEST.json",
+      "purpose": "该说明引用的云端文件身份",
+      "kind": "archived_secondary_report",
+      "sha256": "6b28a6eca41534faab260d5bbd08237307fc32d68791a8ad1a8fa0243bfff216",
+      "bytes": 19040
+    }
+  ],
+  "external_references": [
+    {
+      "title": "Direct Preference Optimization",
+      "url": "https://arxiv.org/abs/2305.18290",
+      "accessed_date": "2026-09-10",
+      "scope": "Method background; does not verify project performance."
+    },
+    {
+      "title": "DeepSeekMath / GRPO",
+      "url": "https://arxiv.org/abs/2402.03300",
+      "accessed_date": "2026-09-10",
+      "scope": "Method background; does not verify project performance."
+    },
+    {
+      "title": "Proximal Policy Optimization Algorithms",
+      "url": "https://arxiv.org/abs/1707.06347",
+      "accessed_date": "2026-09-10",
+      "scope": "Method background; does not verify project performance."
+    },
+    {
+      "title": "Training language models to follow instructions with human feedback",
+      "url": "https://arxiv.org/abs/2203.02155",
+      "accessed_date": "2026-09-10",
+      "scope": "Method background; does not verify project performance."
+    }
+  ],
+  "archived_result_source": {
+    "path": "C:/Users/Rain/Documents/Codex/2026-09-05/kan/reports/project-complete-explanation-20260909-v2/TravelAgent2_项目全景说明.md",
+    "raw_cloud_artifacts_retrieved_this_turn": false,
+    "live_model_state_verified_this_turn": false,
+    "local_report_hash_matches_its_manifest": true
+  },
+  "evidence_boundaries": [
+    "Current local code indicates implemented mechanisms, not proof of their use in the latest cloud training.",
+    "Historical H-003 GRPO and H-004 DPO results are separate from the latest unified Loop experiment.",
+    "Latest 128 preference pairs, matched SFT/DPO training and evaluation results are attributed to the archived 2026-09-09 explanation, not freshly retrieved raw cloud artifacts.",
+    "Historical promotion readiness is not a statement of current overall project progress. Protected/sealed task payloads were not opened.",
+    "Static reward and credit-assignment limitations are review findings, not newly reproduced training failures.",
+    "Proposed experiments and release checks were not executed; documentation has not been uploaded to cloud."
+  ],
+  "next_article": "07 指标、失败复盘与面试串讲"
+}

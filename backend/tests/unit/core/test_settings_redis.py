@@ -5,6 +5,12 @@ import pytest
 from core.settings import Settings, _prepare_runtime_secrets, settings
 
 
+def test_local_checkpoint_defaults_to_state_scoped_qwen_tool_decoding():
+    config = Settings(_env_file=None)
+
+    assert config.agentic_local_structured_decoding == "qwen_tool_envelope"
+
+
 def test_redis_url_for_db_replaces_suffix():
     url = settings.redis_url_for_db(2)
     assert url.endswith("/2")

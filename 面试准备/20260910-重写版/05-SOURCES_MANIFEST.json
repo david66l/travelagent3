@@ -1,0 +1,230 @@
+{
+  "schema_version": 1,
+  "article_number": 5,
+  "title": "数据工程与 SFT：让小模型学会在真实状态下做决策",
+  "review_date": "2026-09-10",
+  "project_root": "E:/A_Louis/TravelAgent2",
+  "method": "Lightweight static source and archived-report review, with primary paper references for method definitions. No model loading, training, inference, dataset generation, tests, cloud connections, deployments or remote artifact downloads were executed.",
+  "artifact": {
+    "path": "E:/A_Louis/TravelAgent2/面试准备/20260910-重写版/05-数据工程与SFT.md",
+    "sha256": "d4c27250e9f81659d6041ab026342f204a76f5718ff67a584ec30a316f0d9efa",
+    "bytes": 73903,
+    "characters": 34749,
+    "lines": 1200
+  },
+  "source_files": [
+    {
+      "path": "ml/agentic/training/train_sft.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/ml/agentic/training/train_sft.py",
+      "purpose": "通用 QLoRA、真实 Collator Mask 和可选 Loss",
+      "kind": "source",
+      "sha256": "d8efaea0a270e19da3b571155fbd34816e58da0630afe20b9aad2dd28551ed77",
+      "bytes": 40671
+    },
+    {
+      "path": "ml/agentic/training/train_matched_source_pilot.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/ml/agentic/training/train_matched_source_pilot.py",
+      "purpose": "BF16 LoRA、来源更新、完整目标与输出层优化",
+      "kind": "source",
+      "sha256": "61ffed604959158c5fb94a247e56cf8a1c382e25f147ec5dcacfbd773ba1a45a",
+      "bytes": 8822
+    },
+    {
+      "path": "ml/agentic/datasets/README.md",
+      "absolute_path": "E:/A_Louis/TravelAgent2/ml/agentic/datasets/README.md",
+      "purpose": "当前 Agent 数据与旧演示数据的区别",
+      "kind": "documentation",
+      "sha256": "6c1bde3f1fdd981cf185ee5cb0697079e6daa20645ba5f1a331a310f8b2e4a4e",
+      "bytes": 1644
+    },
+    {
+      "path": "docs/EXISTING_DATA_AUDIT_REPORT_20260905.md",
+      "absolute_path": "E:/A_Louis/TravelAgent2/docs/EXISTING_DATA_AUDIT_REPORT_20260905.md",
+      "purpose": "205 个原生动作、6,624 条旧数据及迁移边界",
+      "kind": "historical_report",
+      "sha256": "9a83dba7e921ba206dcf42c2dd0d8c74792c9f153ae93919f84ed46c281db136",
+      "bytes": 7307
+    },
+    {
+      "path": "docs/MATCHED_SFT_EXPERIMENT_REPORT_20260906.md",
+      "absolute_path": "E:/A_Louis/TravelAgent2/docs/MATCHED_SFT_EXPERIMENT_REPORT_20260906.md",
+      "purpose": "14 任务 / 13 来源、等目标 Token、12 题开发对照",
+      "kind": "historical_report",
+      "sha256": "ee8b04778f2a9fb9ed875f9bb013eca087be3cf383de4fd179369ba39372349d",
+      "bytes": 6055
+    },
+    {
+      "path": "C:/Users/Rain/Documents/Codex/2026-09-05/kan/reports/project-complete-explanation-20260909-v2/TravelAgent2_项目全景说明.md",
+      "absolute_path": "C:/Users/Rain/Documents/Codex/2026-09-05/kan/reports/project-complete-explanation-20260909-v2/TravelAgent2_项目全景说明.md",
+      "purpose": "扩大三种子、修复、成功 SFT / DPO、新验收与旧问题复测",
+      "kind": "archived_secondary_report",
+      "sha256": "9737dd2237364fca18d8daea39aa9b8ff463f91f3eecfcd89ae838180a128f63",
+      "bytes": 70699
+    },
+    {
+      "path": "scripts/evaluate_harness_base.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/scripts/evaluate_harness_base.py",
+      "purpose": "不同任务类型的判分入口",
+      "kind": "source",
+      "sha256": "3e784fdcd5eff2e4258baffe8b77efeaa52cf81349176bad59daea386da06e4b",
+      "bytes": 20522
+    },
+    {
+      "path": "backend/src/evaluation/curriculum_fixture.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/evaluation/curriculum_fixture.py",
+      "purpose": "指定课程中的附加质量门槛",
+      "kind": "source",
+      "sha256": "ab5f16b72592c70204ed9b9ef6a1b6d0ce83ac2a8a636d1ace1f06921e2eb655",
+      "bytes": 12549
+    },
+    {
+      "path": "scripts/collect_paired_teacher.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/scripts/collect_paired_teacher.py",
+      "purpose": "学生断点选择、教师接续与预算调整",
+      "kind": "source",
+      "sha256": "b10054bb26f5c3e61781dfd0f16da461b230b7e9b4d1fbf4971b491a9b5992c3",
+      "bytes": 10215
+    },
+    {
+      "path": "scripts/audit_paired_teacher.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/scripts/audit_paired_teacher.py",
+      "purpose": "源状态、实际请求、执行参数与导出审核",
+      "kind": "source",
+      "sha256": "a8dc6c420665233994d1cdf309ac6af83e71b6f7908865e5e299fe29e0f4b44f",
+      "bytes": 14009
+    },
+    {
+      "path": "backend/src/agentic/trajectory.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/agentic/trajectory.py",
+      "purpose": "轨迹结构、版本、哈希与完整性检查",
+      "kind": "source",
+      "sha256": "1fe53b24f74508defc238804c2d8c60cee3fc6969372024dd39b1e26504da8aa",
+      "bytes": 11623
+    },
+    {
+      "path": "backend/src/agentic/sft_dataset.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/agentic/sft_dataset.py",
+      "purpose": "分层审核、目标投影、去重与分组",
+      "kind": "source",
+      "sha256": "41f51406553a090b7061a2c37381ef625e2a93ac3ed7fd9fc4ef0e77577fd868",
+      "bytes": 27911
+    },
+    {
+      "path": "scripts/export_harness_sft.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/scripts/export_harness_sft.py",
+      "purpose": "Explicit split、独立验收与未执行前置拒绝处理",
+      "kind": "source",
+      "sha256": "bd13557274415b6d5bfa15c24d1112f7cce745d80ef94a0fd248bfd4108b20cc",
+      "bytes": 6638
+    },
+    {
+      "path": "backend/src/agentic/training.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/agentic/training.py",
+      "purpose": "渲染、输入边界、数据和模型预检",
+      "kind": "source",
+      "sha256": "9911b1b1d433aa7360a239440711bdf4fd0a700db7057799e06b319b19d8940b",
+      "bytes": 20830
+    },
+    {
+      "path": "backend/src/agentic/chat_template_contract.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/agentic/chat_template_contract.py",
+      "purpose": "固定模板与共享 Token 渲染合同",
+      "kind": "source",
+      "sha256": "d9ef76d6dca6e6534fbacf7566e51595792b8c786ccd1fa64e659a7d90afdf8f",
+      "bytes": 3549
+    },
+    {
+      "path": "backend/src/agentic/source_equal_sft.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/agentic/source_equal_sft.py",
+      "purpose": "历史来源等权合同，与匹配试验的区别",
+      "kind": "source",
+      "sha256": "2db9bf2b58715f3552db55bc1d84b0ca882240781b8e7abe955fac02e2bbfa3a",
+      "bytes": 3532
+    },
+    {
+      "path": "docs/TEACHER_SPEED8_REPORT_20260906.md",
+      "absolute_path": "E:/A_Louis/TravelAgent2/docs/TEACHER_SPEED8_REPORT_20260906.md",
+      "purpose": "质量与速度的小样本取舍",
+      "kind": "historical_report",
+      "sha256": "37ce387e3e51cf45f2e6fd975c2c89abfb8061e6992a9e2b0537104448e4b8f4",
+      "bytes": 5638
+    },
+    {
+      "path": "backend/src/core/api_budget.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/core/api_budget.py",
+      "purpose": "请求预留、结算、文件锁与未知用量",
+      "kind": "source",
+      "sha256": "d48126619b0db29105ed4c751477b5b87392b4781a8507937ced111942e5ef45",
+      "bytes": 6809
+    },
+    {
+      "path": "configs/posttraining/data300-budget.json",
+      "absolute_path": "E:/A_Louis/TravelAgent2/configs/posttraining/data300-budget.json",
+      "purpose": "历史价格与 100 元预算合同",
+      "kind": "configuration",
+      "sha256": "80e159e599349bae86568b737048c8d1d588da194244c014a8f9a76f3ac4144b",
+      "bytes": 1021
+    },
+    {
+      "path": "docs/POSTTRAINING_EXECUTION_CONTRACT_20260907.md",
+      "absolute_path": "E:/A_Louis/TravelAgent2/docs/POSTTRAINING_EXECUTION_CONTRACT_20260907.md",
+      "purpose": "扩大来源、多种子、预算、云端执行与发布条件",
+      "kind": "historical_report",
+      "sha256": "71aad2310a9ad9d83100fdb96e962e6fca2ee65de16788c735a3fa315abd713a",
+      "bytes": 2845
+    },
+    {
+      "path": "docs/POSTTRAINING_PLAN.md",
+      "absolute_path": "E:/A_Louis/TravelAgent2/docs/POSTTRAINING_PLAN.md",
+      "purpose": "带历史状态的路线记录；需按日期和对应报告解读",
+      "kind": "historical_report",
+      "sha256": "7308af4a50fc776d58357cc0a37d9a3d5d2442870e91b095f03623b4eb62131a",
+      "bytes": 31247
+    },
+    {
+      "path": "C:/Users/Rain/Documents/Codex/2026-09-05/kan/reports/project-complete-explanation-20260909-v2/DOCUMENT_MANIFEST.json",
+      "absolute_path": "C:/Users/Rain/Documents/Codex/2026-09-05/kan/reports/project-complete-explanation-20260909-v2/DOCUMENT_MANIFEST.json",
+      "purpose": "该说明引用的云端源文件和身份记录",
+      "kind": "archived_secondary_report",
+      "sha256": "6b28a6eca41534faab260d5bbd08237307fc32d68791a8ad1a8fa0243bfff216",
+      "bytes": 19040
+    }
+  ],
+  "external_references": [
+    {
+      "title": "LoRA: Low-Rank Adaptation of Large Language Models",
+      "url": "https://arxiv.org/abs/2106.09685",
+      "accessed_date": "2026-09-10",
+      "purpose": "Method definition, not project result evidence"
+    },
+    {
+      "title": "QLoRA: Efficient Finetuning of Quantized LLMs",
+      "url": "https://arxiv.org/abs/2305.14314",
+      "accessed_date": "2026-09-10",
+      "purpose": "Quantized-base low-rank tuning definition"
+    },
+    {
+      "title": "A Reduction of Imitation Learning and Structured Prediction to No-Regret Online Learning",
+      "url": "https://proceedings.mlr.press/v15/ross11a.html",
+      "accessed_date": "2026-09-10",
+      "purpose": "Learner-state expert supervision motivation; no claim of full DAgger implementation"
+    }
+  ],
+  "archived_result_source": {
+    "path": "C:/Users/Rain/Documents/Codex/2026-09-05/kan/reports/project-complete-explanation-20260909-v2/TravelAgent2_项目全景说明.md",
+    "local_report_hash_matches_its_manifest": true,
+    "raw_cloud_artifacts_retrieved_this_turn": false,
+    "live_model_state_verified_this_turn": false
+  },
+  "evidence_boundaries": [
+    "Current source mechanisms, historical pilot reports, and latest archived summary results are explicitly separated.",
+    "Expanded matched runs, repair results and latest success-SFT/DPO results are attributed to the 2026-09-09 archived overview; raw cloud artifacts were not re-read.",
+    "No claim of current API prices, current account balance, current cloud model status or fresh test results.",
+    "Teacher-state continuation is not universally unresolved-error correction; tasks, trajectories, actions and repeated uses are counted separately.",
+    "Generic QLoRA, BF16 source-matched LoRA and latest cloud experiment scripts are not treated as one implementation.",
+    "Equal supervised tokens are not equal prompt tokens or equal compute. Latest success-SFT comparison has one training seed.",
+    "Synthetic benchmark success is not real-user success; regression and no-promotion decisions are retained.",
+    "Previous four articles and their manifests remain unchanged."
+  ],
+  "next_article": "06 DPO、RL 选择与评测"
+}

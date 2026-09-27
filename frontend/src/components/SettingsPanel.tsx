@@ -27,7 +27,17 @@ const defaultPreferences: PreferenceConfig[] = [
   { id: "food", label: "饮食偏好", value: "本地特色", options: ["本地特色", "国际 cuisine", "素食", "无偏好"] },
 ];
 
-export function SettingsPanel() {
+interface SettingsPanelProps {
+  /**
+   * Called after the session is revoked, so the owner of the chat connection can
+   * close its stream and clear the conversation. Signing out changes which
+   * conversation is active, which is a numbered operation that only
+   * `useChat().leaveConversation()` can perform.
+   */
+  onSignedOut?: () => void;
+}
+
+export function SettingsPanel({ onSignedOut }: SettingsPanelProps) {
   const store = useChatStore();
   const [prefs, setPrefs] = useState<PreferenceConfig[]>(defaultPreferences);
   const [saved, setSaved] = useState(false);
@@ -83,7 +93,13 @@ export function SettingsPanel() {
 
   const handleLogout = async () => {
     await logoutUser();
-    store.clear();
+    // Clearing the store alone would leave an authenticated SSE stream open on a
+    // revoked token, so route the exit through the hook that owns the stream.
+    if (onSignedOut) {
+      onSignedOut();
+    } else {
+      store.clear();
+    }
     store.setActiveView("chat");
   };
 

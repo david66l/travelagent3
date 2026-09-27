@@ -1,5 +1,6 @@
 """Tests for Agent Loop to travel-tool adaptation."""
 
+import json
 from datetime import UTC, datetime, timedelta
 
 from unittest.mock import AsyncMock
@@ -7,6 +8,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from agentic.action_executor import TravelActionExecutor
+from agentic.clock import frozen_reference_time
 from agentic.loop import PolicyAction
 from agentic.state import AgentLedgerState, ArtifactRecord, GoalLedger, TaskGraph, TaskNode
 
@@ -30,16 +32,34 @@ def _ledger(action: str, artifact_type: str = "poi_candidate_set") -> AgentLedge
 
 
 @pytest.mark.asyncio
-async def test_capability_check_creates_controller_grounded_artifact():
-    ledger = _ledger("capability_check", "capability_report")
-    outcome = await TravelActionExecutor(AsyncMock()).execute(
-        task=ledger.task_graph.get("task"),
-        action=PolicyAction(action="capability_check"),
-        ledger=ledger,
-    )
+async def test_weather_timestamp_and_ttl_use_frozen_reference_clock():
+    tools = AsyncMock()
+    tools.execute.return_value = [
+        {
+            "observation": {
+                "ok": True,
+                "tool": "get_weather",
+                "data": [{"date": "2030-05-01", "condition": "晴"}],
+                "source": "api",
+                "confidence": 0.9,
+                "tool_call_id": "weather-1",
+            }
+        }
+    ]
+    ledger = _ledger("get_weather", "weather_snapshot")
+    ledger.goal.hard_constraints = {"destination": "上海"}
+    frozen = datetime(2030, 5, 1, 8, 30, tzinfo=UTC)
 
-    assert outcome.artifacts[0].artifact_type == "capability_report"
-    assert outcome.artifacts[0].payload["status"] == "solvable"
+    with frozen_reference_time(frozen):
+        outcome = await TravelActionExecutor(tools).execute(
+            task=ledger.task_graph.get("task"),
+            action=PolicyAction(action_id="weather-1", action="get_weather"),
+            ledger=ledger,
+        )
+
+    artifact = outcome.artifacts[0]
+    assert artifact.payload["queried_at"] == frozen.isoformat()
+    assert artifact.expires_at == frozen + timedelta(hours=1)
 
 
 @pytest.mark.asyncio
@@ -71,6 +91,80 @@ async def test_search_commits_candidate_ids_from_versioned_observation():
     assert outcome.facts[0].key == "candidate_poi_ids"
     assert outcome.facts[0].value == ["Museum", "park-1"]
     assert outcome.artifacts[0].artifact_type == "poi_candidate_set"
+
+
+@pytest.mark.asyncio
+async def test_search_merges_city_knowledge_and_preserves_explicit_must_visits():
+    tools = AsyncMock()
+    tools.execute.return_value = [
+        {
+            "observation": {
+                "ok": True,
+                "tool": "search_pois",
+                "data": [
+                    {
+                        "id": "souvenir-store",
+                        "name": "兵马俑文创店",
+                        "category": "attraction",
+                    },
+                    {
+                        "id": "shuttle-stop",
+                        "name": "兵马俑直通车乘车点",
+                        "category": "attraction",
+                    },
+                    {"id": "amap-wall", "name": "西安城墙", "category": "attraction"},
+                ],
+                "source": "api",
+                "confidence": 0.9,
+                "tool_call_id": "call-required",
+            }
+        }
+    ]
+    ledger = _ledger("search_pois")
+    ledger.goal.hard_constraints = {
+        "destination": "西安",
+        "travel_days": 5,
+        "must_visit": ["兵马俑", "陕西历史博物馆"],
+    }
+    ledger.artifacts["knowledge"] = ArtifactRecord(
+        artifact_id="knowledge",
+        artifact_type="city_knowledge",
+        payload={
+            "pois": [
+                {"name": "兵马俑", "category": "attraction"},
+                {"name": "陕西历史博物馆", "category": "attraction"},
+            ]
+        },
+        goal_version=1,
+        plan_version=1,
+    )
+
+    outcome = await TravelActionExecutor(tools).execute(
+        task=ledger.task_graph.get("task"),
+        action=PolicyAction(
+            action_id="call-required",
+            action="search_pois",
+            arguments={"keywords": ["历史文化"]},
+        ),
+        ledger=ledger,
+    )
+
+    assert [item["name"] for item in outcome.artifacts[0].payload["pois"][:2]] == [
+        "兵马俑",
+        "陕西历史博物馆",
+    ]
+    assert [item["name"] for item in outcome.artifacts[0].payload["pois"][2:4]] == [
+        "兵马俑文创店",
+        "兵马俑直通车乘车点",
+    ]
+    assert "knowledge" in outcome.artifacts[0].evidence_refs
+    executed = json.loads(tools.execute.await_args.args[0][0]["function"]["arguments"])
+    assert executed["required_pois"] == ["兵马俑", "陕西历史博物馆"]
+    ledger.artifacts["candidates"] = outcome.artifacts[0]
+    solve_args = TravelActionExecutor(AsyncMock())._hydrate_arguments(
+        ledger, PolicyAction(action="solve_itinerary")
+    )
+    assert solve_args["constraints"]["must_visit"] == ["兵马俑", "陕西历史博物馆"]
 
 
 @pytest.mark.asyncio
@@ -193,6 +287,7 @@ def test_live_opening_and_closure_evidence_patch_exact_solver_poi():
         artifact_id="live-hours",
         artifact_type="current_info_search",
         payload={
+            "queried_at": datetime.now(UTC).isoformat(),
             "info_type": "closure",
             "date": "2026-09-01",
             "results": [
@@ -302,7 +397,7 @@ def test_search_hydration_preserves_explicit_grounded_recovery_keywords():
     )
 
     assert narrowed["keywords"] == ["museum"]
-    assert defaulted["keywords"] == ["history", "museum"]
+    assert defaulted["keywords"] == []
     assert narrowed["city"] == "Shanghai"
     assert narrowed["category"] is None
 
@@ -720,6 +815,64 @@ async def test_poi_detail_action_collects_candidate_set_within_budget():
     assert len(tools.execute.await_args.args[0]) == 2
     assert outcome.artifacts[0].payload["expected_count"] == 2
     assert len(outcome.artifacts[0].payload["details"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_poi_detail_action_uses_same_filtered_prioritized_unique_order_as_solver(
+    monkeypatch,
+):
+    monkeypatch.setattr("agentic.action_executor.settings.agentic_poi_detail_limit", 2)
+    tools = AsyncMock()
+    tools.execute.side_effect = lambda calls, guard_context: [
+        {
+            "observation": {
+                "ok": True,
+                "tool": "get_poi_detail",
+                "data": {"name": json.loads(call["function"]["arguments"])["poi_name"]},
+                "source": "built_in",
+                "confidence": 1,
+                "tool_call_id": call["id"],
+            }
+        }
+        for call in calls
+    ]
+    ledger = _ledger("get_poi_detail", "poi_detail_set")
+    ledger.goal.hard_constraints = {
+        "destination": "Shanghai",
+        "must_visit": ["Temple"],
+        "must_not_visit": ["Museum"],
+    }
+    ledger.artifacts["candidates"] = ArtifactRecord(
+        artifact_id="candidates",
+        artifact_type="poi_candidate_set",
+        payload={
+            "pois": [
+                {"id": "museum", "name": "Museum"},
+                {"id": "park", "name": "Park"},
+                {"id": "temple-a", "name": "Temple"},
+                {"id": "temple-b", "name": "Temple"},
+            ]
+        },
+        goal_version=1,
+        plan_version=1,
+    )
+
+    outcome = await TravelActionExecutor(tools).execute(
+        task=ledger.task_graph.get("task"),
+        action=PolicyAction(action_id="details", action="get_poi_detail"),
+        ledger=ledger,
+    )
+    calls = tools.execute.await_args.args[0]
+
+    assert [json.loads(call["function"]["arguments"])["poi_name"] for call in calls] == [
+        "Temple",
+        "Park",
+    ]
+    ledger.artifacts["details"] = outcome.artifacts[0]
+    assert [item["id"] for item in TravelActionExecutor._planning_candidate_items(ledger)] == [
+        "temple-a",
+        "park",
+    ]
 
 
 @pytest.mark.asyncio

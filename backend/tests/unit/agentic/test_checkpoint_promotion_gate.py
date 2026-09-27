@@ -29,6 +29,12 @@ def _report(checkpoint: str, search: float, clarification: float):
         "group_size": 4,
         "families": {"search": 1, "clarification": 1},
         "decisions": decisions,
+        # Present with measured-zero violations. A checkpoint that was never
+        # audited omits this key entirely and must not promote.
+        "behavior_gate": {
+            "unknown_argument_error_rate": 0.0,
+            "protected_argument_error_rate": 0.0,
+        },
     }
 
 
@@ -82,3 +88,37 @@ def test_promotion_gate_rejects_unknown_or_protected_policy_arguments(tmp_path):
     assert result["after_behavior_gate"] == after_report["behavior_gate"]
     assert any(error.startswith("UNKNOWN_ARGUMENT_ERROR_RATE") for error in result["gate_errors"])
     assert any(error.startswith("PROTECTED_ARGUMENT_ERROR_RATE") for error in result["gate_errors"])
+
+
+def test_promotion_gate_fails_closed_when_behavior_gate_is_absent(tmp_path):
+    """Not measuring safety is not the same as measuring zero violations."""
+    before = tmp_path / "before.json"
+    after = tmp_path / "after.json"
+    before_report = _report("sft", 0.75, 0.75)
+    after_report = _report("recovery-sft", 0.75, 0.75)
+    after_report.pop("behavior_gate")
+    _write(before, before_report)
+    _write(after, after_report)
+
+    result = compare(before, after)
+
+    assert result["promoted"] is False
+    assert result["gate_errors"] == ["BEHAVIOR_GATE_MISSING"]
+
+
+def test_promotion_gate_fails_closed_when_a_behavior_metric_is_absent(tmp_path):
+    before = tmp_path / "before.json"
+    after = tmp_path / "after.json"
+    before_report = _report("sft", 0.75, 0.75)
+    after_report = _report("recovery-sft", 0.75, 0.75)
+    after_report["behavior_gate"] = {"unknown_argument_error_rate": 0.0}
+    _write(before, before_report)
+    _write(after, after_report)
+
+    result = compare(before, after)
+
+    assert result["promoted"] is False
+    assert (
+        "BEHAVIOR_GATE_METRIC_MISSING:protected_argument_error_rate"
+        in result["gate_errors"]
+    )

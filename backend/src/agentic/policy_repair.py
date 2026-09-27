@@ -41,6 +41,36 @@ _ARGUMENT_CHANGE_REQUIRED_CODES = frozenset(
 )
 
 
+# Only a prerequisite-producing action can unlock a retry. A successful weather
+# lookup cannot resolve a missing candidate set. Other failures retain the
+# existing retry bound until their recovery condition is defined.
+_PREREQUISITE_PROGRESS_ACTIONS = {
+    "CANDIDATES_REQUIRED": frozenset({"search_pois"}),
+}
+_MISSING_ARTIFACT_PROGRESS_ACTIONS = {
+    "poi_candidate_set": "search_pois",
+    "poi_detail_set": "get_poi_detail",
+    "route_matrix": "get_route_matrix",
+    "weather_snapshot": "get_weather",
+    "current_info_search": "search_current_info",
+    "event_search_result": "search_current_info",
+    "transport_search_result": "search_transport",
+}
+
+
+def _prerequisite_progress_actions(failure: dict[str, Any]) -> set[str]:
+    code = str(failure.get("code") or "")
+    actions = set(_PREREQUISITE_PROGRESS_ACTIONS.get(code, ()))
+    if code == "RESEARCH_EVIDENCE_INSUFFICIENT":
+        # The verifier names the missing evidence. Do not unlock missing-route
+        # retries merely because an unrelated research call succeeded.
+        for issue in str(failure.get("message") or "").split(", "):
+            prefix, _, kind = issue.partition(":")
+            if prefix == "MISSING_ARTIFACT" and kind in _MISSING_ARTIFACT_PROGRESS_ACTIONS:
+                actions.add(_MISSING_ARTIFACT_PROGRESS_ACTIONS[kind])
+    return actions
+
+
 class SelfRepairingAgentPolicy:
     """Give malformed or no-progress model decisions one bounded repair turn.
 
@@ -127,6 +157,7 @@ def _validate_repairable_action(context: PolicyContext, action: PolicyAction) ->
         raise PolicyOutputError(
             "policy repeated an action and arguments that already failed without progress",
             code="REPEATED_NO_PROGRESS_ACTION",
+            output_summary={"tool_call_count": 1, "actions": [action.action]},
         )
     return normalized
 
@@ -134,6 +165,8 @@ def _validate_repairable_action(context: PolicyContext, action: PolicyAction) ->
 def _repeats_failed_action_without_progress(context: PolicyContext, action: PolicyAction) -> bool:
     exact_failures = []
     for failure in context.failure_summary:
+        if failure.get("failure_id") in context.resolved_precondition_failures:
+            continue
         if failure.get("attempted_strategy") != action.action:
             continue
         attempted_arguments = failure.get("attempted_arguments")
@@ -148,6 +181,35 @@ def _repeats_failed_action_without_progress(context: PolicyContext, action: Poli
         return False
     if str(exact_failures[-1].get("code") or "") in _ARGUMENT_CHANGE_REQUIRED_CODES:
         return True
+    # New verified observations can resolve a missing prerequisite. Count
+    # retries since that progress, rather than permanently banning an action
+    # because the same arguments failed in a different evidence state.
+    progress_actions = set().union(
+        *(_prerequisite_progress_actions(failure) for failure in exact_failures)
+    )
+    task_id = context.current_subtask.get("task_id")
+    history = [item for item in context.decision_history if item.get("task_id") == task_id]
+    last_progress = next(
+        (
+            index
+            for index in range(len(history) - 1, -1, -1)
+            if history[index].get("outcome_status") == "completed"
+            and history[index].get("progress_made") is True
+            and history[index].get("action") in progress_actions
+        ),
+        None,
+    )
+    if last_progress is not None:
+        return (
+            sum(
+                item.get("action") == action.action
+                and item.get("outcome_status") == "failed"
+                and _canonical_policy_arguments(item.get("arguments") or {})
+                == _canonical_policy_arguments(action.arguments)
+                for item in history[last_progress + 1 :]
+            )
+            >= 2
+        )
     return len(exact_failures) >= 2
 
 

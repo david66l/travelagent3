@@ -13,9 +13,10 @@ from statistics import pstdev
 from typing import Any
 
 from pydantic import BaseModel, Field
+from evaluation.feasibility import assess_required_facts
 
 
-VALIDATOR_VERSION = "travel-validator.v1"
+VALIDATOR_VERSION = "travel-validator.v3-named-dining"
 VALIDATOR_HARD_VIOLATION_CODES = frozenset(
     {
         "ACTIVITY_TIME_OVERLAP",
@@ -36,6 +37,9 @@ VALIDATOR_HARD_VIOLATION_CODES = frozenset(
         "TOO_MANY_DINING_ACTIVITIES",
         "TOTAL_BUDGET_EXCEEDED",
         "TRAVEL_DAY_COUNT_MISMATCH",
+        "NAMED_MEAL_COUNT_MISMATCH", "NAMED_MEAL_WINDOW_MISMATCH", "UNGROUNDED_RESTAURANT",
+        "RESTAURANT_COST_MISMATCH", "RESTAURANT_DURATION_TOO_SHORT", "MISSING_DINING_ROUTE_EVIDENCE",
+        "DINING_ROUTE_ENTITY_MISSING", "DINING_ROUTE_COST_TIME_MISMATCH", "INSUFFICIENT_TRANSIT_GAP", "DAY_COST_MISMATCH",
     }
 )
 _NON_POI_CATEGORIES = {"meal", "restaurant", "hotel", "transport", "rest"}
@@ -57,6 +61,8 @@ class ValidationReport(BaseModel):
     hard_violations: list[ConstraintViolation] = Field(default_factory=list)
     soft_scores: dict[str, float] = Field(default_factory=dict)
     metrics: dict[str, int | float] = Field(default_factory=dict)
+    feasibility: dict[str, Any] = Field(default_factory=dict)
+    evaluation_scope: str = "itinerary_and_evidence"
 
 
 def _minutes(value: Any) -> int | None:
@@ -175,6 +181,9 @@ class ItineraryValidator:
             if actual_day_date is None and trip_start is not None:
                 actual_day_date = trip_start + timedelta(days=day_index)
             activities = [a for a in day.get("activities", []) if isinstance(a, dict)]
+            if config.get('require_named_restaurants'):
+                from evaluation.named_dining import validate_named_dining
+                violations.extend(ConstraintViolation(day_number=day_number,**v) for v in validate_named_dining(activities,fact_index,config,_minutes))
             intervals: list[tuple[int, int, dict[str, Any]]] = []
             computed_day_cost = 0.0
             day_transit = int(day.get("total_transit_time_min") or 0)
@@ -369,6 +378,8 @@ class ItineraryValidator:
                     )
                 )
             total_transit += day_transit
+            if config.get('require_named_restaurants') and abs(float(day.get('total_cost') or 0)-computed_day_cost)>.02:
+                violations.append(ConstraintViolation(code='DAY_COST_MISMATCH',message='每日费用与活动和通勤之和不符',day_number=day_number))
             total_cost += float(day.get("total_cost") or computed_day_cost)
             daily_loads.append(day_load)
 
@@ -484,6 +495,8 @@ class ItineraryValidator:
         return ValidationReport(
             hard_pass=not violations,
             hard_violations=violations,
+            feasibility=assess_required_facts(config, list(fact_index.values())),
+            evaluation_scope="itinerary_and_evidence" if itinerary else "evidence_only",
             soft_scores={
                 "preference_match": round(preference_match, 4),
                 "route_efficiency": round(route_efficiency, 4),

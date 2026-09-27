@@ -1,0 +1,3518 @@
+[
+  {
+    "id": "correction-01-01",
+    "family": "training",
+    "variant": 0,
+    "request": "2026-11-20开始在合肥游玩1天，总预算720元，必须参观合肥澄川1号工艺展馆和合肥知秋1号古建园。两个场馆都要去，先核实它们当天的开放时间。请安排可行行程，并预留午晚餐时段；本次不要求指定餐厅或预订。",
+    "slots": {
+      "destination": "合肥",
+      "travel_days": 1,
+      "start_date": "2026-11-20",
+      "end_date": "2026-11-20",
+      "budget_range": 720,
+      "must_visit": [
+        "合肥澄川1号工艺展馆",
+        "合肥知秋1号古建园"
+      ],
+      "interests": [
+        "工艺",
+        "古建"
+      ],
+      "information_needs": [
+        "opening_hours"
+      ],
+      "current_info_queries": [
+        "合肥澄川1号工艺展馆 2026-11-20 开放时间",
+        "合肥知秋1号古建园 2026-11-20 开放时间"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "correction-01-01-p0",
+        "name": "合肥澄川1号工艺展馆",
+        "category": "attraction",
+        "lat": 31.82,
+        "lng": 117.23,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 60,
+        "tags": [
+          "工艺"
+        ],
+        "score": 0.95,
+        "source_url": "https://pilot.example.invalid/correction-01-01/p0",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-01-01-p1",
+        "name": "合肥知秋1号古建园",
+        "category": "attraction",
+        "lat": 31.822,
+        "lng": 117.232,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 60,
+        "tags": [
+          "古建"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://pilot.example.invalid/correction-01-01/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-01-01-p2",
+        "name": "合肥星河1号摄影馆",
+        "category": "attraction",
+        "lat": 31.824,
+        "lng": 117.23400000000001,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 60,
+        "tags": [
+          "摄影"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://pilot.example.invalid/correction-01-01/p2",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-01-01-p3",
+        "name": "合肥栖风1号步道",
+        "category": "attraction",
+        "lat": 31.826,
+        "lng": 117.236,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 60,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://pilot.example.invalid/correction-01-01/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "plan",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-student-correction24.v1",
+    "split": "train",
+    "scene_template": "two_venues_hours",
+    "source_group": "pilot-composition-1",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": [
+      {
+        "id": "correction-01-01-r0",
+        "name": "合肥澄川1号家常菜馆",
+        "category": "restaurant",
+        "lat": 31.821,
+        "lng": 117.23100000000001,
+        "ticket_price": 0,
+        "average_cost": 55,
+        "open_time": "10:30",
+        "close_time": "21:00",
+        "address": "合肥示例街21号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "家常菜"
+        ],
+        "source_url": "https://pilot.example.invalid/correction-01-01/r0",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-01-01-r1",
+        "name": "合肥澄川1号素食餐厅",
+        "category": "restaurant",
+        "lat": 31.822,
+        "lng": 117.232,
+        "ticket_price": 0,
+        "average_cost": 45,
+        "open_time": "11:00",
+        "close_time": "20:30",
+        "address": "合肥示例街22号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "素食"
+        ],
+        "source_url": "https://pilot.example.invalid/correction-01-01/r1",
+        "fixture_record": true
+      }
+    ],
+    "derivative_of_case": "pilot-01-01"
+  },
+  {
+    "id": "correction-01-02",
+    "family": "training",
+    "variant": 1,
+    "request": "2026-11-21开始在福州游玩1天，总预算850元，必须参观福州澄川1号工艺展馆和福州知秋1号古建园。两个场馆都要去，先核实它们当天的开放时间。请安排可行行程，并预留午晚餐时段；本次不要求指定餐厅或预订。",
+    "slots": {
+      "destination": "福州",
+      "travel_days": 1,
+      "start_date": "2026-11-21",
+      "end_date": "2026-11-21",
+      "budget_range": 850,
+      "must_visit": [
+        "福州澄川1号工艺展馆",
+        "福州知秋1号古建园"
+      ],
+      "interests": [
+        "工艺",
+        "古建"
+      ],
+      "information_needs": [
+        "opening_hours"
+      ],
+      "current_info_queries": [
+        "福州澄川1号工艺展馆 2026-11-21 开放时间",
+        "福州知秋1号古建园 2026-11-21 开放时间"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "correction-01-02-p0",
+        "name": "福州澄川1号工艺展馆",
+        "category": "attraction",
+        "lat": 26.07,
+        "lng": 119.3,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "工艺"
+        ],
+        "score": 0.95,
+        "source_url": "https://pilot.example.invalid/correction-01-02/p0",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-01-02-p1",
+        "name": "福州知秋1号古建园",
+        "category": "attraction",
+        "lat": 26.072,
+        "lng": 119.30199999999999,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "古建"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://pilot.example.invalid/correction-01-02/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-01-02-p2",
+        "name": "福州星河1号摄影馆",
+        "category": "attraction",
+        "lat": 26.074,
+        "lng": 119.304,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "摄影"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://pilot.example.invalid/correction-01-02/p2",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-01-02-p3",
+        "name": "福州栖风1号步道",
+        "category": "attraction",
+        "lat": 26.076,
+        "lng": 119.306,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://pilot.example.invalid/correction-01-02/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "plan",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-student-correction24.v1",
+    "split": "train",
+    "scene_template": "two_venues_hours",
+    "source_group": "pilot-composition-1",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": [
+      {
+        "id": "correction-01-02-r0",
+        "name": "福州澄川1号家常菜馆",
+        "category": "restaurant",
+        "lat": 26.071,
+        "lng": 119.301,
+        "ticket_price": 0,
+        "average_cost": 55,
+        "open_time": "10:30",
+        "close_time": "21:00",
+        "address": "福州示例街21号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "家常菜"
+        ],
+        "source_url": "https://pilot.example.invalid/correction-01-02/r0",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-01-02-r1",
+        "name": "福州澄川1号素食餐厅",
+        "category": "restaurant",
+        "lat": 26.072,
+        "lng": 119.30199999999999,
+        "ticket_price": 0,
+        "average_cost": 45,
+        "open_time": "11:00",
+        "close_time": "20:30",
+        "address": "福州示例街22号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "素食"
+        ],
+        "source_url": "https://pilot.example.invalid/correction-01-02/r1",
+        "fixture_record": true
+      }
+    ],
+    "derivative_of_case": "pilot-01-02"
+  },
+  {
+    "id": "correction-01-03",
+    "family": "training",
+    "variant": 2,
+    "request": "2026-11-22开始在南昌游玩1天，总预算950元，必须参观南昌澄川1号工艺展馆和南昌知秋1号古建园。两个场馆都要去，先核实它们当天的开放时间。请安排可行行程，并预留午晚餐时段；本次不要求指定餐厅或预订。",
+    "slots": {
+      "destination": "南昌",
+      "travel_days": 1,
+      "start_date": "2026-11-22",
+      "end_date": "2026-11-22",
+      "budget_range": 950,
+      "must_visit": [
+        "南昌澄川1号工艺展馆",
+        "南昌知秋1号古建园"
+      ],
+      "interests": [
+        "工艺",
+        "古建"
+      ],
+      "information_needs": [
+        "opening_hours"
+      ],
+      "current_info_queries": [
+        "南昌澄川1号工艺展馆 2026-11-22 开放时间",
+        "南昌知秋1号古建园 2026-11-22 开放时间"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "correction-01-03-p0",
+        "name": "南昌澄川1号工艺展馆",
+        "category": "attraction",
+        "lat": 28.68,
+        "lng": 115.86,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 90,
+        "tags": [
+          "工艺"
+        ],
+        "score": 0.95,
+        "source_url": "https://pilot.example.invalid/correction-01-03/p0",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-01-03-p1",
+        "name": "南昌知秋1号古建园",
+        "category": "attraction",
+        "lat": 28.682,
+        "lng": 115.862,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 90,
+        "tags": [
+          "古建"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://pilot.example.invalid/correction-01-03/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-01-03-p2",
+        "name": "南昌星河1号摄影馆",
+        "category": "attraction",
+        "lat": 28.684,
+        "lng": 115.864,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 90,
+        "tags": [
+          "摄影"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://pilot.example.invalid/correction-01-03/p2",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-01-03-p3",
+        "name": "南昌栖风1号步道",
+        "category": "attraction",
+        "lat": 28.686,
+        "lng": 115.866,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 90,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://pilot.example.invalid/correction-01-03/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "plan",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-student-correction24.v1",
+    "split": "train",
+    "scene_template": "two_venues_hours",
+    "source_group": "pilot-composition-1",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": [
+      {
+        "id": "correction-01-03-r0",
+        "name": "南昌澄川1号家常菜馆",
+        "category": "restaurant",
+        "lat": 28.681,
+        "lng": 115.861,
+        "ticket_price": 0,
+        "average_cost": 55,
+        "open_time": "10:30",
+        "close_time": "21:00",
+        "address": "南昌示例街21号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "家常菜"
+        ],
+        "source_url": "https://pilot.example.invalid/correction-01-03/r0",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-01-03-r1",
+        "name": "南昌澄川1号素食餐厅",
+        "category": "restaurant",
+        "lat": 28.682,
+        "lng": 115.862,
+        "ticket_price": 0,
+        "average_cost": 45,
+        "open_time": "11:00",
+        "close_time": "20:30",
+        "address": "南昌示例街22号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "素食"
+        ],
+        "source_url": "https://pilot.example.invalid/correction-01-03/r1",
+        "fixture_record": true
+      }
+    ],
+    "derivative_of_case": "pilot-01-03"
+  },
+  {
+    "id": "correction-01-04",
+    "family": "training",
+    "variant": 3,
+    "request": "2026-11-23开始在太原游玩1天，总预算1100元，必须参观太原澄川1号工艺展馆和太原知秋1号古建园。两个场馆都要去，先核实它们当天的开放时间。请安排可行行程，并预留午晚餐时段；本次不要求指定餐厅或预订。",
+    "slots": {
+      "destination": "太原",
+      "travel_days": 1,
+      "start_date": "2026-11-23",
+      "end_date": "2026-11-23",
+      "budget_range": 1100,
+      "must_visit": [
+        "太原澄川1号工艺展馆",
+        "太原知秋1号古建园"
+      ],
+      "interests": [
+        "工艺",
+        "古建"
+      ],
+      "information_needs": [
+        "opening_hours"
+      ],
+      "current_info_queries": [
+        "太原澄川1号工艺展馆 2026-11-23 开放时间",
+        "太原知秋1号古建园 2026-11-23 开放时间"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "correction-01-04-p0",
+        "name": "太原澄川1号工艺展馆",
+        "category": "attraction",
+        "lat": 37.87,
+        "lng": 112.55,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 105,
+        "tags": [
+          "工艺"
+        ],
+        "score": 0.95,
+        "source_url": "https://pilot.example.invalid/correction-01-04/p0",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-01-04-p1",
+        "name": "太原知秋1号古建园",
+        "category": "attraction",
+        "lat": 37.872,
+        "lng": 112.55199999999999,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 105,
+        "tags": [
+          "古建"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://pilot.example.invalid/correction-01-04/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-01-04-p2",
+        "name": "太原星河1号摄影馆",
+        "category": "attraction",
+        "lat": 37.873999999999995,
+        "lng": 112.554,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 105,
+        "tags": [
+          "摄影"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://pilot.example.invalid/correction-01-04/p2",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-01-04-p3",
+        "name": "太原栖风1号步道",
+        "category": "attraction",
+        "lat": 37.876,
+        "lng": 112.556,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 105,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://pilot.example.invalid/correction-01-04/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "plan",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-student-correction24.v1",
+    "split": "train",
+    "scene_template": "two_venues_hours",
+    "source_group": "pilot-composition-1",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": [
+      {
+        "id": "correction-01-04-r0",
+        "name": "太原澄川1号家常菜馆",
+        "category": "restaurant",
+        "lat": 37.870999999999995,
+        "lng": 112.551,
+        "ticket_price": 0,
+        "average_cost": 55,
+        "open_time": "10:30",
+        "close_time": "21:00",
+        "address": "太原示例街21号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "家常菜"
+        ],
+        "source_url": "https://pilot.example.invalid/correction-01-04/r0",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-01-04-r1",
+        "name": "太原澄川1号素食餐厅",
+        "category": "restaurant",
+        "lat": 37.872,
+        "lng": 112.55199999999999,
+        "ticket_price": 0,
+        "average_cost": 45,
+        "open_time": "11:00",
+        "close_time": "20:30",
+        "address": "太原示例街22号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "素食"
+        ],
+        "source_url": "https://pilot.example.invalid/correction-01-04/r1",
+        "fixture_record": true
+      }
+    ],
+    "derivative_of_case": "pilot-01-04"
+  },
+  {
+    "id": "correction-02-01",
+    "family": "training",
+    "variant": 0,
+    "request": "2026-11-23开始在合肥游玩1天，总预算720元，必须参观合肥澄川2号工艺展馆和合肥知秋2号古建园。除必去项目外，我也对合肥星河2号摄影馆感兴趣；若它当天关闭，可以不安排。请安排可行行程，并预留午晚餐时段；本次不要求指定餐厅或预订。",
+    "slots": {
+      "destination": "合肥",
+      "travel_days": 1,
+      "start_date": "2026-11-23",
+      "end_date": "2026-11-23",
+      "budget_range": 720,
+      "must_visit": [
+        "合肥澄川2号工艺展馆",
+        "合肥知秋2号古建园"
+      ],
+      "interests": [
+        "工艺",
+        "古建"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "correction-02-01-p0",
+        "name": "合肥澄川2号工艺展馆",
+        "category": "attraction",
+        "lat": 31.82,
+        "lng": 117.23,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 60,
+        "tags": [
+          "工艺"
+        ],
+        "score": 0.95,
+        "source_url": "https://pilot.example.invalid/correction-02-01/p0",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-02-01-p1",
+        "name": "合肥知秋2号古建园",
+        "category": "attraction",
+        "lat": 31.822,
+        "lng": 117.232,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 60,
+        "tags": [
+          "古建"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://pilot.example.invalid/correction-02-01/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-02-01-p2",
+        "name": "合肥星河2号摄影馆",
+        "category": "attraction",
+        "lat": 31.824,
+        "lng": 117.23400000000001,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 60,
+        "tags": [
+          "摄影"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://pilot.example.invalid/correction-02-01/p2",
+        "fixture_record": true,
+        "closed_dates": [
+          "2026-11-23"
+        ]
+      },
+      {
+        "id": "correction-02-01-p3",
+        "name": "合肥栖风2号步道",
+        "category": "attraction",
+        "lat": 31.826,
+        "lng": 117.236,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 60,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://pilot.example.invalid/correction-02-01/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "plan",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-student-correction24.v1",
+    "split": "train",
+    "scene_template": "optional_closed",
+    "source_group": "pilot-composition-2",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": [
+      {
+        "id": "correction-02-01-r0",
+        "name": "合肥澄川2号家常菜馆",
+        "category": "restaurant",
+        "lat": 31.821,
+        "lng": 117.23100000000001,
+        "ticket_price": 0,
+        "average_cost": 55,
+        "open_time": "10:30",
+        "close_time": "21:00",
+        "address": "合肥示例街21号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "家常菜"
+        ],
+        "source_url": "https://pilot.example.invalid/correction-02-01/r0",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-02-01-r1",
+        "name": "合肥澄川2号素食餐厅",
+        "category": "restaurant",
+        "lat": 31.822,
+        "lng": 117.232,
+        "ticket_price": 0,
+        "average_cost": 45,
+        "open_time": "11:00",
+        "close_time": "20:30",
+        "address": "合肥示例街22号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "素食"
+        ],
+        "source_url": "https://pilot.example.invalid/correction-02-01/r1",
+        "fixture_record": true
+      }
+    ],
+    "derivative_of_case": "pilot-02-01"
+  },
+  {
+    "id": "correction-02-02",
+    "family": "training",
+    "variant": 1,
+    "request": "2026-11-24开始在福州游玩1天，总预算850元，必须参观福州澄川2号工艺展馆和福州知秋2号古建园。除必去项目外，我也对福州星河2号摄影馆感兴趣；若它当天关闭，可以不安排。请安排可行行程，并预留午晚餐时段；本次不要求指定餐厅或预订。",
+    "slots": {
+      "destination": "福州",
+      "travel_days": 1,
+      "start_date": "2026-11-24",
+      "end_date": "2026-11-24",
+      "budget_range": 850,
+      "must_visit": [
+        "福州澄川2号工艺展馆",
+        "福州知秋2号古建园"
+      ],
+      "interests": [
+        "工艺",
+        "古建"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "correction-02-02-p0",
+        "name": "福州澄川2号工艺展馆",
+        "category": "attraction",
+        "lat": 26.07,
+        "lng": 119.3,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "工艺"
+        ],
+        "score": 0.95,
+        "source_url": "https://pilot.example.invalid/correction-02-02/p0",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-02-02-p1",
+        "name": "福州知秋2号古建园",
+        "category": "attraction",
+        "lat": 26.072,
+        "lng": 119.30199999999999,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "古建"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://pilot.example.invalid/correction-02-02/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-02-02-p2",
+        "name": "福州星河2号摄影馆",
+        "category": "attraction",
+        "lat": 26.074,
+        "lng": 119.304,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "摄影"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://pilot.example.invalid/correction-02-02/p2",
+        "fixture_record": true,
+        "closed_dates": [
+          "2026-11-24"
+        ]
+      },
+      {
+        "id": "correction-02-02-p3",
+        "name": "福州栖风2号步道",
+        "category": "attraction",
+        "lat": 26.076,
+        "lng": 119.306,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://pilot.example.invalid/correction-02-02/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "plan",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-student-correction24.v1",
+    "split": "train",
+    "scene_template": "optional_closed",
+    "source_group": "pilot-composition-2",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": [
+      {
+        "id": "correction-02-02-r0",
+        "name": "福州澄川2号家常菜馆",
+        "category": "restaurant",
+        "lat": 26.071,
+        "lng": 119.301,
+        "ticket_price": 0,
+        "average_cost": 55,
+        "open_time": "10:30",
+        "close_time": "21:00",
+        "address": "福州示例街21号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "家常菜"
+        ],
+        "source_url": "https://pilot.example.invalid/correction-02-02/r0",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-02-02-r1",
+        "name": "福州澄川2号素食餐厅",
+        "category": "restaurant",
+        "lat": 26.072,
+        "lng": 119.30199999999999,
+        "ticket_price": 0,
+        "average_cost": 45,
+        "open_time": "11:00",
+        "close_time": "20:30",
+        "address": "福州示例街22号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "素食"
+        ],
+        "source_url": "https://pilot.example.invalid/correction-02-02/r1",
+        "fixture_record": true
+      }
+    ],
+    "derivative_of_case": "pilot-02-02"
+  },
+  {
+    "id": "correction-02-03",
+    "family": "training",
+    "variant": 2,
+    "request": "2026-11-25开始在南昌游玩1天，总预算950元，必须参观南昌澄川2号工艺展馆和南昌知秋2号古建园。除必去项目外，我也对南昌星河2号摄影馆感兴趣；若它当天关闭，可以不安排。请安排可行行程，并预留午晚餐时段；本次不要求指定餐厅或预订。",
+    "slots": {
+      "destination": "南昌",
+      "travel_days": 1,
+      "start_date": "2026-11-25",
+      "end_date": "2026-11-25",
+      "budget_range": 950,
+      "must_visit": [
+        "南昌澄川2号工艺展馆",
+        "南昌知秋2号古建园"
+      ],
+      "interests": [
+        "工艺",
+        "古建"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "correction-02-03-p0",
+        "name": "南昌澄川2号工艺展馆",
+        "category": "attraction",
+        "lat": 28.68,
+        "lng": 115.86,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 90,
+        "tags": [
+          "工艺"
+        ],
+        "score": 0.95,
+        "source_url": "https://pilot.example.invalid/correction-02-03/p0",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-02-03-p1",
+        "name": "南昌知秋2号古建园",
+        "category": "attraction",
+        "lat": 28.682,
+        "lng": 115.862,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 90,
+        "tags": [
+          "古建"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://pilot.example.invalid/correction-02-03/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-02-03-p2",
+        "name": "南昌星河2号摄影馆",
+        "category": "attraction",
+        "lat": 28.684,
+        "lng": 115.864,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 90,
+        "tags": [
+          "摄影"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://pilot.example.invalid/correction-02-03/p2",
+        "fixture_record": true,
+        "closed_dates": [
+          "2026-11-25"
+        ]
+      },
+      {
+        "id": "correction-02-03-p3",
+        "name": "南昌栖风2号步道",
+        "category": "attraction",
+        "lat": 28.686,
+        "lng": 115.866,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 90,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://pilot.example.invalid/correction-02-03/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "plan",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-student-correction24.v1",
+    "split": "train",
+    "scene_template": "optional_closed",
+    "source_group": "pilot-composition-2",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": [
+      {
+        "id": "correction-02-03-r0",
+        "name": "南昌澄川2号家常菜馆",
+        "category": "restaurant",
+        "lat": 28.681,
+        "lng": 115.861,
+        "ticket_price": 0,
+        "average_cost": 55,
+        "open_time": "10:30",
+        "close_time": "21:00",
+        "address": "南昌示例街21号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "家常菜"
+        ],
+        "source_url": "https://pilot.example.invalid/correction-02-03/r0",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-02-03-r1",
+        "name": "南昌澄川2号素食餐厅",
+        "category": "restaurant",
+        "lat": 28.682,
+        "lng": 115.862,
+        "ticket_price": 0,
+        "average_cost": 45,
+        "open_time": "11:00",
+        "close_time": "20:30",
+        "address": "南昌示例街22号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "素食"
+        ],
+        "source_url": "https://pilot.example.invalid/correction-02-03/r1",
+        "fixture_record": true
+      }
+    ],
+    "derivative_of_case": "pilot-02-03"
+  },
+  {
+    "id": "correction-02-04",
+    "family": "training",
+    "variant": 3,
+    "request": "2026-11-26开始在太原游玩1天，总预算1100元，必须参观太原澄川2号工艺展馆和太原知秋2号古建园。除必去项目外，我也对太原星河2号摄影馆感兴趣；若它当天关闭，可以不安排。请安排可行行程，并预留午晚餐时段；本次不要求指定餐厅或预订。",
+    "slots": {
+      "destination": "太原",
+      "travel_days": 1,
+      "start_date": "2026-11-26",
+      "end_date": "2026-11-26",
+      "budget_range": 1100,
+      "must_visit": [
+        "太原澄川2号工艺展馆",
+        "太原知秋2号古建园"
+      ],
+      "interests": [
+        "工艺",
+        "古建"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "correction-02-04-p0",
+        "name": "太原澄川2号工艺展馆",
+        "category": "attraction",
+        "lat": 37.87,
+        "lng": 112.55,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 105,
+        "tags": [
+          "工艺"
+        ],
+        "score": 0.95,
+        "source_url": "https://pilot.example.invalid/correction-02-04/p0",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-02-04-p1",
+        "name": "太原知秋2号古建园",
+        "category": "attraction",
+        "lat": 37.872,
+        "lng": 112.55199999999999,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 105,
+        "tags": [
+          "古建"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://pilot.example.invalid/correction-02-04/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-02-04-p2",
+        "name": "太原星河2号摄影馆",
+        "category": "attraction",
+        "lat": 37.873999999999995,
+        "lng": 112.554,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 105,
+        "tags": [
+          "摄影"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://pilot.example.invalid/correction-02-04/p2",
+        "fixture_record": true,
+        "closed_dates": [
+          "2026-11-26"
+        ]
+      },
+      {
+        "id": "correction-02-04-p3",
+        "name": "太原栖风2号步道",
+        "category": "attraction",
+        "lat": 37.876,
+        "lng": 112.556,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 105,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://pilot.example.invalid/correction-02-04/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "plan",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-student-correction24.v1",
+    "split": "train",
+    "scene_template": "optional_closed",
+    "source_group": "pilot-composition-2",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": [
+      {
+        "id": "correction-02-04-r0",
+        "name": "太原澄川2号家常菜馆",
+        "category": "restaurant",
+        "lat": 37.870999999999995,
+        "lng": 112.551,
+        "ticket_price": 0,
+        "average_cost": 55,
+        "open_time": "10:30",
+        "close_time": "21:00",
+        "address": "太原示例街21号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "家常菜"
+        ],
+        "source_url": "https://pilot.example.invalid/correction-02-04/r0",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-02-04-r1",
+        "name": "太原澄川2号素食餐厅",
+        "category": "restaurant",
+        "lat": 37.872,
+        "lng": 112.55199999999999,
+        "ticket_price": 0,
+        "average_cost": 45,
+        "open_time": "11:00",
+        "close_time": "20:30",
+        "address": "太原示例街22号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "素食"
+        ],
+        "source_url": "https://pilot.example.invalid/correction-02-04/r1",
+        "fixture_record": true
+      }
+    ],
+    "derivative_of_case": "pilot-02-04"
+  },
+  {
+    "id": "correction-03-01",
+    "family": "training",
+    "variant": 0,
+    "request": "2026-11-26开始在合肥游玩1天，总预算200元，必须参观合肥澄川3号工艺展馆和合肥知秋3号古建园。预算是不可提高的硬上限，两项必去活动都不能取消。请安排可行行程，并预留午晚餐时段；本次不要求指定餐厅或预订。",
+    "slots": {
+      "destination": "合肥",
+      "travel_days": 1,
+      "start_date": "2026-11-26",
+      "end_date": "2026-11-26",
+      "budget_range": 200,
+      "must_visit": [
+        "合肥澄川3号工艺展馆",
+        "合肥知秋3号古建园"
+      ],
+      "interests": [
+        "工艺",
+        "古建"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "correction-03-01-p0",
+        "name": "合肥澄川3号工艺展馆",
+        "category": "attraction",
+        "lat": 31.82,
+        "lng": 117.23,
+        "ticket_price": 115,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 60,
+        "tags": [
+          "工艺"
+        ],
+        "score": 0.95,
+        "source_url": "https://pilot.example.invalid/correction-03-01/p0",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-03-01-p1",
+        "name": "合肥知秋3号古建园",
+        "category": "attraction",
+        "lat": 31.822,
+        "lng": 117.232,
+        "ticket_price": 125,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 60,
+        "tags": [
+          "古建"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://pilot.example.invalid/correction-03-01/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-03-01-p2",
+        "name": "合肥星河3号摄影馆",
+        "category": "attraction",
+        "lat": 31.824,
+        "lng": 117.23400000000001,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 60,
+        "tags": [
+          "摄影"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://pilot.example.invalid/correction-03-01/p2",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-03-01-p3",
+        "name": "合肥栖风3号步道",
+        "category": "attraction",
+        "lat": 31.826,
+        "lng": 117.236,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 60,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://pilot.example.invalid/correction-03-01/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "grounded_stop",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-student-correction24.v1",
+    "split": "train",
+    "scene_template": "combined_ticket_floor",
+    "source_group": "pilot-composition-3",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": [
+      {
+        "id": "correction-03-01-r0",
+        "name": "合肥澄川3号家常菜馆",
+        "category": "restaurant",
+        "lat": 31.821,
+        "lng": 117.23100000000001,
+        "ticket_price": 0,
+        "average_cost": 55,
+        "open_time": "10:30",
+        "close_time": "21:00",
+        "address": "合肥示例街21号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "家常菜"
+        ],
+        "source_url": "https://pilot.example.invalid/correction-03-01/r0",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-03-01-r1",
+        "name": "合肥澄川3号素食餐厅",
+        "category": "restaurant",
+        "lat": 31.822,
+        "lng": 117.232,
+        "ticket_price": 0,
+        "average_cost": 45,
+        "open_time": "11:00",
+        "close_time": "20:30",
+        "address": "合肥示例街22号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "素食"
+        ],
+        "source_url": "https://pilot.example.invalid/correction-03-01/r1",
+        "fixture_record": true
+      }
+    ],
+    "derivative_of_case": "pilot-03-01"
+  },
+  {
+    "id": "correction-03-02",
+    "family": "training",
+    "variant": 1,
+    "request": "2026-11-27开始在福州游玩1天，总预算220元，必须参观福州澄川3号工艺展馆和福州知秋3号古建园。预算是不可提高的硬上限，两项必去活动都不能取消。请安排可行行程，并预留午晚餐时段；本次不要求指定餐厅或预订。",
+    "slots": {
+      "destination": "福州",
+      "travel_days": 1,
+      "start_date": "2026-11-27",
+      "end_date": "2026-11-27",
+      "budget_range": 220,
+      "must_visit": [
+        "福州澄川3号工艺展馆",
+        "福州知秋3号古建园"
+      ],
+      "interests": [
+        "工艺",
+        "古建"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "correction-03-02-p0",
+        "name": "福州澄川3号工艺展馆",
+        "category": "attraction",
+        "lat": 26.07,
+        "lng": 119.3,
+        "ticket_price": 125,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "工艺"
+        ],
+        "score": 0.95,
+        "source_url": "https://pilot.example.invalid/correction-03-02/p0",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-03-02-p1",
+        "name": "福州知秋3号古建园",
+        "category": "attraction",
+        "lat": 26.072,
+        "lng": 119.30199999999999,
+        "ticket_price": 135,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "古建"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://pilot.example.invalid/correction-03-02/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-03-02-p2",
+        "name": "福州星河3号摄影馆",
+        "category": "attraction",
+        "lat": 26.074,
+        "lng": 119.304,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "摄影"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://pilot.example.invalid/correction-03-02/p2",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-03-02-p3",
+        "name": "福州栖风3号步道",
+        "category": "attraction",
+        "lat": 26.076,
+        "lng": 119.306,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://pilot.example.invalid/correction-03-02/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "grounded_stop",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-student-correction24.v1",
+    "split": "train",
+    "scene_template": "combined_ticket_floor",
+    "source_group": "pilot-composition-3",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": [
+      {
+        "id": "correction-03-02-r0",
+        "name": "福州澄川3号家常菜馆",
+        "category": "restaurant",
+        "lat": 26.071,
+        "lng": 119.301,
+        "ticket_price": 0,
+        "average_cost": 55,
+        "open_time": "10:30",
+        "close_time": "21:00",
+        "address": "福州示例街21号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "家常菜"
+        ],
+        "source_url": "https://pilot.example.invalid/correction-03-02/r0",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-03-02-r1",
+        "name": "福州澄川3号素食餐厅",
+        "category": "restaurant",
+        "lat": 26.072,
+        "lng": 119.30199999999999,
+        "ticket_price": 0,
+        "average_cost": 45,
+        "open_time": "11:00",
+        "close_time": "20:30",
+        "address": "福州示例街22号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "素食"
+        ],
+        "source_url": "https://pilot.example.invalid/correction-03-02/r1",
+        "fixture_record": true
+      }
+    ],
+    "derivative_of_case": "pilot-03-02"
+  },
+  {
+    "id": "correction-03-03",
+    "family": "training",
+    "variant": 2,
+    "request": "2026-11-28开始在南昌游玩1天，总预算240元，必须参观南昌澄川3号工艺展馆和南昌知秋3号古建园。预算是不可提高的硬上限，两项必去活动都不能取消。请安排可行行程，并预留午晚餐时段；本次不要求指定餐厅或预订。",
+    "slots": {
+      "destination": "南昌",
+      "travel_days": 1,
+      "start_date": "2026-11-28",
+      "end_date": "2026-11-28",
+      "budget_range": 240,
+      "must_visit": [
+        "南昌澄川3号工艺展馆",
+        "南昌知秋3号古建园"
+      ],
+      "interests": [
+        "工艺",
+        "古建"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "correction-03-03-p0",
+        "name": "南昌澄川3号工艺展馆",
+        "category": "attraction",
+        "lat": 28.68,
+        "lng": 115.86,
+        "ticket_price": 135,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 90,
+        "tags": [
+          "工艺"
+        ],
+        "score": 0.95,
+        "source_url": "https://pilot.example.invalid/correction-03-03/p0",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-03-03-p1",
+        "name": "南昌知秋3号古建园",
+        "category": "attraction",
+        "lat": 28.682,
+        "lng": 115.862,
+        "ticket_price": 145,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 90,
+        "tags": [
+          "古建"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://pilot.example.invalid/correction-03-03/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-03-03-p2",
+        "name": "南昌星河3号摄影馆",
+        "category": "attraction",
+        "lat": 28.684,
+        "lng": 115.864,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 90,
+        "tags": [
+          "摄影"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://pilot.example.invalid/correction-03-03/p2",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-03-03-p3",
+        "name": "南昌栖风3号步道",
+        "category": "attraction",
+        "lat": 28.686,
+        "lng": 115.866,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 90,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://pilot.example.invalid/correction-03-03/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "grounded_stop",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-student-correction24.v1",
+    "split": "train",
+    "scene_template": "combined_ticket_floor",
+    "source_group": "pilot-composition-3",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": [
+      {
+        "id": "correction-03-03-r0",
+        "name": "南昌澄川3号家常菜馆",
+        "category": "restaurant",
+        "lat": 28.681,
+        "lng": 115.861,
+        "ticket_price": 0,
+        "average_cost": 55,
+        "open_time": "10:30",
+        "close_time": "21:00",
+        "address": "南昌示例街21号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "家常菜"
+        ],
+        "source_url": "https://pilot.example.invalid/correction-03-03/r0",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-03-03-r1",
+        "name": "南昌澄川3号素食餐厅",
+        "category": "restaurant",
+        "lat": 28.682,
+        "lng": 115.862,
+        "ticket_price": 0,
+        "average_cost": 45,
+        "open_time": "11:00",
+        "close_time": "20:30",
+        "address": "南昌示例街22号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "素食"
+        ],
+        "source_url": "https://pilot.example.invalid/correction-03-03/r1",
+        "fixture_record": true
+      }
+    ],
+    "derivative_of_case": "pilot-03-03"
+  },
+  {
+    "id": "correction-03-04",
+    "family": "training",
+    "variant": 3,
+    "request": "2026-11-29开始在太原游玩1天，总预算260元，必须参观太原澄川3号工艺展馆和太原知秋3号古建园。预算是不可提高的硬上限，两项必去活动都不能取消。请安排可行行程，并预留午晚餐时段；本次不要求指定餐厅或预订。",
+    "slots": {
+      "destination": "太原",
+      "travel_days": 1,
+      "start_date": "2026-11-29",
+      "end_date": "2026-11-29",
+      "budget_range": 260,
+      "must_visit": [
+        "太原澄川3号工艺展馆",
+        "太原知秋3号古建园"
+      ],
+      "interests": [
+        "工艺",
+        "古建"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "correction-03-04-p0",
+        "name": "太原澄川3号工艺展馆",
+        "category": "attraction",
+        "lat": 37.87,
+        "lng": 112.55,
+        "ticket_price": 145,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 105,
+        "tags": [
+          "工艺"
+        ],
+        "score": 0.95,
+        "source_url": "https://pilot.example.invalid/correction-03-04/p0",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-03-04-p1",
+        "name": "太原知秋3号古建园",
+        "category": "attraction",
+        "lat": 37.872,
+        "lng": 112.55199999999999,
+        "ticket_price": 155,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 105,
+        "tags": [
+          "古建"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://pilot.example.invalid/correction-03-04/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-03-04-p2",
+        "name": "太原星河3号摄影馆",
+        "category": "attraction",
+        "lat": 37.873999999999995,
+        "lng": 112.554,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 105,
+        "tags": [
+          "摄影"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://pilot.example.invalid/correction-03-04/p2",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-03-04-p3",
+        "name": "太原栖风3号步道",
+        "category": "attraction",
+        "lat": 37.876,
+        "lng": 112.556,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 105,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://pilot.example.invalid/correction-03-04/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "grounded_stop",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-student-correction24.v1",
+    "split": "train",
+    "scene_template": "combined_ticket_floor",
+    "source_group": "pilot-composition-3",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": [
+      {
+        "id": "correction-03-04-r0",
+        "name": "太原澄川3号家常菜馆",
+        "category": "restaurant",
+        "lat": 37.870999999999995,
+        "lng": 112.551,
+        "ticket_price": 0,
+        "average_cost": 55,
+        "open_time": "10:30",
+        "close_time": "21:00",
+        "address": "太原示例街21号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "家常菜"
+        ],
+        "source_url": "https://pilot.example.invalid/correction-03-04/r0",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-03-04-r1",
+        "name": "太原澄川3号素食餐厅",
+        "category": "restaurant",
+        "lat": 37.872,
+        "lng": 112.55199999999999,
+        "ticket_price": 0,
+        "average_cost": 45,
+        "open_time": "11:00",
+        "close_time": "20:30",
+        "address": "太原示例街22号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "素食"
+        ],
+        "source_url": "https://pilot.example.invalid/correction-03-04/r1",
+        "fixture_record": true
+      }
+    ],
+    "derivative_of_case": "pilot-03-04"
+  },
+  {
+    "id": "correction-04-01",
+    "family": "training",
+    "variant": 0,
+    "request": "2026-11-29开始在合肥游玩2天，总预算720元，必须参观合肥澄川4号工艺展馆和合肥知秋4号古建园。这两天内必须进入合肥澄川4号工艺展馆，不接受外观打卡；日期和必去项都不能改。请安排可行行程，并预留午晚餐时段；本次不要求指定餐厅或预订。",
+    "slots": {
+      "destination": "合肥",
+      "travel_days": 2,
+      "start_date": "2026-11-29",
+      "end_date": "2026-11-30",
+      "budget_range": 720,
+      "must_visit": [
+        "合肥澄川4号工艺展馆",
+        "合肥知秋4号古建园"
+      ],
+      "interests": [
+        "工艺",
+        "古建"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "correction-04-01-p0",
+        "name": "合肥澄川4号工艺展馆",
+        "category": "attraction",
+        "lat": 31.82,
+        "lng": 117.23,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 60,
+        "tags": [
+          "工艺"
+        ],
+        "score": 0.95,
+        "source_url": "https://pilot.example.invalid/correction-04-01/p0",
+        "fixture_record": true,
+        "closed_dates": [
+          "2026-11-29",
+          "2026-11-30"
+        ]
+      },
+      {
+        "id": "correction-04-01-p1",
+        "name": "合肥知秋4号古建园",
+        "category": "attraction",
+        "lat": 31.822,
+        "lng": 117.232,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 60,
+        "tags": [
+          "古建"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://pilot.example.invalid/correction-04-01/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-04-01-p2",
+        "name": "合肥星河4号摄影馆",
+        "category": "attraction",
+        "lat": 31.824,
+        "lng": 117.23400000000001,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 60,
+        "tags": [
+          "摄影"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://pilot.example.invalid/correction-04-01/p2",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-04-01-p3",
+        "name": "合肥栖风4号步道",
+        "category": "attraction",
+        "lat": 31.826,
+        "lng": 117.236,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 60,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://pilot.example.invalid/correction-04-01/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "grounded_stop",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-student-correction24.v1",
+    "split": "train",
+    "scene_template": "two_day_closure",
+    "source_group": "pilot-composition-4",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": [
+      {
+        "id": "correction-04-01-r0",
+        "name": "合肥澄川4号家常菜馆",
+        "category": "restaurant",
+        "lat": 31.821,
+        "lng": 117.23100000000001,
+        "ticket_price": 0,
+        "average_cost": 55,
+        "open_time": "10:30",
+        "close_time": "21:00",
+        "address": "合肥示例街21号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "家常菜"
+        ],
+        "source_url": "https://pilot.example.invalid/correction-04-01/r0",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-04-01-r1",
+        "name": "合肥澄川4号素食餐厅",
+        "category": "restaurant",
+        "lat": 31.822,
+        "lng": 117.232,
+        "ticket_price": 0,
+        "average_cost": 45,
+        "open_time": "11:00",
+        "close_time": "20:30",
+        "address": "合肥示例街22号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "素食"
+        ],
+        "source_url": "https://pilot.example.invalid/correction-04-01/r1",
+        "fixture_record": true
+      }
+    ],
+    "derivative_of_case": "pilot-04-01"
+  },
+  {
+    "id": "correction-04-02",
+    "family": "training",
+    "variant": 1,
+    "request": "2026-11-30开始在福州游玩2天，总预算850元，必须参观福州澄川4号工艺展馆和福州知秋4号古建园。这两天内必须进入福州澄川4号工艺展馆，不接受外观打卡；日期和必去项都不能改。请安排可行行程，并预留午晚餐时段；本次不要求指定餐厅或预订。",
+    "slots": {
+      "destination": "福州",
+      "travel_days": 2,
+      "start_date": "2026-11-30",
+      "end_date": "2026-12-01",
+      "budget_range": 850,
+      "must_visit": [
+        "福州澄川4号工艺展馆",
+        "福州知秋4号古建园"
+      ],
+      "interests": [
+        "工艺",
+        "古建"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "correction-04-02-p0",
+        "name": "福州澄川4号工艺展馆",
+        "category": "attraction",
+        "lat": 26.07,
+        "lng": 119.3,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "工艺"
+        ],
+        "score": 0.95,
+        "source_url": "https://pilot.example.invalid/correction-04-02/p0",
+        "fixture_record": true,
+        "closed_dates": [
+          "2026-11-30",
+          "2026-12-01"
+        ]
+      },
+      {
+        "id": "correction-04-02-p1",
+        "name": "福州知秋4号古建园",
+        "category": "attraction",
+        "lat": 26.072,
+        "lng": 119.30199999999999,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "古建"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://pilot.example.invalid/correction-04-02/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-04-02-p2",
+        "name": "福州星河4号摄影馆",
+        "category": "attraction",
+        "lat": 26.074,
+        "lng": 119.304,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "摄影"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://pilot.example.invalid/correction-04-02/p2",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-04-02-p3",
+        "name": "福州栖风4号步道",
+        "category": "attraction",
+        "lat": 26.076,
+        "lng": 119.306,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://pilot.example.invalid/correction-04-02/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "grounded_stop",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-student-correction24.v1",
+    "split": "train",
+    "scene_template": "two_day_closure",
+    "source_group": "pilot-composition-4",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": [
+      {
+        "id": "correction-04-02-r0",
+        "name": "福州澄川4号家常菜馆",
+        "category": "restaurant",
+        "lat": 26.071,
+        "lng": 119.301,
+        "ticket_price": 0,
+        "average_cost": 55,
+        "open_time": "10:30",
+        "close_time": "21:00",
+        "address": "福州示例街21号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "家常菜"
+        ],
+        "source_url": "https://pilot.example.invalid/correction-04-02/r0",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-04-02-r1",
+        "name": "福州澄川4号素食餐厅",
+        "category": "restaurant",
+        "lat": 26.072,
+        "lng": 119.30199999999999,
+        "ticket_price": 0,
+        "average_cost": 45,
+        "open_time": "11:00",
+        "close_time": "20:30",
+        "address": "福州示例街22号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "素食"
+        ],
+        "source_url": "https://pilot.example.invalid/correction-04-02/r1",
+        "fixture_record": true
+      }
+    ],
+    "derivative_of_case": "pilot-04-02"
+  },
+  {
+    "id": "correction-04-03",
+    "family": "training",
+    "variant": 2,
+    "request": "2026-12-01开始在南昌游玩2天，总预算950元，必须参观南昌澄川4号工艺展馆和南昌知秋4号古建园。这两天内必须进入南昌澄川4号工艺展馆，不接受外观打卡；日期和必去项都不能改。请安排可行行程，并预留午晚餐时段；本次不要求指定餐厅或预订。",
+    "slots": {
+      "destination": "南昌",
+      "travel_days": 2,
+      "start_date": "2026-12-01",
+      "end_date": "2026-12-02",
+      "budget_range": 950,
+      "must_visit": [
+        "南昌澄川4号工艺展馆",
+        "南昌知秋4号古建园"
+      ],
+      "interests": [
+        "工艺",
+        "古建"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "correction-04-03-p0",
+        "name": "南昌澄川4号工艺展馆",
+        "category": "attraction",
+        "lat": 28.68,
+        "lng": 115.86,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 90,
+        "tags": [
+          "工艺"
+        ],
+        "score": 0.95,
+        "source_url": "https://pilot.example.invalid/correction-04-03/p0",
+        "fixture_record": true,
+        "closed_dates": [
+          "2026-12-01",
+          "2026-12-02"
+        ]
+      },
+      {
+        "id": "correction-04-03-p1",
+        "name": "南昌知秋4号古建园",
+        "category": "attraction",
+        "lat": 28.682,
+        "lng": 115.862,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 90,
+        "tags": [
+          "古建"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://pilot.example.invalid/correction-04-03/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-04-03-p2",
+        "name": "南昌星河4号摄影馆",
+        "category": "attraction",
+        "lat": 28.684,
+        "lng": 115.864,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 90,
+        "tags": [
+          "摄影"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://pilot.example.invalid/correction-04-03/p2",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-04-03-p3",
+        "name": "南昌栖风4号步道",
+        "category": "attraction",
+        "lat": 28.686,
+        "lng": 115.866,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 90,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://pilot.example.invalid/correction-04-03/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "grounded_stop",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-student-correction24.v1",
+    "split": "train",
+    "scene_template": "two_day_closure",
+    "source_group": "pilot-composition-4",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": [
+      {
+        "id": "correction-04-03-r0",
+        "name": "南昌澄川4号家常菜馆",
+        "category": "restaurant",
+        "lat": 28.681,
+        "lng": 115.861,
+        "ticket_price": 0,
+        "average_cost": 55,
+        "open_time": "10:30",
+        "close_time": "21:00",
+        "address": "南昌示例街21号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "家常菜"
+        ],
+        "source_url": "https://pilot.example.invalid/correction-04-03/r0",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-04-03-r1",
+        "name": "南昌澄川4号素食餐厅",
+        "category": "restaurant",
+        "lat": 28.682,
+        "lng": 115.862,
+        "ticket_price": 0,
+        "average_cost": 45,
+        "open_time": "11:00",
+        "close_time": "20:30",
+        "address": "南昌示例街22号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "素食"
+        ],
+        "source_url": "https://pilot.example.invalid/correction-04-03/r1",
+        "fixture_record": true
+      }
+    ],
+    "derivative_of_case": "pilot-04-03"
+  },
+  {
+    "id": "correction-04-04",
+    "family": "training",
+    "variant": 3,
+    "request": "2026-12-02开始在太原游玩2天，总预算1100元，必须参观太原澄川4号工艺展馆和太原知秋4号古建园。这两天内必须进入太原澄川4号工艺展馆，不接受外观打卡；日期和必去项都不能改。请安排可行行程，并预留午晚餐时段；本次不要求指定餐厅或预订。",
+    "slots": {
+      "destination": "太原",
+      "travel_days": 2,
+      "start_date": "2026-12-02",
+      "end_date": "2026-12-03",
+      "budget_range": 1100,
+      "must_visit": [
+        "太原澄川4号工艺展馆",
+        "太原知秋4号古建园"
+      ],
+      "interests": [
+        "工艺",
+        "古建"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "correction-04-04-p0",
+        "name": "太原澄川4号工艺展馆",
+        "category": "attraction",
+        "lat": 37.87,
+        "lng": 112.55,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 105,
+        "tags": [
+          "工艺"
+        ],
+        "score": 0.95,
+        "source_url": "https://pilot.example.invalid/correction-04-04/p0",
+        "fixture_record": true,
+        "closed_dates": [
+          "2026-12-02",
+          "2026-12-03"
+        ]
+      },
+      {
+        "id": "correction-04-04-p1",
+        "name": "太原知秋4号古建园",
+        "category": "attraction",
+        "lat": 37.872,
+        "lng": 112.55199999999999,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 105,
+        "tags": [
+          "古建"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://pilot.example.invalid/correction-04-04/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-04-04-p2",
+        "name": "太原星河4号摄影馆",
+        "category": "attraction",
+        "lat": 37.873999999999995,
+        "lng": 112.554,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 105,
+        "tags": [
+          "摄影"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://pilot.example.invalid/correction-04-04/p2",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-04-04-p3",
+        "name": "太原栖风4号步道",
+        "category": "attraction",
+        "lat": 37.876,
+        "lng": 112.556,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 105,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://pilot.example.invalid/correction-04-04/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "grounded_stop",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-student-correction24.v1",
+    "split": "train",
+    "scene_template": "two_day_closure",
+    "source_group": "pilot-composition-4",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": [
+      {
+        "id": "correction-04-04-r0",
+        "name": "太原澄川4号家常菜馆",
+        "category": "restaurant",
+        "lat": 37.870999999999995,
+        "lng": 112.551,
+        "ticket_price": 0,
+        "average_cost": 55,
+        "open_time": "10:30",
+        "close_time": "21:00",
+        "address": "太原示例街21号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "家常菜"
+        ],
+        "source_url": "https://pilot.example.invalid/correction-04-04/r0",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-04-04-r1",
+        "name": "太原澄川4号素食餐厅",
+        "category": "restaurant",
+        "lat": 37.872,
+        "lng": 112.55199999999999,
+        "ticket_price": 0,
+        "average_cost": 45,
+        "open_time": "11:00",
+        "close_time": "20:30",
+        "address": "太原示例街22号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "素食"
+        ],
+        "source_url": "https://pilot.example.invalid/correction-04-04/r1",
+        "fixture_record": true
+      }
+    ],
+    "derivative_of_case": "pilot-04-04"
+  },
+  {
+    "id": "correction-05-01",
+    "family": "recovery",
+    "variant": 1,
+    "request": "2026-12-02开始在合肥游玩1天，总预算720元，必须参观合肥澄川5号工艺展馆和合肥知秋5号古建园。请核对天气；不要把一次服务超时当成景点不存在。请安排可行行程，并预留午晚餐时段；本次不要求指定餐厅或预订。",
+    "slots": {
+      "destination": "合肥",
+      "travel_days": 1,
+      "start_date": "2026-12-02",
+      "end_date": "2026-12-02",
+      "budget_range": 720,
+      "must_visit": [
+        "合肥澄川5号工艺展馆",
+        "合肥知秋5号古建园"
+      ],
+      "interests": [
+        "工艺",
+        "古建"
+      ],
+      "information_needs": [
+        "weather"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "correction-05-01-p0",
+        "name": "合肥澄川5号工艺展馆",
+        "category": "attraction",
+        "lat": 31.82,
+        "lng": 117.23,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 60,
+        "tags": [
+          "工艺"
+        ],
+        "score": 0.95,
+        "source_url": "https://pilot.example.invalid/correction-05-01/p0",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-05-01-p1",
+        "name": "合肥知秋5号古建园",
+        "category": "attraction",
+        "lat": 31.822,
+        "lng": 117.232,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 60,
+        "tags": [
+          "古建"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://pilot.example.invalid/correction-05-01/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-05-01-p2",
+        "name": "合肥星河5号摄影馆",
+        "category": "attraction",
+        "lat": 31.824,
+        "lng": 117.23400000000001,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 60,
+        "tags": [
+          "摄影"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://pilot.example.invalid/correction-05-01/p2",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-05-01-p3",
+        "name": "合肥栖风5号步道",
+        "category": "attraction",
+        "lat": 31.826,
+        "lng": 117.236,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 60,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://pilot.example.invalid/correction-05-01/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "plan",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-student-correction24.v1",
+    "split": "train",
+    "scene_template": "detail_timeout_and_weather",
+    "source_group": "pilot-composition-5",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": [
+      {
+        "id": "correction-05-01-r0",
+        "name": "合肥澄川5号家常菜馆",
+        "category": "restaurant",
+        "lat": 31.821,
+        "lng": 117.23100000000001,
+        "ticket_price": 0,
+        "average_cost": 55,
+        "open_time": "10:30",
+        "close_time": "21:00",
+        "address": "合肥示例街21号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "家常菜"
+        ],
+        "source_url": "https://pilot.example.invalid/correction-05-01/r0",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-05-01-r1",
+        "name": "合肥澄川5号素食餐厅",
+        "category": "restaurant",
+        "lat": 31.822,
+        "lng": 117.232,
+        "ticket_price": 0,
+        "average_cost": 45,
+        "open_time": "11:00",
+        "close_time": "20:30",
+        "address": "合肥示例街22号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "素食"
+        ],
+        "source_url": "https://pilot.example.invalid/correction-05-01/r1",
+        "fixture_record": true
+      }
+    ],
+    "derivative_of_case": "pilot-05-01"
+  },
+  {
+    "id": "correction-05-02",
+    "family": "recovery",
+    "variant": 1,
+    "request": "2026-12-03开始在福州游玩1天，总预算850元，必须参观福州澄川5号工艺展馆和福州知秋5号古建园。请核对天气；不要把一次服务超时当成景点不存在。请安排可行行程，并预留午晚餐时段；本次不要求指定餐厅或预订。",
+    "slots": {
+      "destination": "福州",
+      "travel_days": 1,
+      "start_date": "2026-12-03",
+      "end_date": "2026-12-03",
+      "budget_range": 850,
+      "must_visit": [
+        "福州澄川5号工艺展馆",
+        "福州知秋5号古建园"
+      ],
+      "interests": [
+        "工艺",
+        "古建"
+      ],
+      "information_needs": [
+        "weather"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "correction-05-02-p0",
+        "name": "福州澄川5号工艺展馆",
+        "category": "attraction",
+        "lat": 26.07,
+        "lng": 119.3,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "工艺"
+        ],
+        "score": 0.95,
+        "source_url": "https://pilot.example.invalid/correction-05-02/p0",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-05-02-p1",
+        "name": "福州知秋5号古建园",
+        "category": "attraction",
+        "lat": 26.072,
+        "lng": 119.30199999999999,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "古建"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://pilot.example.invalid/correction-05-02/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-05-02-p2",
+        "name": "福州星河5号摄影馆",
+        "category": "attraction",
+        "lat": 26.074,
+        "lng": 119.304,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "摄影"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://pilot.example.invalid/correction-05-02/p2",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-05-02-p3",
+        "name": "福州栖风5号步道",
+        "category": "attraction",
+        "lat": 26.076,
+        "lng": 119.306,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://pilot.example.invalid/correction-05-02/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "plan",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-student-correction24.v1",
+    "split": "train",
+    "scene_template": "detail_timeout_and_weather",
+    "source_group": "pilot-composition-5",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": [
+      {
+        "id": "correction-05-02-r0",
+        "name": "福州澄川5号家常菜馆",
+        "category": "restaurant",
+        "lat": 26.071,
+        "lng": 119.301,
+        "ticket_price": 0,
+        "average_cost": 55,
+        "open_time": "10:30",
+        "close_time": "21:00",
+        "address": "福州示例街21号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "家常菜"
+        ],
+        "source_url": "https://pilot.example.invalid/correction-05-02/r0",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-05-02-r1",
+        "name": "福州澄川5号素食餐厅",
+        "category": "restaurant",
+        "lat": 26.072,
+        "lng": 119.30199999999999,
+        "ticket_price": 0,
+        "average_cost": 45,
+        "open_time": "11:00",
+        "close_time": "20:30",
+        "address": "福州示例街22号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "素食"
+        ],
+        "source_url": "https://pilot.example.invalid/correction-05-02/r1",
+        "fixture_record": true
+      }
+    ],
+    "derivative_of_case": "pilot-05-02"
+  },
+  {
+    "id": "correction-05-03",
+    "family": "recovery",
+    "variant": 1,
+    "request": "2026-12-04开始在南昌游玩1天，总预算950元，必须参观南昌澄川5号工艺展馆和南昌知秋5号古建园。请核对天气；不要把一次服务超时当成景点不存在。请安排可行行程，并预留午晚餐时段；本次不要求指定餐厅或预订。",
+    "slots": {
+      "destination": "南昌",
+      "travel_days": 1,
+      "start_date": "2026-12-04",
+      "end_date": "2026-12-04",
+      "budget_range": 950,
+      "must_visit": [
+        "南昌澄川5号工艺展馆",
+        "南昌知秋5号古建园"
+      ],
+      "interests": [
+        "工艺",
+        "古建"
+      ],
+      "information_needs": [
+        "weather"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "correction-05-03-p0",
+        "name": "南昌澄川5号工艺展馆",
+        "category": "attraction",
+        "lat": 28.68,
+        "lng": 115.86,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 90,
+        "tags": [
+          "工艺"
+        ],
+        "score": 0.95,
+        "source_url": "https://pilot.example.invalid/correction-05-03/p0",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-05-03-p1",
+        "name": "南昌知秋5号古建园",
+        "category": "attraction",
+        "lat": 28.682,
+        "lng": 115.862,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 90,
+        "tags": [
+          "古建"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://pilot.example.invalid/correction-05-03/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-05-03-p2",
+        "name": "南昌星河5号摄影馆",
+        "category": "attraction",
+        "lat": 28.684,
+        "lng": 115.864,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 90,
+        "tags": [
+          "摄影"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://pilot.example.invalid/correction-05-03/p2",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-05-03-p3",
+        "name": "南昌栖风5号步道",
+        "category": "attraction",
+        "lat": 28.686,
+        "lng": 115.866,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 90,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://pilot.example.invalid/correction-05-03/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "plan",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-student-correction24.v1",
+    "split": "train",
+    "scene_template": "detail_timeout_and_weather",
+    "source_group": "pilot-composition-5",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": [
+      {
+        "id": "correction-05-03-r0",
+        "name": "南昌澄川5号家常菜馆",
+        "category": "restaurant",
+        "lat": 28.681,
+        "lng": 115.861,
+        "ticket_price": 0,
+        "average_cost": 55,
+        "open_time": "10:30",
+        "close_time": "21:00",
+        "address": "南昌示例街21号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "家常菜"
+        ],
+        "source_url": "https://pilot.example.invalid/correction-05-03/r0",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-05-03-r1",
+        "name": "南昌澄川5号素食餐厅",
+        "category": "restaurant",
+        "lat": 28.682,
+        "lng": 115.862,
+        "ticket_price": 0,
+        "average_cost": 45,
+        "open_time": "11:00",
+        "close_time": "20:30",
+        "address": "南昌示例街22号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "素食"
+        ],
+        "source_url": "https://pilot.example.invalid/correction-05-03/r1",
+        "fixture_record": true
+      }
+    ],
+    "derivative_of_case": "pilot-05-03"
+  },
+  {
+    "id": "correction-05-04",
+    "family": "recovery",
+    "variant": 1,
+    "request": "2026-12-05开始在太原游玩1天，总预算1100元，必须参观太原澄川5号工艺展馆和太原知秋5号古建园。请核对天气；不要把一次服务超时当成景点不存在。请安排可行行程，并预留午晚餐时段；本次不要求指定餐厅或预订。",
+    "slots": {
+      "destination": "太原",
+      "travel_days": 1,
+      "start_date": "2026-12-05",
+      "end_date": "2026-12-05",
+      "budget_range": 1100,
+      "must_visit": [
+        "太原澄川5号工艺展馆",
+        "太原知秋5号古建园"
+      ],
+      "interests": [
+        "工艺",
+        "古建"
+      ],
+      "information_needs": [
+        "weather"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "correction-05-04-p0",
+        "name": "太原澄川5号工艺展馆",
+        "category": "attraction",
+        "lat": 37.87,
+        "lng": 112.55,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 105,
+        "tags": [
+          "工艺"
+        ],
+        "score": 0.95,
+        "source_url": "https://pilot.example.invalid/correction-05-04/p0",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-05-04-p1",
+        "name": "太原知秋5号古建园",
+        "category": "attraction",
+        "lat": 37.872,
+        "lng": 112.55199999999999,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 105,
+        "tags": [
+          "古建"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://pilot.example.invalid/correction-05-04/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-05-04-p2",
+        "name": "太原星河5号摄影馆",
+        "category": "attraction",
+        "lat": 37.873999999999995,
+        "lng": 112.554,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 105,
+        "tags": [
+          "摄影"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://pilot.example.invalid/correction-05-04/p2",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-05-04-p3",
+        "name": "太原栖风5号步道",
+        "category": "attraction",
+        "lat": 37.876,
+        "lng": 112.556,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 105,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://pilot.example.invalid/correction-05-04/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "plan",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-student-correction24.v1",
+    "split": "train",
+    "scene_template": "detail_timeout_and_weather",
+    "source_group": "pilot-composition-5",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": [
+      {
+        "id": "correction-05-04-r0",
+        "name": "太原澄川5号家常菜馆",
+        "category": "restaurant",
+        "lat": 37.870999999999995,
+        "lng": 112.551,
+        "ticket_price": 0,
+        "average_cost": 55,
+        "open_time": "10:30",
+        "close_time": "21:00",
+        "address": "太原示例街21号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "家常菜"
+        ],
+        "source_url": "https://pilot.example.invalid/correction-05-04/r0",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-05-04-r1",
+        "name": "太原澄川5号素食餐厅",
+        "category": "restaurant",
+        "lat": 37.872,
+        "lng": 112.55199999999999,
+        "ticket_price": 0,
+        "average_cost": 45,
+        "open_time": "11:00",
+        "close_time": "20:30",
+        "address": "太原示例街22号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "素食"
+        ],
+        "source_url": "https://pilot.example.invalid/correction-05-04/r1",
+        "fixture_record": true
+      }
+    ],
+    "derivative_of_case": "pilot-05-04"
+  },
+  {
+    "id": "correction-06-01",
+    "family": "evidence",
+    "variant": 0,
+    "request": "2026-12-05开始在合肥游玩1天，总预算720元，必须参观合肥澄川6号工艺展馆和合肥知秋6号古建园。要核实两项必去活动的开放时间；过期页面不能作为依据，其他候选可选。请安排可行行程，并预留午晚餐时段；本次不要求指定餐厅或预订。",
+    "slots": {
+      "destination": "合肥",
+      "travel_days": 1,
+      "start_date": "2026-12-05",
+      "end_date": "2026-12-05",
+      "budget_range": 720,
+      "must_visit": [
+        "合肥澄川6号工艺展馆",
+        "合肥知秋6号古建园"
+      ],
+      "interests": [
+        "工艺",
+        "古建"
+      ],
+      "information_needs": [
+        "opening_hours"
+      ],
+      "current_info_queries": [
+        "合肥澄川6号工艺展馆 2026-12-05 开放时间",
+        "合肥知秋6号古建园 2026-12-05 开放时间"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "correction-06-01-p0",
+        "name": "合肥澄川6号工艺展馆",
+        "category": "attraction",
+        "lat": 31.82,
+        "lng": 117.23,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 60,
+        "tags": [
+          "工艺"
+        ],
+        "score": 0.95,
+        "source_url": "https://pilot.example.invalid/correction-06-01/p0",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-06-01-p1",
+        "name": "合肥知秋6号古建园",
+        "category": "attraction",
+        "lat": 31.822,
+        "lng": 117.232,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 60,
+        "tags": [
+          "古建"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://pilot.example.invalid/correction-06-01/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-06-01-p2",
+        "name": "合肥星河6号摄影馆",
+        "category": "attraction",
+        "lat": 31.824,
+        "lng": 117.23400000000001,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 60,
+        "tags": [
+          "摄影"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://pilot.example.invalid/correction-06-01/p2",
+        "fixture_record": true,
+        "closed_dates": [
+          "2026-12-05"
+        ]
+      },
+      {
+        "id": "correction-06-01-p3",
+        "name": "合肥栖风6号步道",
+        "category": "attraction",
+        "lat": 31.826,
+        "lng": 117.236,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 60,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://pilot.example.invalid/correction-06-01/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "plan",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-student-correction24.v1",
+    "split": "train",
+    "scene_template": "stale_hours_and_optional_closed",
+    "source_group": "pilot-composition-6",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": [
+      {
+        "id": "correction-06-01-r0",
+        "name": "合肥澄川6号家常菜馆",
+        "category": "restaurant",
+        "lat": 31.821,
+        "lng": 117.23100000000001,
+        "ticket_price": 0,
+        "average_cost": 55,
+        "open_time": "10:30",
+        "close_time": "21:00",
+        "address": "合肥示例街21号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "家常菜"
+        ],
+        "source_url": "https://pilot.example.invalid/correction-06-01/r0",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-06-01-r1",
+        "name": "合肥澄川6号素食餐厅",
+        "category": "restaurant",
+        "lat": 31.822,
+        "lng": 117.232,
+        "ticket_price": 0,
+        "average_cost": 45,
+        "open_time": "11:00",
+        "close_time": "20:30",
+        "address": "合肥示例街22号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "素食"
+        ],
+        "source_url": "https://pilot.example.invalid/correction-06-01/r1",
+        "fixture_record": true
+      }
+    ],
+    "derivative_of_case": "pilot-06-01"
+  },
+  {
+    "id": "correction-06-02",
+    "family": "evidence",
+    "variant": 1,
+    "request": "2026-12-06开始在福州游玩1天，总预算850元，必须参观福州澄川6号工艺展馆和福州知秋6号古建园。要核实两项必去活动的开放时间；过期页面不能作为依据，其他候选可选。请安排可行行程，并预留午晚餐时段；本次不要求指定餐厅或预订。",
+    "slots": {
+      "destination": "福州",
+      "travel_days": 1,
+      "start_date": "2026-12-06",
+      "end_date": "2026-12-06",
+      "budget_range": 850,
+      "must_visit": [
+        "福州澄川6号工艺展馆",
+        "福州知秋6号古建园"
+      ],
+      "interests": [
+        "工艺",
+        "古建"
+      ],
+      "information_needs": [
+        "opening_hours"
+      ],
+      "current_info_queries": [
+        "福州澄川6号工艺展馆 2026-12-06 开放时间",
+        "福州知秋6号古建园 2026-12-06 开放时间"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "correction-06-02-p0",
+        "name": "福州澄川6号工艺展馆",
+        "category": "attraction",
+        "lat": 26.07,
+        "lng": 119.3,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "工艺"
+        ],
+        "score": 0.95,
+        "source_url": "https://pilot.example.invalid/correction-06-02/p0",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-06-02-p1",
+        "name": "福州知秋6号古建园",
+        "category": "attraction",
+        "lat": 26.072,
+        "lng": 119.30199999999999,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "古建"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://pilot.example.invalid/correction-06-02/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-06-02-p2",
+        "name": "福州星河6号摄影馆",
+        "category": "attraction",
+        "lat": 26.074,
+        "lng": 119.304,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "摄影"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://pilot.example.invalid/correction-06-02/p2",
+        "fixture_record": true,
+        "closed_dates": [
+          "2026-12-06"
+        ]
+      },
+      {
+        "id": "correction-06-02-p3",
+        "name": "福州栖风6号步道",
+        "category": "attraction",
+        "lat": 26.076,
+        "lng": 119.306,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://pilot.example.invalid/correction-06-02/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "plan",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-student-correction24.v1",
+    "split": "train",
+    "scene_template": "stale_hours_and_optional_closed",
+    "source_group": "pilot-composition-6",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": [
+      {
+        "id": "correction-06-02-r0",
+        "name": "福州澄川6号家常菜馆",
+        "category": "restaurant",
+        "lat": 26.071,
+        "lng": 119.301,
+        "ticket_price": 0,
+        "average_cost": 55,
+        "open_time": "10:30",
+        "close_time": "21:00",
+        "address": "福州示例街21号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "家常菜"
+        ],
+        "source_url": "https://pilot.example.invalid/correction-06-02/r0",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-06-02-r1",
+        "name": "福州澄川6号素食餐厅",
+        "category": "restaurant",
+        "lat": 26.072,
+        "lng": 119.30199999999999,
+        "ticket_price": 0,
+        "average_cost": 45,
+        "open_time": "11:00",
+        "close_time": "20:30",
+        "address": "福州示例街22号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "素食"
+        ],
+        "source_url": "https://pilot.example.invalid/correction-06-02/r1",
+        "fixture_record": true
+      }
+    ],
+    "derivative_of_case": "pilot-06-02"
+  },
+  {
+    "id": "correction-06-03",
+    "family": "evidence",
+    "variant": 2,
+    "request": "2026-12-07开始在南昌游玩1天，总预算950元，必须参观南昌澄川6号工艺展馆和南昌知秋6号古建园。要核实两项必去活动的开放时间；过期页面不能作为依据，其他候选可选。请安排可行行程，并预留午晚餐时段；本次不要求指定餐厅或预订。",
+    "slots": {
+      "destination": "南昌",
+      "travel_days": 1,
+      "start_date": "2026-12-07",
+      "end_date": "2026-12-07",
+      "budget_range": 950,
+      "must_visit": [
+        "南昌澄川6号工艺展馆",
+        "南昌知秋6号古建园"
+      ],
+      "interests": [
+        "工艺",
+        "古建"
+      ],
+      "information_needs": [
+        "opening_hours"
+      ],
+      "current_info_queries": [
+        "南昌澄川6号工艺展馆 2026-12-07 开放时间",
+        "南昌知秋6号古建园 2026-12-07 开放时间"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "correction-06-03-p0",
+        "name": "南昌澄川6号工艺展馆",
+        "category": "attraction",
+        "lat": 28.68,
+        "lng": 115.86,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 90,
+        "tags": [
+          "工艺"
+        ],
+        "score": 0.95,
+        "source_url": "https://pilot.example.invalid/correction-06-03/p0",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-06-03-p1",
+        "name": "南昌知秋6号古建园",
+        "category": "attraction",
+        "lat": 28.682,
+        "lng": 115.862,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 90,
+        "tags": [
+          "古建"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://pilot.example.invalid/correction-06-03/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-06-03-p2",
+        "name": "南昌星河6号摄影馆",
+        "category": "attraction",
+        "lat": 28.684,
+        "lng": 115.864,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 90,
+        "tags": [
+          "摄影"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://pilot.example.invalid/correction-06-03/p2",
+        "fixture_record": true,
+        "closed_dates": [
+          "2026-12-07"
+        ]
+      },
+      {
+        "id": "correction-06-03-p3",
+        "name": "南昌栖风6号步道",
+        "category": "attraction",
+        "lat": 28.686,
+        "lng": 115.866,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 90,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://pilot.example.invalid/correction-06-03/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "plan",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-student-correction24.v1",
+    "split": "train",
+    "scene_template": "stale_hours_and_optional_closed",
+    "source_group": "pilot-composition-6",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": [
+      {
+        "id": "correction-06-03-r0",
+        "name": "南昌澄川6号家常菜馆",
+        "category": "restaurant",
+        "lat": 28.681,
+        "lng": 115.861,
+        "ticket_price": 0,
+        "average_cost": 55,
+        "open_time": "10:30",
+        "close_time": "21:00",
+        "address": "南昌示例街21号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "家常菜"
+        ],
+        "source_url": "https://pilot.example.invalid/correction-06-03/r0",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-06-03-r1",
+        "name": "南昌澄川6号素食餐厅",
+        "category": "restaurant",
+        "lat": 28.682,
+        "lng": 115.862,
+        "ticket_price": 0,
+        "average_cost": 45,
+        "open_time": "11:00",
+        "close_time": "20:30",
+        "address": "南昌示例街22号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "素食"
+        ],
+        "source_url": "https://pilot.example.invalid/correction-06-03/r1",
+        "fixture_record": true
+      }
+    ],
+    "derivative_of_case": "pilot-06-03"
+  },
+  {
+    "id": "correction-06-04",
+    "family": "evidence",
+    "variant": 3,
+    "request": "2026-12-08开始在太原游玩1天，总预算1100元，必须参观太原澄川6号工艺展馆和太原知秋6号古建园。要核实两项必去活动的开放时间；过期页面不能作为依据，其他候选可选。请安排可行行程，并预留午晚餐时段；本次不要求指定餐厅或预订。",
+    "slots": {
+      "destination": "太原",
+      "travel_days": 1,
+      "start_date": "2026-12-08",
+      "end_date": "2026-12-08",
+      "budget_range": 1100,
+      "must_visit": [
+        "太原澄川6号工艺展馆",
+        "太原知秋6号古建园"
+      ],
+      "interests": [
+        "工艺",
+        "古建"
+      ],
+      "information_needs": [
+        "opening_hours"
+      ],
+      "current_info_queries": [
+        "太原澄川6号工艺展馆 2026-12-08 开放时间",
+        "太原知秋6号古建园 2026-12-08 开放时间"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "correction-06-04-p0",
+        "name": "太原澄川6号工艺展馆",
+        "category": "attraction",
+        "lat": 37.87,
+        "lng": 112.55,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 105,
+        "tags": [
+          "工艺"
+        ],
+        "score": 0.95,
+        "source_url": "https://pilot.example.invalid/correction-06-04/p0",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-06-04-p1",
+        "name": "太原知秋6号古建园",
+        "category": "attraction",
+        "lat": 37.872,
+        "lng": 112.55199999999999,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 105,
+        "tags": [
+          "古建"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://pilot.example.invalid/correction-06-04/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-06-04-p2",
+        "name": "太原星河6号摄影馆",
+        "category": "attraction",
+        "lat": 37.873999999999995,
+        "lng": 112.554,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 105,
+        "tags": [
+          "摄影"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://pilot.example.invalid/correction-06-04/p2",
+        "fixture_record": true,
+        "closed_dates": [
+          "2026-12-08"
+        ]
+      },
+      {
+        "id": "correction-06-04-p3",
+        "name": "太原栖风6号步道",
+        "category": "attraction",
+        "lat": 37.876,
+        "lng": 112.556,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 105,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://pilot.example.invalid/correction-06-04/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "plan",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-student-correction24.v1",
+    "split": "train",
+    "scene_template": "stale_hours_and_optional_closed",
+    "source_group": "pilot-composition-6",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": [
+      {
+        "id": "correction-06-04-r0",
+        "name": "太原澄川6号家常菜馆",
+        "category": "restaurant",
+        "lat": 37.870999999999995,
+        "lng": 112.551,
+        "ticket_price": 0,
+        "average_cost": 55,
+        "open_time": "10:30",
+        "close_time": "21:00",
+        "address": "太原示例街21号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "家常菜"
+        ],
+        "source_url": "https://pilot.example.invalid/correction-06-04/r0",
+        "fixture_record": true
+      },
+      {
+        "id": "correction-06-04-r1",
+        "name": "太原澄川6号素食餐厅",
+        "category": "restaurant",
+        "lat": 37.872,
+        "lng": 112.55199999999999,
+        "ticket_price": 0,
+        "average_cost": 45,
+        "open_time": "11:00",
+        "close_time": "20:30",
+        "address": "太原示例街22号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "素食"
+        ],
+        "source_url": "https://pilot.example.invalid/correction-06-04/r1",
+        "fixture_record": true
+      }
+    ],
+    "derivative_of_case": "pilot-06-04"
+  }
+]

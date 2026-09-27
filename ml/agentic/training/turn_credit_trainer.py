@@ -29,7 +29,9 @@ def _bounded_json_value(value: Any, *, depth: int = 0) -> Any:
         return value[:_MAX_AUDIT_STRING_CHARS]
     if isinstance(value, dict):
         return {
-            str(key)[:_MAX_AUDIT_STRING_CHARS]: _bounded_json_value(item, depth=depth + 1)
+            str(key)[:_MAX_AUDIT_STRING_CHARS]: _bounded_json_value(
+                item, depth=depth + 1
+            )
             for key, item in list(value.items())[:_MAX_AUDIT_COLLECTION_ITEMS]
         }
     if isinstance(value, (list, tuple)):
@@ -69,7 +71,9 @@ def _environment_identity(environment: Any) -> tuple[str | None, str | None]:
     session = getattr(environment, "_session", None)
     recorder = getattr(session, "recorder", None) if session is not None else None
     episode = getattr(recorder, "episode", None) if recorder is not None else None
-    trajectory_id = getattr(episode, "trajectory_id", None) if episode is not None else None
+    trajectory_id = (
+        getattr(episode, "trajectory_id", None) if episode is not None else None
+    )
     if trajectory_id is None:
         reward = getattr(environment, "reward_record", None)
         if reward is None:
@@ -155,19 +159,25 @@ def create_turn_credit_trainer_class(base_trainer_class=None):
                 decode_error: str | None = None
                 token_truncated = end - start > _MAX_AUDIT_SPAN_TOKENS
                 if token_row is not None:
-                    token_ids = token_row[start : min(end, start + _MAX_AUDIT_SPAN_TOKENS)]
+                    token_ids = token_row[
+                        start : min(end, start + _MAX_AUDIT_SPAN_TOKENS)
+                    ]
                     if callable(decode):
                         try:
                             text = str(decode(token_ids, skip_special_tokens=False))
                         except (RuntimeError, TypeError, ValueError) as error:
                             decode_error = type(error).__name__
-                text_truncated = text is not None and len(text) > _MAX_AUDIT_DECODED_CHARS
+                text_truncated = (
+                    text is not None and len(text) > _MAX_AUDIT_DECODED_CHARS
+                )
                 decoded.append(
                     {
                         "range": [start, end],
                         "token_count": end - start,
                         "decoded_text": (
-                            text[:_MAX_AUDIT_DECODED_CHARS] if text is not None else None
+                            text[:_MAX_AUDIT_DECODED_CHARS]
+                            if text is not None
+                            else None
                         ),
                         "truncated": token_truncated or text_truncated,
                         "decode_error": decode_error,
@@ -253,7 +263,11 @@ def create_turn_credit_trainer_class(base_trainer_class=None):
                     validities.append([str(item["validity"]) for item in records])
                     credit_records.append(records)
                 else:
-                    row = credit_fn(self.turn_credit_gamma) if credit_fn is not None else []
+                    row = (
+                        credit_fn(self.turn_credit_gamma)
+                        if credit_fn is not None
+                        else []
+                    )
                     credits.append(row)
                     validities.append(["valid"] * len(row))
                     credit_records.append(None)
@@ -267,7 +281,10 @@ def create_turn_credit_trainer_class(base_trainer_class=None):
             for row_index, (environment, spans, records, row_credits) in enumerate(
                 zip(environments, segments, credit_records, credits, strict=True)
             ):
-                aligned = len(spans) >= len(row_credits) and len(spans) - len(row_credits) <= 1
+                aligned = (
+                    len(spans) >= len(row_credits)
+                    and len(spans) - len(row_credits) <= 1
+                )
                 if not aligned:
                     self._write_alignment_mismatch_audit(
                         environment=environment,
@@ -318,18 +335,18 @@ def create_turn_credit_trainer_class(base_trainer_class=None):
             self.turn_credit_totals[f"{mode}_locally_credited_turns"] += int(
                 report.locally_credited_turns
             )
-            self.turn_credit_totals[
-                f"{mode}_effective_nonzero_credited_turns"
-            ] += int(report.effective_nonzero_credited_turns)
+            self.turn_credit_totals[f"{mode}_effective_nonzero_credited_turns"] += int(
+                report.effective_nonzero_credited_turns
+            )
             self.turn_credit_totals[f"{mode}_compared_turn_buckets"] += int(
                 report.compared_turn_buckets
             )
             self.turn_credit_totals[f"{mode}_zero_variance_turn_buckets"] += int(
                 report.zero_variance_turn_buckets
             )
-            self.turn_credit_totals[
-                f"{mode}_invalid_action_positive_credit_count"
-            ] += int(report.invalid_action_positive_credit_count)
+            self.turn_credit_totals[f"{mode}_invalid_action_positive_credit_count"] += (
+                int(report.invalid_action_positive_credit_count)
+            )
             ratio = (
                 report.locally_credited_turns / report.model_turns
                 if report.model_turns

@@ -10,14 +10,18 @@ from scripts.audit_model_curriculum import (
     boundary_stratum,
     decision_loop_behavior_metrics,
     decision_loop_metadata,
+    episode_outcome_metrics,
+    external_evidence_metadata,
     paired_rollout_seed,
     rollout_latency_metrics,
     rollout_trl_history,
     select_boundary_stratified,
     select_stratified,
     select_verifier_repair_stratified,
+    target_decision_metrics,
     task_family,
 )
+from scripts.rescore_curriculum_target_decisions import enrich_rollouts
 
 
 def test_paired_rollout_seed_is_stable_and_sample_specific():
@@ -67,10 +71,12 @@ def test_task_family_and_stratified_selection():
         "recovery",
     }
     routes = {task_family(row): _route_and_actions(row) for row in selected}
-    assert routes["search"] == ("search", ["search_pois"])
-    assert routes["recovery"] == ("search", ["search_pois"])
-    assert routes["clarification"] == ("clarification", ["ask_user"])
-    assert routes["tradeoff"] == ("tradeoff", ["propose_tradeoff", "abort"])
+    from agentic.policy_actions import POLICY_ACTION_MODELS
+
+    assert all(
+        route == "travel" and set(actions) == set(POLICY_ACTION_MODELS)
+        for route, actions in routes.values()
+    )
 
 
 def test_stratified_selection_can_be_pre_filtered_to_one_family():
@@ -199,6 +205,111 @@ def test_decision_loop_metadata_is_empty_for_non_stage3_rows():
     assert decision_loop_metadata(_row("search", 1)) == {}
 
 
+def test_target_decision_metrics_separates_boundary_accuracy_from_episode_tail():
+    external = {
+        "external_evidence": {
+            "family": "opening_hours",
+            "expected_action": "search_current_info",
+            "expected_model_arguments": {"info_type": "opening_hours"},
+        },
+        "actions": [
+            {
+                "action": "search_current_info",
+                "arguments": {
+                    "query": "museum hours",
+                    "info_type": "opening_hours",
+                },
+                "error_code": None,
+                "observations": [{"ok": True}],
+            }
+        ],
+        "status": "interrupted",
+        "termination_reason": "awaiting_user",
+    }
+    recovery = {
+        "decision_loop": {
+            "scenario": "change_arguments",
+            "expected_recovery_keywords": ["历史"],
+        },
+        "actions": [
+            {
+                "action": "search_pois",
+                "arguments": {"keywords": ["历史", "博物馆"]},
+                "error_code": "QUERY_TOO_BROAD",
+                "observations": [{"ok": False}],
+            },
+            {
+                "action": "search_pois",
+                "arguments": {"keywords": ["历史"]},
+                "error_code": None,
+                "observations": [{"ok": True}],
+            },
+        ],
+        "status": "failed",
+        "termination_reason": "rollout_truncated",
+    }
+
+    metrics = target_decision_metrics([external, recovery])
+
+    assert metrics["overall"]["target_arguments_match"] == 2
+    assert metrics["overall"]["target_observation_verified"] == 2
+    assert (
+        metrics["by_cell"]["external_evidence:opening_hours"]["target_observation_verified_rate"]
+        == 1.0
+    )
+    assert (
+        metrics["by_cell"]["decision_loop_recovery:change_arguments"]["target_arguments_match_rate"]
+        == 1.0
+    )
+    assert episode_outcome_metrics([external, recovery])["succeeded"] == 0
+
+
+def test_target_decision_metrics_requires_the_second_recovery_search():
+    metrics = target_decision_metrics(
+        [
+            {
+                "decision_loop": {
+                    "scenario": "retry_same_arguments",
+                    "expected_recovery_keywords": ["亲子", "公园"],
+                },
+                "actions": [
+                    {
+                        "action": "search_pois",
+                        "arguments": {"keywords": ["亲子", "公园"]},
+                        "error_code": "UPSTREAM_TIMEOUT",
+                        "observations": [{"ok": False}],
+                    }
+                ],
+            }
+        ]
+    )
+
+    assert metrics["overall"]["target_action_present"] == 0
+    assert metrics["overall"]["target_arguments_match"] == 0
+
+
+def test_external_evidence_metadata_is_empty_for_uncontrolled_rows():
+    assert external_evidence_metadata(_row("search", 2)) == {}
+
+
+def test_offline_rescore_enriches_targets_without_changing_saved_actions():
+    source = _row("recovery", 4)
+    source.snapshot.hidden_test_facts["decision_loop_curriculum"] = {
+        "scenario": "change_arguments",
+        "expected_recovery_keywords": ["历史"],
+    }
+    saved = {
+        "task_id": source.task.task_id,
+        "actions": [{"action": "search_pois", "arguments": {"keywords": ["历史"]}}],
+    }
+
+    enriched = enrich_rollouts([saved], [source])
+
+    assert enriched[0]["decision_loop"]["scenario"] == "change_arguments"
+    assert enriched[0]["actions"] == saved["actions"]
+    assert "decision_loop" not in saved
+
+
 class _InvalidHistoryPolicy:
     async def propose_from_history(self, messages, *, tools, allowed_actions):
         raise PolicyOutputError("invalid sampled completion")
@@ -248,7 +359,7 @@ async def test_trl_history_audit_uses_public_schema_decorated_method():
     rollout = await rollout_trl_history(
         _row("search", 98),
         _SingleActionHistoryPolicy(),
-        environment_factories={"search": lambda: environment},
+        environment_factories={"travel": lambda: environment},
         max_tool_calling_iterations=1,
         transported_row=to_trl_environment_rows([_row("search", 98)])[0],
     )

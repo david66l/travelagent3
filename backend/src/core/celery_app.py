@@ -13,7 +13,6 @@ celery_app = Celery(
         "worker.planning_tasks",
         "worker.cache_tasks",
         "worker.dlq_tasks",
-        "worker.shadow_tasks",
     ],
 )
 
@@ -38,9 +37,6 @@ celery_app.conf.update(
         },
         "worker.planning_tasks.redispatch_pending_planning_jobs": {
             "queue": settings.celery_planning_queue,
-        },
-        "worker.shadow_tasks.execute_agent_shadow": {
-            "queue": settings.celery_shadow_queue,
         },
         "worker.memory_tasks.archive_session": {
             "queue": settings.celery_memory_queue,

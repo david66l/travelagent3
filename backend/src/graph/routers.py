@@ -28,18 +28,8 @@ def route_after_gathering(state: dict[str, Any]) -> str:
     return "profile_recall"
 
 
-def route_after_profile(state: dict[str, Any]) -> str | list[str]:
-    """After profile recall: write-back ends the flow; otherwise fan out.
-
-    The planning path fans out into retrieve (personalised RAG, depends on the
-    recalled profile) and weather_check (needs only the gathered slots). Both
-    are single hops to ``plan`` so they re-join synchronously.
-    """
-    if state.get("stage") in ("memory_updated", "completed"):
-        return "__end__"
-    if state.get("policy_mode") == "agent":
-        return "agent_loop"
-    return ["retrieve", "weather_check"]
+def route_after_profile(state):
+    return "__end__" if state.get("stage") in {"memory_updated", "completed"} else "agent_loop"
 
 
 def route_after_agent_loop(state: dict[str, Any]) -> str:
@@ -55,62 +45,12 @@ def route_after_agent_loop(state: dict[str, Any]) -> str:
     return "output"
 
 
-def route_after_retrieve(state: dict[str, Any]) -> str:
-    """After RAG: always proceed to plan (planner handles empty via fallback)."""
-    return "plan"
-
-
-def route_after_weather(state: dict[str, Any]) -> str:
-    """After weather check: always proceed to plan."""
-    return "plan"
-
-
-def route_after_confirm_gate(state: dict[str, Any]) -> str:
-    """After the confirm interrupt resumes: enrich, modify, or re-solve."""
-    decision = state.get("confirm_decision")
-    if decision == "modify":
-        return "apply_single_change"
-    if decision == "reject_needs_reason":
-        return "output"
-    if decision == "reject_with_reason":
-        return "agent_loop"
-    if decision is None:
-        return "plan"  # reject → re-solve a fresh draft
-    return "tool_call"  # confirm → deep enrichment
-
-
-def route_after_apply_change(state: dict[str, Any]) -> str:
-    """Constraint changes need a fresh solve; POI edits only need validation."""
-    if state.get("next_action") == "planner":
-        return "plan"
-    return "factcheck"
-
-
-def route_after_tool_call(state: dict[str, Any]) -> str:
-    """After tool execution: proceed to fact check."""
-    if state.get("next_action") in {"clarify", "agent_error"}:
-        return "output"
-    return "factcheck"
-
-
-def route_after_factcheck(state: dict[str, Any]) -> str:
-    """After fact check: pure router. The node owns the loop counter + warnings.
-
-    ``next_action == "planner"`` means the factcheck node decided a replan is
-    worthwhile (conflicts found and loop budget not exhausted).
-    """
-    if state.get("next_action") in {"clarify", "agent_error"}:
-        return "output"
-    if state.get("next_action") == "planner":
-        return "plan"
-    return "hallucination"
-
-
-def route_after_hallucination(state: dict[str, Any]) -> str:
-    """After hallucination check: proceed to output."""
-    if state.get("next_action") == "clarify":
-        return "output"
-    return "output"
+def route_after_confirm_gate(state):
+    return (
+        "agent_loop"
+        if state.get("confirm_decision") in {"modify", "reject_with_reason"}
+        else "output"
+    )
 
 
 def route_after_output(state: dict[str, Any]) -> str:

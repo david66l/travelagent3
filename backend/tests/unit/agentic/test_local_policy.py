@@ -2,8 +2,21 @@ import json
 
 import pytest
 
-from agentic.local_policy import LocalCheckpointAgentPolicy, parse_local_tool_call
+from agentic.local_policy import (
+    LocalCheckpointAgentPolicy,
+    _tokenizer_compatibility_kwargs,
+    parse_local_tool_call,
+)
 from agentic.policy import PolicyOutputError
+
+
+def test_tokenizer_compatibility_normalizes_legacy_extra_special_tokens(tmp_path):
+    (tmp_path / "tokenizer_config.json").write_text(
+        json.dumps({"extra_special_tokens": ["<|im_start|>"]}),
+        encoding="utf-8",
+    )
+
+    assert _tokenizer_compatibility_kwargs(tmp_path) == {"extra_special_tokens": {}}
 
 
 def test_parse_local_tool_call_accepts_native_qwen_envelope():
@@ -46,6 +59,21 @@ def test_parse_local_tool_call_rejects_unstructured_prose():
 def test_parse_local_tool_call_rejects_multiple_calls_or_surrounding_prose(output):
     with pytest.raises(PolicyOutputError, match="one valid tool call"):
         parse_local_tool_call(output)
+
+
+def test_multiple_tool_call_failure_keeps_only_sanitized_action_summary():
+    output = (
+        '<tool_call>{"name":"search_pois","arguments":{}}</tool_call>'
+        '<tool_call>{"name":"ask_user","arguments":{"question":"预算？"}}</tool_call>'
+    )
+
+    with pytest.raises(PolicyOutputError) as captured:
+        parse_local_tool_call(output)
+
+    assert captured.value.output_summary == {
+        "tool_call_count": 2,
+        "actions": ["search_pois", "ask_user"],
+    }
 
 
 def test_parse_local_tool_call_accepts_one_allowlisted_qwen_terminator():

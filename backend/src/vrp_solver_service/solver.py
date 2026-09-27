@@ -55,6 +55,9 @@ class TravelVRPSolver:
         start_ts = time.time()
         pois = list(request.pois)
         constraints = request.constraints
+        source_pois = list(request.pois)
+        if constraints.require_named_restaurants:
+            constraints = constraints.model_copy(update={'food_day':0})
 
         if not pois:
             return SolverResponse(status="infeasible", message="No POIs provided")
@@ -78,6 +81,9 @@ class TravelVRPSolver:
         if request.dist_matrix is not None and request.tc_matrix is not None:
             dist = request.dist_matrix
             tc = request.tc_matrix
+            if constraints.require_named_restaurants:
+                from planner.named_dining import expand_source_matrices
+                dist,tc=expand_source_matrices(source_pois,pois,dist,tc)
         else:
             dist, tc = self._transport_selector.build_matrices(
                 pois, constraints, request.amap_minutes
@@ -96,6 +102,8 @@ class TravelVRPSolver:
         use_greedy = request.strategy == "greedy" or (
             request.strategy == "auto" and n_real <= 15 and constraints.travel_days <= 3
         )
+        if constraints.require_named_restaurants:
+            use_greedy=False  # Legacy greedy cannot honor named meal alternatives.
 
         try:
             if use_greedy:
@@ -115,9 +123,11 @@ class TravelVRPSolver:
                     walk_limits,
                     params,
                 )
-                status = "optimal" if cpsat_status in {"OPTIMAL", "FEASIBLE"} else "fallback"
+                status = "optimal" if cpsat_status == "OPTIMAL" else "feasible" if cpsat_status == "FEASIBLE" else "infeasible" if constraints.require_named_restaurants and cpsat_status == "INFEASIBLE" else "error" if constraints.require_named_restaurants else "fallback"
         except Exception as exc:
             logger.exception("Solver failed: %s", exc)
+            if constraints.require_named_restaurants:
+                return SolverResponse(status='error',message=f'Named dining solver failed: {type(exc).__name__}',solve_time_ms=int((time.time()-start_ts)*1000))
             days = _greedy_solve(pois, constraints, dist, tc, walk_limits)
             status = "fallback"
             reminders.append(
@@ -179,6 +189,8 @@ class TravelVRPSolver:
 
     def greedy_solve(self, request: SolverRequest) -> SolverResponse:
         """Fast greedy solve for fallback scenarios."""
+        if request.constraints.require_named_restaurants:
+            return self.solve(request.model_copy(update={'strategy':'cpsat'}))
         start_ts = time.time()
         pois = list(request.pois)
         constraints = request.constraints
@@ -400,17 +412,18 @@ def _cpsat_solve(
     days_count = constraints.travel_days
     day_starts, day_ends = _daily_boundaries(constraints)
     day_available = [end - start for start, end in zip(day_starts, day_ends, strict=True)]
-    total_budget = constraints.total_budget or float("inf")
+    money_scale = 100 if constraints.require_named_restaurants else 1
+    total_budget = constraints.total_budget*money_scale or float("inf")
     day_budget = total_budget / days_count if total_budget != float("inf") else float("inf")
     max_transit = constraints.max_transit_minutes
     rest_day = constraints.rest_day
-    food_day = constraints.food_day
+    food_day = constraints.food_day*money_scale
 
     model = cp_model.CpModel()
 
     # Node 0 is hotel; real POIs are 1..n-1
     durations = [p.duration_minutes for p in pois]
-    costs = [int(p.ticket_price) for p in pois]
+    costs = [round(p.ticket_price*money_scale) for p in pois]
     walks = [p.walk_intensity for p in pois]
     open_times = {
         (d, i): _poi_window_on_day(p, constraints, d)[0]
@@ -588,6 +601,19 @@ def _cpsat_solve(
         model.Add(V[(target_day, idx)] == 0).OnlyEnforceIf(has_fullday[target_day])
 
     # Constraint 2e: remote-pair same-day exclusion. Two attractions whose
+    if constraints.require_named_restaurants:
+        for d in range(days_count):
+            for slot in range(min(constraints.meals_per_day,2)):
+                choices=[i for i,p in enumerate(pois) if p.dining_day==d and p.dining_slot==slot]
+                model.Add(sum(V[(d,i)] for i in choices)==1)
+                opening,closing=(constraints.lunch_window,constraints.dinner_window)[slot]
+                for i in choices:
+                    model.Add(A[(d,i)]>=opening).OnlyEnforceIf(V[(d,i)])
+                    model.Add(A[(d,i)]+durations[i]<=closing).OnlyEnforceIf(V[(d,i)])
+                    for other in range(days_count):
+                        if other!=d:model.Add(V[(other,i)]==0)
+
+    # Constraint 2e: remote-pair same-day exclusion. Two attractions whose
     # road-network time exceeds remote_pair_min cannot share a day, so a far-suburb
     # POI (松江辰山) is isolated onto its own light day instead of being bundled
     # with a downtown cluster (陆家嘴) — the source of 3h+ same-day cross-city
@@ -723,7 +749,7 @@ def _cpsat_solve(
 
     # Constraint 7: budget (daily + total) with MAD
     total_tc_expr = sum(
-        X[(d, i, j)] * int(tc[i][j])
+        X[(d, i, j)] * round(tc[i][j]*money_scale)
         for d in range(days_count)
         for i in route_nodes
         for j in route_nodes
@@ -731,14 +757,14 @@ def _cpsat_solve(
     )
     for d in range(days_count):
         day_tc = sum(
-            X[(d, i, j)] * int(tc[i][j]) for i in route_nodes for j in route_nodes if i != j
+            X[(d, i, j)] * round(tc[i][j]*money_scale) for i in route_nodes for j in route_nodes if i != j
         )
         model.Add(DC[d] == int(food_day) + sum(V[(d, i)] * costs[i] for i in range(1, n)) + day_tc)
         if day_budget != float("inf"):
             model.Add(DC[d] <= int(day_budget))
 
     if total_budget != float("inf"):
-        model.Add(sum(DC[d] for d in range(days_count)) + total_tc_expr <= int(total_budget))
+        model.Add(sum(DC[d] for d in range(days_count)) + (0 if constraints.require_named_restaurants else total_tc_expr) <= int(total_budget))
 
     # Track the daily cost band for budget capping (max) and load balancing.
     # NOTE: the objective must penalise the *spread* (max - min) across days, not
@@ -746,8 +772,8 @@ def _cpsat_solve(
     # the level made every extra (ticketed) POI look like a loss, so the solver
     # left days nearly empty. The spread cancels the constant food_day and only
     # discourages lumping all the expensive POIs into one day.
-    max_day_cost = model.NewIntVar(0, 100000, "max_day_cost")
-    min_day_cost = model.NewIntVar(0, 100000, "min_day_cost")
+    max_day_cost = model.NewIntVar(0, 100000*money_scale, "max_day_cost")
+    min_day_cost = model.NewIntVar(0, 100000*money_scale, "min_day_cost")
     for d in range(days_count):
         model.Add(max_day_cost >= DC[d])
         model.Add(min_day_cost <= DC[d])
@@ -755,7 +781,7 @@ def _cpsat_solve(
 
     # Constraint 8: per-day attraction cap. Meal nodes are excluded so the cap
     # bounds sightseeing only — meals must not eat into the day's POI budget.
-    attraction_indices = [i for i in range(1, n) if not pois[i].id.startswith("__meal_d")]
+    attraction_indices = [i for i in range(1, n) if not pois[i].id.startswith("__meal_d") and pois[i].category!='restaurant']
     for d in range(days_count):
         model.Add(sum(V[(d, i)] for i in attraction_indices) <= MAX_POI_PER_DAY)
 
@@ -798,7 +824,7 @@ def _cpsat_solve(
 
     eps = constraints.epsilon_config
     model.Add(total_walk_diff <= int(eps.max_walk_diff))
-    model.Add(max_day_cost <= int(eps.max_budget_mad))
+    model.Add(max_day_cost <= int(eps.max_budget_mad*money_scale))
     model.Add(pref_score >= int(eps.min_preference))
     model.Add(peak_score <= int(eps.max_peak_score))
 
@@ -927,6 +953,8 @@ def _cpsat_solve(
     status = solver.Solve(model, callback)
 
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+        if constraints.require_named_restaurants:
+            return [],solver.StatusName(status)
         logger.warning(
             "CP-SAT not solved (status=%s, wall=%.1fs), falling back to greedy",
             solver.StatusName(status),
@@ -1289,13 +1317,15 @@ def _extract_schedule(
             is_meal = pois[i].id.startswith("__meal_d")
             activities.append(
                 ActivityOutput(
-                    poi_id=pois[i].id,
+                    poi_id=pois[i].source_poi_id or pois[i].id,
                     poi_name=pois[i].name,
                     category=pois[i].category,
                     start_time=_fmt_time(start),
                     end_time=_fmt_time(end),
                     duration_min=pois[i].duration_minutes,
-                    ticket_price=pois[i].ticket_price,
+                    ticket_price=0 if pois[i].source_poi_id else pois[i].ticket_price,
+                    meal_cost=pois[i].ticket_price if pois[i].source_poi_id else 0,
+                    transit_from_prev=({'poi_id':pois[prev].source_poi_id or pois[prev].id,'duration_min':dist[prev][i]} if constraints.require_named_restaurants else {}),
                     transport_cost=0.0 if is_meal else tc[prev][i],
                     lat=pois[i].lat,
                     lng=pois[i].lng,
@@ -1310,7 +1340,7 @@ def _extract_schedule(
             DayPlanOutput(
                 day_number=d + 1,
                 activities=activities,
-                total_cost=float(solver.Value(DC[d])) if d in DC else 0.0,
+                total_cost=float(solver.Value(DC[d]))/(100 if constraints.require_named_restaurants else 1) if d in DC else 0.0,
                 transport_cost=day_transport_cost,
                 walk_intensity=solver.Value(DW[d]) if d in DW else 0,
             )

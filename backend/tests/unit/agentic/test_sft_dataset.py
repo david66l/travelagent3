@@ -125,6 +125,39 @@ def test_valid_episode_exports_one_policy_example_per_real_decision():
     assert "constraints" not in parameters["properties"]
 
 
+def test_exported_prompt_matches_actual_student_input_construction():
+    import asyncio
+    import json
+    from agentic.local_policy import LocalCheckpointAgentPolicy
+    from agentic.policy import constrain_policy_context
+
+    class CapturePolicy(LocalCheckpointAgentPolicy):
+        def __init__(self):
+            pass  # Capture inputs without loading weights or generating tokens.
+
+        async def propose_from_history(self, messages, **kwargs):
+            return messages, kwargs["tools"]
+
+    candidate = _candidate()
+    # Actual recorded policy contexts have already passed the controller gate.
+    for step in candidate.episode.steps:
+        step.context = constrain_policy_context(step.context)
+    candidate.episode.content_hash = episode_content_hash(candidate.episode)
+    result = SFTDatasetBuilder().build([candidate])
+    for example in result.examples:
+        messages, tools = asyncio.run(
+            CapturePolicy().propose(candidate.episode.steps[example.step_index].context)
+        )
+        assert example.messages[1].content == messages[1]["content"]
+        assert example.tools == tools
+        # Semantic JSON equality alone must not hide a token-order mismatch.
+        sorted_content = json.dumps(
+            json.loads(messages[1]["content"]), ensure_ascii=False,
+            separators=(",", ":"), sort_keys=True,
+        )
+        assert sorted_content != example.messages[1].content
+
+
 def test_pii_and_policy_supplied_trusted_payload_are_rejected():
     pii = _candidate("pii", "trajectory-pii")
     pii.episode.initial_state["note"] = "call 13812345678"

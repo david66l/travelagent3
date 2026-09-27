@@ -153,6 +153,8 @@ class IntentResult(BaseModel):
     disambiguation_candidates: list[dict] = Field(default_factory=list)
     feasibility_report: Optional[dict] = Field(default=None, description="Feasibility check result")
     reasoning: str = ""
+    parse_source: Literal["llm", "deterministic_fallback"] | None = None
+    inference_metrics: dict[str, Any] | None = Field(default=None, exclude=True)
     token_usage: int = Field(default=0, ge=0, exclude=True)
 
     @field_validator(

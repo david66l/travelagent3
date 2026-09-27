@@ -5,9 +5,10 @@ from __future__ import annotations
 import json
 import re
 import unicodedata
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, timedelta
 from typing import Any
 
+from agentic.clock import reference_now
 from agentic.loop import ActionOutcome, PolicyAction
 from agentic.observations import ObservationEnvelope
 from agentic.state import AgentLedgerState, ArtifactRecord, FactRecord, TaskNode
@@ -53,6 +54,33 @@ def _poi_identity(value: Any) -> str:
     return re.sub(r"[\s·・,，。.!！?？:：;；()（）\[\]【】'\"“”‘’_-]+", "", normalized)
 
 
+def _candidate_target_match_quality(item: dict[str, Any], target: Any) -> int | None:
+    """Rank exact/id/provider-alias matches ahead of loose name containment."""
+    target_identity = _poi_identity(target)
+    if not target_identity:
+        return None
+    identities = [
+        _poi_identity(item.get("name")),
+        *[
+            _poi_identity(alias)
+            for alias in item.get("required_aliases") or []
+            if str(alias).strip()
+        ],
+    ]
+    if str(item.get("id") or "") == str(target) or target_identity in identities:
+        return 0
+    if any(
+        identity and (target_identity in identity or identity in target_identity)
+        for identity in identities
+    ):
+        return 1
+    return None
+
+
+def _candidate_matches_target(item: dict[str, Any], target: Any) -> bool:
+    return _candidate_target_match_quality(item, target) is not None
+
+
 def _is_plannable_candidate(item: dict[str, Any]) -> bool:
     category = str(item.get("category") or "attraction").lower()
     return category not in {"restaurant", "meal", "hotel", "transport"}
@@ -89,58 +117,16 @@ class TravelActionExecutor:
                 error_code="POLICY_ABORT",
                 error_message=str(action.arguments.get("reason") or "policy aborted"),
             )
-        if action.action == "capability_check":
-            return ActionOutcome(
-                artifacts=[
-                    self._artifact(
-                        ledger,
-                        action,
-                        "capability_report",
-                        ledger.goal.capability.model_dump(mode="json"),
-                    )
-                ]
-            )
-        if action.action == "accept_candidates":
-            candidates = self._latest_artifact(ledger, "poi_candidate_set")
-            items = [
-                item
-                for item in (candidates.payload.get("pois", []) if candidates else [])
-                if isinstance(item, dict) and _is_plannable_candidate(item)
-            ]
-            minimum = int(task.success_criteria.get("min_candidate_count") or 1)
-            if len(items) < minimum:
-                return ActionOutcome(
-                    status="failed",
-                    error_code="CANDIDATE_SET_INSUFFICIENT",
-                    error_message=(
-                        f"candidate set has {len(items)} plannable POIs; at least {minimum} required"
-                    ),
-                    retryable=True,
-                )
-            return ActionOutcome(
-                artifacts=[
-                    self._artifact(
-                        ledger,
-                        action,
-                        "candidate_selection",
-                        {
-                            "accepted_count": len(items),
-                            "candidate_artifact_id": candidates.artifact_id if candidates else None,
-                        },
-                        evidence_refs=[candidates.artifact_id] if candidates else None,
-                    )
-                ]
-            )
-        if action.action == "accept_itinerary":
+        if action.action == "finish":
+            # Submission formatting is mechanical; the model chose when to submit.
+            solver = self._latest_artifact(ledger, "solver_result")
             report = self._latest_artifact(ledger, "validation_report")
-            if report is None or report.payload.get("hard_pass") is not True:
+            if solver is None or report is None or not report.payload.get("hard_pass"):
                 return ActionOutcome(
-                    status="failed",
-                    error_code="VALIDATION_NOT_PASSED",
-                    error_message="latest verifier report did not hard-pass",
-                    retryable=True,
+                    status="failed", error_code="VALIDATION_NOT_PASSED", retryable=True
                 )
             return ActionOutcome(
+                status="awaiting_user",
                 artifacts=[
                     self._artifact(
                         ledger,
@@ -148,75 +134,22 @@ class TravelActionExecutor:
                         "verified_itinerary_acceptance",
                         {"validation_report_id": report.artifact_id},
                         evidence_refs=[report.artifact_id],
-                    )
-                ]
-            )
-        if action.action == "finalize_research":
-            from agentic.react import ResearchSufficiencyVerifier
-
-            report = ResearchSufficiencyVerifier().evaluate(ledger)
-            if not report.sufficient:
-                return ActionOutcome(
-                    status="failed",
-                    error_code="RESEARCH_EVIDENCE_INSUFFICIENT",
-                    error_message=", ".join(report.missing),
-                    retryable=True,
-                )
-            return ActionOutcome(
-                artifacts=[
-                    self._artifact(
-                        ledger,
-                        action,
-                        "research_bundle",
-                        report.model_dump(mode="json"),
-                        evidence_refs=report.evidence_refs,
-                    )
-                ]
-            )
-        if action.action == "retry_solve":
-            return ActionOutcome(
-                artifacts=[
-                    self._artifact(
-                        ledger,
-                        action,
-                        "solver_strategy_override",
-                        {
-                            "strategy": action.arguments.get("strategy"),
-                            "reason": action.arguments.get("reason"),
-                        },
-                    )
-                ],
-                loop_control="replan_local",
-            )
-        if action.action == "compose_draft":
-            solver = self._latest_artifact(ledger, "solver_result")
-            if solver is None:
-                return ActionOutcome(
-                    status="failed",
-                    error_code="SOLVER_ARTIFACT_MISSING",
-                    error_message="cannot compose a draft before solver output exists",
-                )
-            return ActionOutcome(
-                artifacts=[
+                    ),
                     self._artifact(
                         ledger,
                         action,
                         "itinerary_draft",
                         solver.payload,
                         evidence_refs=[solver.artifact_id],
-                    )
-                ]
+                    ),
+                    self._artifact(ledger, action, "finish", {}),
+                ],
             )
-        if action.action in {"finish", "propose_tradeoff"}:
+        if action.action == "propose_tradeoff":
             return ActionOutcome(
                 status="awaiting_user",
                 artifacts=[
-                    self._artifact(
-                        ledger,
-                        action,
-                        action.action,
-                        action.arguments,
-                    )
+                    self._artifact(ledger, action, "propose_tradeoff", action.arguments),
                 ],
             )
 
@@ -269,8 +202,10 @@ class TravelActionExecutor:
                     tool_calls_used=1,
                 )
             previous = self._latest_artifact(ledger, "poi_candidate_set")
+            knowledge = self._latest_artifact(ledger, "city_knowledge")
             merged_by_identity: dict[str, dict[str, Any]] = {}
             for item in [
+                *((knowledge.payload.get("pois") or []) if knowledge else []),
                 *((previous.payload.get("pois") or []) if previous else []),
                 *fresh_items,
             ]:
@@ -311,7 +246,14 @@ class TravelActionExecutor:
                     action,
                     "poi_candidate_set",
                     {"pois": items},
-                    evidence_refs=[action.action_id],
+                    evidence_refs=list(
+                        dict.fromkeys(
+                            [
+                                action.action_id,
+                                *([knowledge.artifact_id] if knowledge else []),
+                            ]
+                        )
+                    ),
                 )
             )
         elif artifact_type:
@@ -323,7 +265,7 @@ class TravelActionExecutor:
             if action.action == "get_weather" and isinstance(observation.data, list):
                 payload = {
                     "days": observation.data,
-                    "queried_at": datetime.now(UTC).isoformat(),
+                    "queried_at": reference_now().isoformat(),
                 }
             if action.action == "search_transport":
                 transport_constraints = self._transport_planning_constraints(ledger, payload)
@@ -392,26 +334,11 @@ class TravelActionExecutor:
                             ],
                         )
                     )
-        loop_control = None
-        if task.task_id == "research_evidence" and action.action != "finalize_research":
-            loop_control = "continue"
-        elif task.task_id == "search_candidates" and action.action == "search_pois":
-            loop_control = "continue"
-        elif task.task_id == "review_itinerary" and action.action in {
-            "retrieve_city_knowledge",
-            "search_pois",
-            "get_weather",
-            "search_current_info",
-            "search_transport",
-            "get_route_matrix",
-        }:
-            loop_control = "replan_global"
         return ActionOutcome(
             observations=[observation],
             facts=facts,
             artifacts=artifacts,
             tool_calls_used=1,
-            loop_control=loop_control,
         )
 
     async def _collect_poi_details(
@@ -420,12 +347,7 @@ class TravelActionExecutor:
         action: PolicyAction,
         ledger: AgentLedgerState,
     ) -> ActionOutcome:
-        candidates = self._latest_artifact(ledger, "poi_candidate_set")
-        items = [
-            item
-            for item in (candidates.payload.get("pois", []) if candidates else [])
-            if isinstance(item, dict) and _is_plannable_candidate(item)
-        ]
+        items = self._eligible_candidate_items(ledger)
         available_for_details = max(
             1,
             ledger.budget.remaining_tool_calls - settings.agentic_reserved_gate_tool_calls,
@@ -452,6 +374,11 @@ class TravelActionExecutor:
             }
             for index, name in enumerate(names)
         ]
+        action.executed_arguments = {
+            "calls": [json.loads(call["function"]["arguments"]) for call in calls]
+        }
+        action.argument_sources = {"calls": "harness"}
+        action.controller_hydrated_fields = ["calls"]
         records = await self.tools.execute(
             calls,
             guard_context={
@@ -503,7 +430,6 @@ class TravelActionExecutor:
                 )
             ],
             tool_calls_used=len(observations),
-            loop_control="continue" if task.task_id == "research_evidence" else None,
         )
 
     def _hydrate_arguments(self, ledger: AgentLedgerState, action: PolicyAction) -> dict[str, Any]:
@@ -522,26 +448,23 @@ class TravelActionExecutor:
         ):
             arguments["city"] = destination
         if action.action == "search_current_info":
-            event_pending = (
-                ledger.goal.hard_constraints.get("intent_kind") == "event_trip"
-                and self._latest_artifact(ledger, "event_search_result") is None
-            )
-            if arguments.get("info_type") == "event" or event_pending:
-                arguments["info_type"] = "event"
-                arguments["query"] = str(
-                    ledger.goal.hard_constraints.get("event_query")
-                    or arguments.get("query")
-                    or ledger.goal.original_request
-                )[:160]
-            arguments.setdefault("date", ledger.goal.hard_constraints.get("start_date"))
+            start_date = ledger.goal.hard_constraints.get("start_date")
+            if start_date:
+                if not arguments.get("date"):
+                    arguments["date"] = start_date
         if action.action == "search_transport":
             origin = ledger.goal.hard_constraints.get("origin")
             if not origin:
                 raise ValueError("transport search requires a user-grounded origin")
             arguments["origin"] = origin
             arguments["destination"] = destination
-            arguments.setdefault("date", ledger.goal.hard_constraints.get("start_date"))
-            arguments.setdefault("return_date", ledger.goal.hard_constraints.get("end_date"))
+            start_date = ledger.goal.hard_constraints.get("start_date")
+            end_date = ledger.goal.hard_constraints.get("end_date")
+            if start_date:
+                if not arguments.get("date"):
+                    arguments["date"] = start_date
+            if end_date:
+                arguments["return_date"] = end_date
         if action.action == "search_pois":
             # Candidate supply must include attractions and dining options. A
             # policy may choose grounded semantic keywords, but cannot narrow
@@ -550,13 +473,15 @@ class TravelActionExecutor:
             # step can actually narrow a failed query; inject preferences only
             # when the policy leaves the choice empty.
             arguments["category"] = None
-            trusted_preferences = [
-                *list(ledger.goal.hard_constraints.get("must_visit") or []),
-                *list(ledger.goal.soft_preferences.get("interests") or []),
-                *list(ledger.goal.soft_preferences.get("food_preferences") or []),
-            ]
-            policy_keywords = list(arguments.get("keywords") or [])
-            arguments["keywords"] = list(dict.fromkeys(policy_keywords or trusted_preferences))[:8]
+            # Empty keywords intentionally mean a broad search, not a hidden preference policy.
+            arguments["keywords"] = list(dict.fromkeys(arguments.get("keywords") or []))[:8]
+            arguments["required_pois"] = list(
+                dict.fromkeys(
+                    str(item).strip()
+                    for item in ledger.goal.hard_constraints.get("must_visit") or []
+                    if str(item).strip()
+                )
+            )
 
         if action.action in {"get_route_matrix", "solve_itinerary"}:
             candidate_items = self._planning_candidate_items_with_evidence(ledger)
@@ -567,7 +492,7 @@ class TravelActionExecutor:
                     if isinstance(item, dict)
                     and item.get("name")
                     and str(item.get("category") or "attraction").lower()
-                    not in {"restaurant", "meal", "hotel", "transport"}
+                    not in ({"meal", "hotel", "transport"} if ledger.goal.hard_constraints.get("require_named_restaurants") else {"restaurant", "meal", "hotel", "transport"})
                 ]
                 arguments["pois"] = candidate_pois
                 if not candidate_pois:
@@ -578,14 +503,7 @@ class TravelActionExecutor:
             arguments["constraints"] = self._trusted_constraints(ledger)
 
         if action.action == "solve_itinerary":
-            # The verified-planning architecture promises an actual constraint
-            # solver, not the solver service's small-instance greedy ``auto``
-            # shortcut.  A later review turn may explicitly override this as a
-            # bounded recovery strategy after seeing verifier evidence.
-            arguments["strategy"] = "cpsat"
-            override = self._latest_artifact(ledger, "solver_strategy_override")
-            if override is not None and override.payload.get("strategy"):
-                arguments["strategy"] = override.payload["strategy"]
+            arguments.setdefault("strategy", "cpsat")
             matrix = self._latest_artifact(ledger, "route_matrix")
             if matrix is not None:
                 arguments["dist_matrix"] = matrix.payload.get("time_minutes")
@@ -593,10 +511,22 @@ class TravelActionExecutor:
 
         if action.action == "validate_itinerary":
             solver = self._latest_artifact(ledger, "solver_result")
-            if solver is not None:
-                arguments["itinerary"] = solver.payload.get("days") or []
+            arguments["itinerary"] = (solver.payload.get("days") or []) if solver is not None else []
             arguments["constraints"] = self._trusted_constraints(ledger)
             arguments["facts"] = self._effective_planning_facts(ledger)
+        action.executed_arguments = dict(arguments)
+        action.argument_sources = {
+            key: (
+                "model"
+                if key in (action.model_arguments or action.arguments)
+                and (action.model_arguments or action.arguments)[key] == value
+                else "harness"
+            )
+            for key, value in arguments.items()
+        }
+        action.controller_hydrated_fields = [
+            k for k, origin in action.argument_sources.items() if origin == "harness"
+        ]
         return arguments
 
     def _effective_planning_facts(self, ledger: AgentLedgerState) -> list[dict[str, Any]]:
@@ -605,7 +535,7 @@ class TravelActionExecutor:
         pois = [
             POIInput(**self._poi_input(item, index))
             for index, item in enumerate(items)
-            if isinstance(item, dict) and item.get("name") and _is_plannable_candidate(item)
+            if isinstance(item, dict) and item.get("name") and (_is_plannable_candidate(item) or (ledger.goal.hard_constraints.get("require_named_restaurants") and item.get("category")=="restaurant"))
         ]
         constraints = ConstraintsInput(**self._trusted_constraints(ledger))
         effective = PlayTimeManager().adjust(pois, constraints)
@@ -614,18 +544,7 @@ class TravelActionExecutor:
     @staticmethod
     def _planning_candidate_items(ledger: AgentLedgerState) -> list[dict[str, Any]]:
         """Use the bounded, evidence-collected POI subset for matrix and solve."""
-        candidates = TravelActionExecutor._latest_artifact(ledger, "poi_candidate_set")
-        raw_items = TravelActionExecutor._prioritize_required_candidates(
-            ledger,
-            TravelActionExecutor._filter_forbidden_candidates(
-                ledger,
-                [
-                    item
-                    for item in (candidates.payload.get("pois", []) if candidates else [])
-                    if isinstance(item, dict) and _is_plannable_candidate(item)
-                ],
-            ),
-        )
+        raw_items = TravelActionExecutor._eligible_candidate_items(ledger)
         details = TravelActionExecutor._latest_artifact(ledger, "poi_detail_set")
         if details is not None:
             detail_items = [
@@ -667,6 +586,37 @@ class TravelActionExecutor:
         return [item for item in raw_items[:limit] if isinstance(item, dict)]
 
     @staticmethod
+    def _eligible_candidate_items(ledger: AgentLedgerState) -> list[dict[str, Any]]:
+        """Build one stable candidate order for detail collection, routing, and solving."""
+        candidates = TravelActionExecutor._latest_artifact(ledger, "poi_candidate_set")
+        items = TravelActionExecutor._prioritize_required_candidates(
+            ledger,
+            TravelActionExecutor._filter_forbidden_candidates(
+                ledger,
+                [
+                    item
+                    for item in (candidates.payload.get("pois", []) if candidates else [])
+                    if isinstance(item, dict) and (_is_plannable_candidate(item) or (ledger.goal.hard_constraints.get("require_named_restaurants") and item.get("category")=="restaurant"))
+                ],
+            ),
+        )
+        return TravelActionExecutor._deduplicate_candidates(items)
+
+    @staticmethod
+    def _deduplicate_candidates(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Deduplicate by the identity actually sent to the name-based detail tool."""
+        seen: set[str] = set()
+        unique: list[dict[str, Any]] = []
+        for item in items:
+            identity = _poi_identity(item.get("name") or item.get("id"))
+            if identity and identity in seen:
+                continue
+            if identity:
+                seen.add(identity)
+            unique.append(item)
+        return unique
+
+    @staticmethod
     def _filter_forbidden_candidates(
         ledger: AgentLedgerState,
         items: list[dict[str, Any]],
@@ -694,27 +644,40 @@ class TravelActionExecutor:
         ledger: AgentLedgerState,
         items: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
-        """Keep hard must-visits inside the bounded detail/solver candidate slice."""
-        required = [
-            _poi_identity(item)
-            for item in ledger.goal.hard_constraints.get("must_visit") or []
-            if item
-        ]
-        if not required:
+        """Reserve one best candidate per must-visit inside the bounded slice."""
+        required = list(
+            dict.fromkeys(
+                str(item).strip()
+                for item in ledger.goal.hard_constraints.get("must_visit") or []
+                if str(item).strip()
+            )
+        )
+        if not required and not ledger.goal.hard_constraints.get("require_named_restaurants"):
             return items
 
-        def required_rank(item: dict[str, Any]) -> int:
-            identity = _poi_identity(item.get("name") or item.get("id"))
-            for index, target in enumerate(required):
-                if target and (target in identity or identity in target):
-                    return index
-            return len(required)
-
-        ranked = sorted(
-            enumerate(items),
-            key=lambda pair: (required_rank(pair[1]), pair[0]),
-        )
-        return [item for _index, item in ranked]
+        remaining = set(range(len(items)))
+        selected: list[int] = []
+        for target in required:
+            matches = [
+                (quality, index)
+                for index, item in enumerate(items)
+                if index in remaining
+                and (quality := _candidate_target_match_quality(item, target)) is not None
+            ]
+            if not matches:
+                continue
+            _quality, chosen = min(matches)
+            selected.append(chosen)
+            remaining.remove(chosen)
+        if ledger.goal.hard_constraints.get("require_named_restaurants"):
+            # Reserve dining evidence inside the detail tool's bounded slice.
+            for index in sorted(remaining):
+                if items[index].get("category")=="restaurant":
+                    selected.append(index);remaining.remove(index)
+                    if sum(items[i].get("category")=="restaurant" for i in selected)>=2:break
+        return [items[index] for index in selected] + [
+            item for index, item in enumerate(items) if index in remaining
+        ]
 
     @staticmethod
     def _planning_candidate_items_with_evidence(
@@ -724,13 +687,8 @@ class TravelActionExecutor:
         items = TravelActionExecutor._planning_candidate_items(ledger)
         patched = [dict(item) for item in items]
         by_identity = {_poi_identity(item.get("name")): item for item in patched}
-        current_searches = [
-            artifact
-            for artifact in ledger.artifacts.values()
-            if artifact.artifact_type == "current_info_search"
-            and artifact.goal_version == ledger.goal.goal_version
-            and artifact.plan_version == ledger.task_graph.plan_version
-        ]
+        from agentic.current_evidence import fresh_searches
+        current_searches = fresh_searches(ledger)
         weekday_tokens = {
             "周一": 0,
             "星期一": 0,
@@ -830,18 +788,8 @@ class TravelActionExecutor:
         candidate_items = TravelActionExecutor._planning_candidate_items(ledger)
         must_visit: list[str] = []
         for target in requested_must_visit:
-            target_identity = _poi_identity(target)
             match = next(
-                (
-                    item
-                    for item in candidate_items
-                    if target_identity
-                    and (
-                        target_identity in _poi_identity(item.get("name"))
-                        or _poi_identity(item.get("name")) in target_identity
-                        or str(item.get("id") or "") == str(target)
-                    )
-                ),
+                (item for item in candidate_items if _candidate_matches_target(item, target)),
                 None,
             )
             must_visit.append(str((match or {}).get("id") or (match or {}).get("name") or target))
@@ -871,6 +819,11 @@ class TravelActionExecutor:
             "interests": list(soft.get("interests") or []),
             "include_restaurant": True,
             "meals_per_day": 2,
+            **({"require_named_restaurants": True,"food_day":0,
+                "route_poi_ids": (TravelActionExecutor._latest_artifact(ledger,"route_matrix").payload.get("poi_ids",[]) if TravelActionExecutor._latest_artifact(ledger,"route_matrix") else []),
+                "route_time_matrix": (TravelActionExecutor._latest_artifact(ledger,"route_matrix").payload.get("time_minutes",[]) if TravelActionExecutor._latest_artifact(ledger,"route_matrix") else []),
+                "route_cost_matrix": (TravelActionExecutor._latest_artifact(ledger,"route_matrix").payload.get("transport_cost",[]) if TravelActionExecutor._latest_artifact(ledger,"route_matrix") else [])}
+               if hard.get("require_named_restaurants") else {}),
         }
 
     @staticmethod
@@ -891,6 +844,7 @@ class TravelActionExecutor:
             "lng": float(item.get("lng") or location.get("lng") or 0),
             "score": float(item.get("score") or 0.5),
             "ticket_price": float(item.get("ticket_price") or item.get("price") or 0),
+            "average_cost": item.get("average_cost"),
             "duration_minutes": duration,
             "open_time": str(item.get("open_time") or "08:00"),
             "close_time": str(item.get("close_time") or "18:00"),
@@ -1004,7 +958,7 @@ class TravelActionExecutor:
 
     @staticmethod
     def _latest_fact_value(ledger: AgentLedgerState, key: str) -> Any:
-        now = datetime.now(UTC)
+        now = reference_now()
         matches = [
             fact
             for fact in ledger.facts.values()
@@ -1017,7 +971,7 @@ class TravelActionExecutor:
 
     @staticmethod
     def _latest_artifact(ledger: AgentLedgerState, artifact_type: str) -> ArtifactRecord | None:
-        now = datetime.now(UTC)
+        now = reference_now()
         matches = [
             artifact
             for artifact in ledger.artifacts.values()
@@ -1045,7 +999,7 @@ class TravelActionExecutor:
             goal_version=ledger.goal.goal_version,
             plan_version=ledger.task_graph.plan_version,
             expires_at=(
-                datetime.now(UTC) + _ARTIFACT_TTL[artifact_type]
+                reference_now() + _ARTIFACT_TTL[artifact_type]
                 if artifact_type in _ARTIFACT_TTL
                 else None
             ),
@@ -1068,5 +1022,5 @@ class TravelActionExecutor:
             plan_version=ledger.task_graph.plan_version,
             source=observation.source,
             confidence=observation.confidence,
-            expires_at=(datetime.now(UTC) + _FACT_TTL[key] if key in _FACT_TTL else None),
+            expires_at=(reference_now() + _FACT_TTL[key] if key in _FACT_TTL else None),
         )

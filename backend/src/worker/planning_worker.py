@@ -83,7 +83,6 @@ def _compact_event_payload(event_type: str, payload: dict[str, Any]) -> dict[str
                 "output_pdf_url",
                 "output_excel_url",
                 "output_map_url",
-                "agent_policy_routing",
             }
             if key in payload
         }
@@ -110,7 +109,6 @@ def _compact_event_payload(event_type: str, payload: dict[str, Any]) -> dict[str
 
 
 _PUBLIC_RESULT_KEYS = {
-    "agent_policy_routing",
     "agent_status",
     "clarification_questions",
     "itinerary",

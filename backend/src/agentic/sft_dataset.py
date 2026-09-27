@@ -7,7 +7,7 @@ import json
 import re
 from collections import Counter
 from collections.abc import Sequence
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any, Literal
 
@@ -223,6 +223,8 @@ class SFTDatasetBuilder:
             errors.append("L1_PRODUCTION_USER_PARTITION_MISSING")
         if not episode.steps:
             errors.append("L1_EMPTY_EPISODE")
+        if any(event.event_type == 'agent_uncommitted_batch' for event in episode.events):
+            errors.append('L1_UNCOMMITTED_TERMINAL_BATCH')
         if len(episode.steps) > self.max_steps:
             errors.append("L1_STEP_BUDGET_EXCEEDED")
         if episode.status == "running" or not episode.termination_reason:
@@ -243,7 +245,7 @@ class SFTDatasetBuilder:
                 errors.append("L2_MODEL_CONTRACT_NONCOMPLIANT")
             if action not in step.context.allowed_actions:
                 errors.append("L2_ACTION_NOT_ALLOWED")
-            errors.extend(self._argument_errors(action, step.action.arguments))
+            errors.extend(self._argument_errors(action, project_model_owned_arguments(step.action)))
             if action not in NO_TOOL_ACTIONS and not _arguments_grounded(
                 action, step.action.arguments, step.context.model_dump(mode="json")
             ):
@@ -358,6 +360,8 @@ class SFTDatasetBuilder:
         candidate: EpisodeCandidate,
         split: DatasetSplit,
         quality_label: QualityLabel,
+        *,
+        signature_fn=None,
     ) -> list[SFTExample]:
         result: list[SFTExample] = []
         seen_successful_calls: set[str] = set()
@@ -366,7 +370,7 @@ class SFTDatasetBuilder:
                 continue
             if not _step_verified_success(step):
                 continue
-            signature = _policy_step_signature(step)
+            signature = (signature_fn or _policy_step_signature)(step)
             if step.action.action not in NO_TOOL_ACTIONS:
                 if signature in seen_successful_calls:
                     continue
@@ -375,7 +379,6 @@ class SFTDatasetBuilder:
                 policy_prompt_payload(step.context),
                 ensure_ascii=False,
                 separators=(",", ":"),
-                sort_keys=True,
             )
             result.append(
                 SFTExample(
@@ -450,8 +453,7 @@ class SFTDatasetBuilder:
                         _canonical(
                             {
                                 "messages": [
-                                    message.model_dump(mode="json")
-                                    for message in item.messages
+                                    message.model_dump(mode="json") for message in item.messages
                                 ],
                                 "tools": item.tools,
                             }
@@ -493,12 +495,10 @@ class SFTDatasetBuilder:
                 if step.action.decision_source != "controller" and not _step_verified_success(step)
             ),
             excluded_duplicate_policy_steps=sum(
-                _duplicate_verified_policy_steps(candidate.episode)
-                for candidate in candidates
+                _duplicate_verified_policy_steps(candidate.episode) for candidate in candidates
             ),
             shared_trajectory_snapshots=(
-                len(candidates)
-                - len({item.episode.trajectory_id for item in candidates})
+                len(candidates) - len({item.episode.trajectory_id for item in candidates})
             ),
         )
 
@@ -616,11 +616,36 @@ def _duplicate_verified_policy_steps(episode: AgentEpisode) -> int:
     return duplicates
 
 
+def _date_derived_from_trip(value: Any, context: dict[str, Any]) -> bool:
+    """Derive a date only from consistent, explicit structured trip bounds."""
+    constraints = context.get("hard_constraints")
+    if not isinstance(constraints, dict):
+        return False
+    values = (value, constraints.get("start_date"), constraints.get("end_date"))
+    if any(not isinstance(v, str) or not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", v) for v in values):
+        return False
+    try:
+        target, start, end = (date.fromisoformat(v) for v in values)
+    except ValueError:
+        return False
+    days = constraints.get("travel_days")
+    return (
+        type(days) is int and days > 0
+        and (end - start).days + 1 == days
+        and start <= target <= end
+    )
+
+
 def _arguments_grounded(action: str, arguments: dict[str, Any], context: dict[str, Any]) -> bool:
     if not arguments:
         return True
     grounded = _canonical(context).casefold()
     for name, value in arguments.items():
+        if (
+            action in {"get_weather", "search_current_info", "search_transport"}
+            and name == "date" and _date_derived_from_trip(value, context)
+        ):
+            continue
         if (
             name in _trusted_hydrated_fields(action)
             or name in _GENERATIVE_ARGUMENTS.get(action, set())

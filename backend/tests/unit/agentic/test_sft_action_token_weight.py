@@ -105,12 +105,8 @@ def _row(action: str, row_id: int) -> dict:
 
 
 def test_stratified_sft_rows_give_four_of_each_action_per_twelve():
-    actions = ("abort", "propose_tradeoff", "retry_solve")
-    rows = [
-        _row(action, index)
-        for action in reversed(actions)
-        for index in range(8)
-    ]
+    actions = ("abort", "propose_tradeoff", "solve_itinerary")
+    rows = [_row(action, index) for action in reversed(actions) for index in range(8)]
 
     ordered = stratify_sft_rows_by_action(rows)
 
@@ -181,6 +177,4 @@ def test_transformers_training_step_matches_manual_twelve_microbatch_mean(tmp_pa
     marker = type("_TrainerMarker", (), {"model_accepts_loss_kwargs": True})()
     declare_microbatch_mean_loss(marker)
     assert marker.model_accepts_loss_kwargs is False
-    assert marker.loss_normalization_contract == (
-        "mean-of-microbatch-token-weighted-means.v1"
-    )
+    assert marker.loss_normalization_contract == ("mean-of-microbatch-token-weighted-means.v1")

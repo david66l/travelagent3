@@ -28,6 +28,7 @@ artifacts/backups/
 *.egg
 dist/
 build/
+gateway/bin/gateway
 .venv/
 venv/
 node_modules/

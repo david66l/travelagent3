@@ -10,8 +10,6 @@ from langgraph.graph import END, StateGraph
 
 from core.conversation_state import (
     default_conversation_state,
-    flatten_profile,
-    is_profile_ready,
 )
 from core.conversation_turn import process_user_turn
 from core.langsmith_trace import traceable_step
@@ -82,19 +80,8 @@ async def _gathering_turn_traced(state: dict[str, Any]) -> dict[str, Any]:
     was_gathering = conv.get("phase") == "gathering"
     result = await process_user_turn(conv, state.get("user_input", ""))
 
-    merged_flat = flatten_profile(conv.get("profile") or {})
-    profile_ready = is_profile_ready(merged_flat)
-
-    if result.intent in _PLANNING_INTENTS:
-        if not profile_ready:
-            next_action = "clarify"
-        elif (result.feasibility_report or {}).get("issues"):
-            # Hard feasibility conflicts → gate before planning.
-            next_action = "infeasible"
-        else:
-            next_action = "plan"
-    else:
-        next_action = "respond"
+    # Intent extraction supplies evidence; the agent decides clarification and feasibility handling.
+    next_action = "plan" if result.intent in _PLANNING_INTENTS else "respond"
 
     stage = "gathering" if next_action == "clarify" else "demand_parsed"
 

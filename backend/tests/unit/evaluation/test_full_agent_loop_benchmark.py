@@ -35,7 +35,7 @@ def test_every_draft_case_requires_real_loop_solver_and_verifier_actions() -> No
         assert "validation_report" in case.required_artifacts
 
 
-def test_external_fact_cases_require_grounded_tradeoff_if_no_draft_is_safe() -> None:
+def test_external_fact_cases_allow_only_contract_safe_termination() -> None:
     cases = [
         case
         for case in build_frozen_cases()
@@ -53,9 +53,34 @@ def test_external_fact_cases_require_grounded_tradeoff_if_no_draft_is_safe() -> 
         "tight_budget",
     } == {case.slice for case in cases}
     for case in cases:
-        assert "propose_tradeoff" in case.safe_required_actions
-        if case.slice != "tight_budget":
+        assert case.safe_terminal_actions
+        if case.slice == "tight_budget":
+            assert case.safe_terminal_actions == ["propose_tradeoff"]
+            assert case.safe_required_actions == ["propose_tradeoff"]
+        else:
+            assert case.safe_terminal_actions == ["propose_tradeoff", "abort"]
             assert any(action.startswith("search_") for action in case.safe_required_actions)
+
+
+def test_external_search_cases_pin_semantic_action_arguments() -> None:
+    cases = {
+        case.slice: case
+        for case in build_frozen_cases()
+        if case.required_action_arguments
+    }
+
+    assert cases["opening_hours"].required_action_arguments == {
+        "search_current_info": {"info_type": "opening_hours"}
+    }
+    assert cases["restaurant"].required_action_arguments == {
+        "search_current_info": {"info_type": "restaurant"}
+    }
+    assert cases["intercity_transport"].required_action_arguments == {
+        "search_transport": {"mode": "train"}
+    }
+    assert cases["flight_schedule"].required_action_arguments == {
+        "search_transport": {"mode": "flight"}
+    }
 
 
 def test_revision_case_contains_a_second_user_turn() -> None:

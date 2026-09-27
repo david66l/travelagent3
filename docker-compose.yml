@@ -47,6 +47,13 @@ services:
       APP_ENV: production
       DATABASE_URL: postgresql+asyncpg://travelagent:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be configured}@postgres:5432/travel_agent
       REDIS_URL: redis://redis:6379/0
+      # The API process enqueues planning jobs (enqueue_planning_job -> apply_async),
+      # so it needs the broker/result backend too. Without these it falls back to the
+      # localhost defaults, cannot reach redis inside the container, and the enqueue
+      # failure is swallowed: the API still returns 202 while the job stays pending
+      # forever. Must match celery_worker / celery_beat below.
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
       VRP_SOLVER_URL: http://vrp_solver:8001
       AGENTIC_EXECUTION_MODE: ${AGENTIC_EXECUTION_MODE:-react}
     ports:

@@ -42,6 +42,27 @@ _TOOL_CALL_ENVELOPE_PATTERN = re.compile(
 StructuredDecodingMode = Literal["native", "json_schema", "qwen_tool_envelope"]
 
 
+def _tokenizer_compatibility_kwargs(checkpoint: str | Path) -> dict[str, Any]:
+    """Normalize legacy Qwen tokenizer metadata without editing a checkpoint."""
+
+    config_path = Path(checkpoint) / "tokenizer_config.json"
+    if not config_path.is_file():
+        return {}
+    try:
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    # Transformers 4.57 expects a named mapping here, while some Qwen adapter
+    # saves contain the older list form. The tokens already live in the saved
+    # added-token table, so an empty mapping preserves them and avoids the
+    # incompatible model-specific alias parser.
+    return (
+        {"extra_special_tokens": {}}
+        if isinstance(config.get("extra_special_tokens"), list)
+        else {}
+    )
+
+
 def parse_local_tool_call(text: str) -> tuple[str, dict[str, Any]]:
     """Parse Qwen-style native tool output without accepting prose as an action."""
     match = _TOOL_CALL_ENVELOPE_PATTERN.fullmatch(text)
@@ -64,11 +85,7 @@ def parse_local_tool_call(text: str) -> tuple[str, dict[str, Any]]:
     expected_keys = {name_keys[0], "arguments"} if len(name_keys) == 1 else set()
     name = str(payload.get(name_keys[0]) or "").strip() if name_keys else ""
     arguments = payload.get("arguments")
-    if (
-        not name
-        or not isinstance(arguments, dict)
-        or set(payload) != expected_keys
-    ):
+    if not name or not isinstance(arguments, dict) or set(payload) != expected_keys:
         raise PolicyOutputError(
             "local policy tool call must contain exactly one name and arguments object",
             code="TOOL_CALL_SHAPE_ERROR",
@@ -93,7 +110,7 @@ class LocalCheckpointAgentPolicy:
         revision: str | None = None,
     ) -> None:
         import torch
-        from peft import AutoPeftModelForCausalLM
+        from peft import PeftConfig, PeftModel
         from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
         if not torch.cuda.is_available():
@@ -134,6 +151,7 @@ class LocalCheckpointAgentPolicy:
             checkpoint,
             revision=revision,
             trust_remote_code=False,
+            **_tokenizer_compatibility_kwargs(checkpoint),
         )
         if not self.tokenizer.chat_template:
             raise RuntimeError("local checkpoint must provide a native chat template")
@@ -144,7 +162,6 @@ class LocalCheckpointAgentPolicy:
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
         is_adapter = (Path(checkpoint) / "adapter_config.json").is_file()
-        loader = AutoPeftModelForCausalLM if is_adapter else AutoModelForCausalLM
         quantization_config = (
             BitsAndBytesConfig(
                 load_in_4bit=True,
@@ -155,14 +172,40 @@ class LocalCheckpointAgentPolicy:
             if load_in_4bit
             else None
         )
-        self.model = loader.from_pretrained(
-            checkpoint,
-            device_map="auto",
-            dtype=dtype,
-            quantization_config=quantization_config,
-            trust_remote_code=False,
-            revision=revision,
-        )
+        model_kwargs = {
+            "device_map": "auto",
+            "dtype": dtype,
+            "quantization_config": quantization_config,
+            "trust_remote_code": False,
+        }
+        if is_adapter:
+            # AutoPeftModel performs a second implicit tokenizer load solely to
+            # check embedding size. That path cannot receive tokenizer kwargs
+            # and crashes on legacy Qwen list-form ``extra_special_tokens``.
+            # Loading the identical base model and adapter explicitly avoids
+            # that unrelated tokenizer side effect while preserving weights.
+            peft_config = PeftConfig.from_pretrained(
+                checkpoint,
+                revision=revision,
+            )
+            base_revision = getattr(peft_config, "revision", None)
+            base_model = AutoModelForCausalLM.from_pretrained(
+                peft_config.base_model_name_or_path,
+                revision=base_revision,
+                **model_kwargs,
+            )
+            self.model = PeftModel.from_pretrained(
+                base_model,
+                checkpoint,
+                config=peft_config,
+                revision=revision,
+            )
+        else:
+            self.model = AutoModelForCausalLM.from_pretrained(
+                checkpoint,
+                revision=revision,
+                **model_kwargs,
+            )
         self.model.eval()
         self._structured_backend: Any | None = None
         self._structured_processor_cache: dict[str, Any] = {}
@@ -249,6 +292,7 @@ class LocalCheckpointAgentPolicy:
         allowed_actions: list[str],
         capability: dict[str, Any] | None,
     ) -> PolicyAction:
+        self._last_generation_audit = None
         encoded = render_agent_tool_prompt(
             self.tokenizer,
             messages,
@@ -285,6 +329,18 @@ class LocalCheckpointAgentPolicy:
             )
         request_latency_ms = (time.perf_counter() - generation_started) * 1000
         completion_ids = generated[0, prompt_tokens:]
+        inference_metrics = InferenceMetrics(
+            model=self.checkpoint,
+            backend="transformers",
+            thinking_mode="disabled",
+            prompt_tokens=prompt_tokens,
+            completion_tokens=int(completion_ids.numel()),
+            request_latency_ms=round(request_latency_ms, 3),
+        )
+        prompt_token_ids = encoded["input_ids"][0].detach().cpu().tolist()
+        prompt_input_ids_sha256 = hashlib.sha256(
+            json.dumps(prompt_token_ids, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
         # Native Qwen tool calls are extracted from their <tool_call> envelope,
         # so trailing control tokens never reach the JSON parser. Structured
         # decoding intentionally emits plain JSON; strip tokenizer control
@@ -294,9 +350,11 @@ class LocalCheckpointAgentPolicy:
             skip_special_tokens=self.structured_decoding_mode == "json_schema",
         )
         self._last_generation_audit = {
-            "schema_version": "local-policy-generation-audit.v1",
+            "schema_version": "local-policy-generation-audit.v2",
+            "prompt_input_ids_sha256": prompt_input_ids_sha256,
             "raw_output": output,
             "raw_output_sha256": hashlib.sha256(output.encode("utf-8")).hexdigest(),
+            "inference_metrics": inference_metrics.model_dump(mode="json"),
             "tool_call_open_count": output.count("<tool_call>"),
             "tool_call_close_count": output.count("</tool_call>"),
             "parser_contract": "exact-single-tool-call-envelope-or-json.v1",
@@ -342,14 +400,7 @@ class LocalCheckpointAgentPolicy:
             controller_override_attempt=override_attempt,
             model_contract_compliant=not override_attempt,
             token_usage=int(completion_ids.numel()),
-            inference_metrics=InferenceMetrics(
-                model=self.checkpoint,
-                backend="transformers",
-                thinking_mode="disabled",
-                prompt_tokens=prompt_tokens,
-                completion_tokens=int(completion_ids.numel()),
-                request_latency_ms=round(request_latency_ms, 3),
-            ),
+            inference_metrics=inference_metrics,
         )
 
     def _structured_logits_processor(

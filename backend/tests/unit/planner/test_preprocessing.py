@@ -11,6 +11,23 @@ from planner.preprocessing import (
 from vrp_solver_service.models import ConstraintsInput, POIInput, ReservationInput
 
 
+def test_dated_opening_evidence_does_not_gain_heuristic_monday_closure():
+    poi=POIInput(id='dated',name='古籍展览馆',date_opening_hours={'2027-05-10':('08:00','19:00')})
+    adjusted=PlayTimeManager().adjust([poi],ConstraintsInput())[0]
+    assert adjusted.closed_weekdays==[]
+    assert adjusted.date_opening_hours['2027-05-10']==('08:00','19:00')
+
+
+def test_explicit_weekly_closure_is_preserved_with_dated_evidence():
+    poi=POIInput(id='closed',name='古籍展览馆',closed_weekdays=[0],date_opening_hours={'2027-05-11':('08:00','19:00')})
+    assert PlayTimeManager().adjust([poi],ConstraintsInput())[0].closed_weekdays==[0]
+
+
+def test_undated_legacy_category_closure_fallback_is_retained():
+    poi=POIInput(id='legacy',name='古籍展览馆')
+    assert PlayTimeManager().adjust([poi],ConstraintsInput())[0].closed_weekdays==[0]
+
+
 def test_reservation_handler_marks_must_visit_and_reminds():
     pois = [
         POIInput(id="p1", name="故宫", reservation="需提前 7 天预约"),

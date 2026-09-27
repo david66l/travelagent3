@@ -1,8 +1,12 @@
 import pytest
 
 from agentic.reason_quality import (
+    assemble_repair_reason,
     build_grounded_repair_reason,
+    canonical_repair_rationale,
+    repair_reason_semantic_conflict,
     verifier_reason_quality_checks,
+    verifier_reason_semantic_checks,
 )
 
 
@@ -63,6 +67,45 @@ def test_correct_evidence_without_action_rationale_is_not_full_quality():
 
     assert checks["grounding_match"] is True
     assert checks["reason_action_rationale_match"] is False
+
+    semantic_checks = verifier_reason_semantic_checks(
+        reason=EVIDENCE,
+        target_action="retry_solve",
+        grounding_phrases=PHRASES,
+        evidence=EVIDENCE,
+    )
+    assert all(semantic_checks.values())
+
+
+@pytest.mark.parametrize("target", ["retry_solve", "propose_tradeoff", "abort"])
+def test_system_assembly_adds_only_the_fixed_connector(target):
+    assembled = assemble_repair_reason(EVIDENCE, target)
+
+    assert assembled == f"{canonical_repair_rationale(target)}：{EVIDENCE}"
+    assert assembled.endswith(EVIDENCE)
+
+
+@pytest.mark.parametrize("target", ["retry_solve", "propose_tradeoff", "abort"])
+def test_system_assembly_is_idempotent_for_legacy_teacher_reasons(target):
+    legacy_reason = build_grounded_repair_reason(EVIDENCE, target)
+
+    assert assemble_repair_reason(legacy_reason, target) == legacy_reason
+
+
+def test_system_connector_cannot_mask_a_conflicting_model_conclusion():
+    wrong = build_grounded_repair_reason(EVIDENCE, "abort")
+
+    assert repair_reason_semantic_conflict(wrong, "retry_solve") is True
+    with pytest.raises(ValueError, match="REPAIR_REASON_ACTION_CONFLICT"):
+        assemble_repair_reason(wrong, "retry_solve")
+
+
+def test_system_assembly_rejects_private_implementation_wording():
+    with pytest.raises(ValueError, match="REPAIR_REASON_PRIVATE_CONTENT"):
+        assemble_repair_reason(
+            f"{EVIDENCE} 因此调用 retry_solve。",
+            "retry_solve",
+        )
 
 
 def test_internal_action_name_is_rejected_from_user_visible_reason():

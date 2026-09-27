@@ -15,7 +15,15 @@ import { SettingsPanel } from "@/components/SettingsPanel";
 import { cn } from "@/lib/utils";
 
 export default function Home() {
-  const { sendMessage, sendAction, reconnect } = useChat();
+  // `useChat` is instantiated exactly once: it owns the conversation epoch and
+  // the SSE refs, so every consumer below receives these callbacks as props.
+  const {
+    sendMessage,
+    sendAction,
+    reconnect,
+    switchConversation,
+    leaveConversation,
+  } = useChat();
   const store = useChatStore();
   const [isStartingNewChat, setIsStartingNewChat] = useState(false);
   const { activeView, activeTab, refreshTripStatuses } = store;
@@ -74,6 +82,7 @@ export default function Home() {
           <Sidebar
             onNewChat={handleNewChat}
             isStartingNewChat={isStartingNewChat}
+            onSwitchConversation={switchConversation}
           />
         </div>
 
@@ -129,7 +138,7 @@ export default function Home() {
           )}
           {activeView === "settings" && (
             <div className="flex flex-1">
-              <SettingsPanel />
+              <SettingsPanel onSignedOut={() => void leaveConversation()} />
             </div>
           )}
           {activeView === "chat" && activeTab === "itinerary" && (

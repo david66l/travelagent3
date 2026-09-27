@@ -1,0 +1,151 @@
+{
+  "schema_version": 1,
+  "article_number": 7,
+  "title": "指标、失败复盘与面试串讲：把项目主张讲到证据层",
+  "review_date": "2026-09-10",
+  "project_root": "E:/A_Louis/TravelAgent2",
+  "method": "Lightweight document synthesis, local archived-report and performance-script review, and arithmetic recomputation of aggregate metrics. No model loading, training, inference, tests, load generation, cloud connection, remote downloads, or protected/sealed case reads.",
+  "artifact": {
+    "path": "E:/A_Louis/TravelAgent2/面试准备/20260910-重写版/07-指标失败复盘与面试串讲.md",
+    "sha256": "4e9af9b35b271901c8fddce11481818140ea43223a441b308879269f8ba9286f",
+    "bytes": 61659,
+    "characters": 27239,
+    "lines": 1113
+  },
+  "source_files": [
+    {
+      "path": "ml/agentic/reports/stage40-policy-driven-runtime-vs-pure-react-v1/REPORT.md",
+      "absolute_path": "E:/A_Louis/TravelAgent2/ml/agentic/reports/stage40-policy-driven-runtime-vs-pure-react-v1/REPORT.md",
+      "purpose": "历史 Token、时延、硬通过与实验边界",
+      "kind": "historical_report",
+      "sha256": "2e02c0fe8c77fcf194f71b807b4c78454f117cd59d780f6ee9298f52d3c63ac2",
+      "bytes": 2107
+    },
+    {
+      "path": "ml/agentic/reports/stage40-policy-driven-runtime-vs-pure-react-v1/report.json",
+      "absolute_path": "E:/A_Louis/TravelAgent2/ml/agentic/reports/stage40-policy-driven-runtime-vs-pure-react-v1/report.json",
+      "purpose": "聚合计算、计量入口、求解与终态分布",
+      "kind": "historical_aggregate_report",
+      "sha256": "c6c4d6beaad5e3a02b44f1465bb79dc9f2df2254dfd8c430731a55c1ef63e366",
+      "bytes": 4019
+    },
+    {
+      "path": "C:/Users/Rain/Documents/Codex/2026-09-05/kan/reports/project-complete-explanation-20260909-v2/TravelAgent2_项目全景说明.md",
+      "absolute_path": "C:/Users/Rain/Documents/Codex/2026-09-05/kan/reports/project-complete-explanation-20260909-v2/TravelAgent2_项目全景说明.md",
+      "purpose": "最新数据、SFT / DPO、故障、成本与并行方式",
+      "kind": "archived_secondary_report",
+      "sha256": "9737dd2237364fca18d8daea39aa9b8ff463f91f3eecfcd89ae838180a128f63",
+      "bytes": 70699
+    },
+    {
+      "path": "docs/PERFORMANCE.md",
+      "absolute_path": "E:/A_Louis/TravelAgent2/docs/PERFORMANCE.md",
+      "purpose": "PRD 目标和文档中的验证入口",
+      "kind": "performance_targets",
+      "sha256": "02c09825d9387d90a974322abba022259168f91d55c00c2bbe2db4d073113dab",
+      "bytes": 1579
+    },
+    {
+      "path": "面试准备/20260910-重写版/05-数据工程与SFT.md",
+      "absolute_path": "E:/A_Louis/TravelAgent2/面试准备/20260910-重写版/05-数据工程与SFT.md",
+      "purpose": "数据计数、来源、Mask、匹配实验与费用",
+      "kind": "prior_series_review",
+      "sha256": "d4c27250e9f81659d6041ab026342f204a76f5718ff67a584ec30a316f0d9efa",
+      "bytes": 73903
+    },
+    {
+      "path": "scripts/load/k6_sse.js",
+      "absolute_path": "E:/A_Louis/TravelAgent2/scripts/load/k6_sse.js",
+      "purpose": "实际 HTTP 受理负载、检查与阈值",
+      "kind": "source",
+      "sha256": "46d1260b76ecb52ca2f50791b8db82e067bcd307966c0dc6da5f457d6349738d",
+      "bytes": 2438
+    },
+    {
+      "path": "scripts/run_performance_gate.sh",
+      "absolute_path": "E:/A_Louis/TravelAgent2/scripts/run_performance_gate.sh",
+      "purpose": "测试门、k6 运行和缺失时的分支",
+      "kind": "source",
+      "sha256": "99f443ac6eb87c479c145ef931b95b6239a7e9a4acd1bd5b633602b811aa24e3",
+      "bytes": 1088
+    },
+    {
+      "path": "面试准备/20260910-重写版/06-DPO与RL选择及评测.md",
+      "absolute_path": "E:/A_Louis/TravelAgent2/面试准备/20260910-重写版/06-DPO与RL选择及评测.md",
+      "purpose": "历史与最新区分、奖励、信用分配与确认门",
+      "kind": "prior_series_review",
+      "sha256": "d5715e3f375026f30bd95b31108b3fff9120f63f97764f3ad2965ab268930e53",
+      "bytes": 65316
+    },
+    {
+      "path": "面试准备/20260910-重写版/01-项目全貌与Long-Horizon-Agent架构.md",
+      "absolute_path": "E:/A_Louis/TravelAgent2/面试准备/20260910-重写版/01-项目全貌与Long-Horizon-Agent架构.md",
+      "purpose": "外层 / 内层结构、Ledger、动作与历史指标边界",
+      "kind": "prior_series_review",
+      "sha256": "853d696d28ffc2866ef59108bc712c2715af0a279bce23208587b04265392681",
+      "bytes": 63606
+    },
+    {
+      "path": "面试准备/20260910-重写版/02-记忆上下文与检索.md",
+      "absolute_path": "E:/A_Louis/TravelAgent2/面试准备/20260910-重写版/02-记忆上下文与检索.md",
+      "purpose": "字段合并、作用域、投影窗口与专项验证",
+      "kind": "prior_series_review",
+      "sha256": "b0cba64709aa1896a17648843b4fbd4d5ba147b4ed868d55e3e558cb6e5b5f3b",
+      "bytes": 62042
+    },
+    {
+      "path": "面试准备/20260910-重写版/03-工具证据与约束求解.md",
+      "absolute_path": "E:/A_Louis/TravelAgent2/面试准备/20260910-重写版/03-工具证据与约束求解.md",
+      "purpose": "证据、矩阵、CP-SAT、餐厅与独立验证",
+      "kind": "prior_series_review",
+      "sha256": "f61dc9d6cbdfbef956297b950442acf1f76ce4f3e6044923860b80c7f965ffd5",
+      "bytes": 66169
+    },
+    {
+      "path": "面试准备/20260910-重写版/04-后端可靠性与部署.md",
+      "absolute_path": "E:/A_Louis/TravelAgent2/面试准备/20260910-重写版/04-后端可靠性与部署.md",
+      "purpose": "持久执行、恢复、SSE、容量和静态风险",
+      "kind": "prior_series_review",
+      "sha256": "28b105cc0a8e2f885b74f5c673174a636681f28557bd969152affdb9c3231ccf",
+      "bytes": 81831
+    },
+    {
+      "path": "C:/Users/Rain/Documents/Codex/2026-09-05/kan/reports/project-complete-explanation-20260909-v2/DOCUMENT_MANIFEST.json",
+      "absolute_path": "C:/Users/Rain/Documents/Codex/2026-09-05/kan/reports/project-complete-explanation-20260909-v2/DOCUMENT_MANIFEST.json",
+      "purpose": "归档说明身份与其引用的原始来源",
+      "kind": "archived_secondary_report",
+      "sha256": "6b28a6eca41534faab260d5bbd08237307fc32d68791a8ad1a8fa0243bfff216",
+      "bytes": 19040
+    }
+  ],
+  "external_references": [],
+  "archived_result_source": {
+    "path": "C:/Users/Rain/Documents/Codex/2026-09-05/kan/reports/project-complete-explanation-20260909-v2/TravelAgent2_项目全景说明.md",
+    "raw_cloud_artifacts_retrieved_this_turn": false,
+    "live_model_state_verified_this_turn": false,
+    "local_report_hash_matches_its_manifest": true
+  },
+  "aggregate_checks": {
+    "scope": "Arithmetic on saved aggregate values; no raw trajectory replay or inference.",
+    "token_reduction_percent": 79.50894504088429,
+    "mean_latency_reduction_percent": 70.96443173119295,
+    "shared_success_sft_tool_reduction_percent_from_rounded_means": 4.853556485355648,
+    "shared_success_dpo_tool_reduction_percent_from_rounded_means": 6.694560669456062
+  },
+  "missing_referenced_paths": [
+    {
+      "path": "E:/A_Louis/TravelAgent2/.github/workflows/performance.yml",
+      "status": "Not found at the path referenced by docs/PERFORMANCE.md in this checkout; no broader claim of absence."
+    }
+  ],
+  "evidence_boundaries": [
+    "Architecture details and static risks are synthesized from the prior six source-indexed articles; this turn did not re-audit every backend source file.",
+    "Historical stage40 aggregate calculations do not remove tool-environment or token-metering confounds; no new raw-record reaggregation was performed.",
+    "Latest cloud SFT/DPO numbers and failure descriptions are attributed to the archived 2026-09-09 explanation.",
+    "Performance requirements in docs/PERFORMANCE.md are PRD targets. The inspected k6_sse.js measures admission, not SSE delivery or completed planning.",
+    "Personal ownership is not inferred from project contents; the role table intentionally remains to be completed by the user.",
+    "Synthetic examples, whiteboard questions, review sessions, and proposed experiments were not executed or scheduled.",
+    "Existing six articles are preserved. Documentation completion does not imply product readiness or final model promotion.",
+    "No documentation was uploaded to cloud during this turn."
+  ]
+}

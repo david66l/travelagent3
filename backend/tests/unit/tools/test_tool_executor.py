@@ -1,17 +1,22 @@
 """Tests for ToolExecutor."""
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from schemas import ToolResult
 from agentic.guard import ToolGuard
+from evaluation.validator import VALIDATOR_VERSION
 from skills.tavily_search import SearchResult, UnifiedSearchSkill
 from tools.tool_executor import ToolExecutor
 
 
 @pytest.fixture
-def executor():
+def executor(monkeypatch):
+    from core.settings import settings
+
+    monkeypatch.setattr(settings, "amap_key", "")
     return ToolExecutor()
 
 
@@ -268,7 +273,9 @@ async def test_validate_itinerary_handler(executor):
 
     assert result.data_source == "built_in"
     assert result.data["hard_pass"] is True
-    assert result.data["validator_version"] == "travel-validator.v1"
+    # Bound to the constant; the validator version advances independently of
+    # this handler contract.
+    assert result.data["validator_version"] == VALIDATOR_VERSION
 
 
 @pytest.mark.asyncio
@@ -333,6 +340,84 @@ async def test_search_pois_handler_uses_amap_after_local_miss(executor):
     assert result.data_source == "api"
     amap_search.assert_awaited_once_with("苏州", keywords=["园林"], category="attraction")
     external.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_search_pois_supplements_broad_supply_with_hard_required_entities(executor):
+    local = [{"id": "wall", "name": "西安城墙", "category": "attraction"}]
+    required = [
+        {
+            "id": "amap:attraction:秦始皇帝陵博物院",
+            "name": "秦始皇帝陵博物院",
+            "category": "attraction",
+            "required_aliases": ["兵马俑"],
+            "match_provenance": "provider_exact_query_rank_1",
+        }
+    ]
+    with patch.object(executor, "_search_local_pois", new=AsyncMock(return_value=local)):
+        with patch.object(
+            executor, "_search_amap_pois", new=AsyncMock(return_value=required)
+        ) as amap_search:
+            with patch.object(executor._poi, "run", new=AsyncMock()) as fallback:
+                result = await executor._handle_search_pois(
+                    {
+                        "city": "西安",
+                        "keywords": ["历史文化"],
+                        "required_pois": ["兵马俑"],
+                    }
+                )
+
+    assert {item["name"] for item in result.data} == {"西安城墙", "秦始皇帝陵博物院"}
+    amap_search.assert_awaited_once_with(
+        "西安",
+        keywords=["历史文化"],
+        category="attraction",
+        required_pois=["兵马俑"],
+    )
+    fallback.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_amap_required_query_records_rank_one_alias_provenance(monkeypatch):
+    calls: list[str] = []
+
+    class FakeCollector:
+        def __init__(self, _key: str) -> None:
+            pass
+
+        async def search_pois(self, _city, keywords="", types="", *, limit=100):
+            calls.append(keywords)
+            name = "秦始皇帝陵博物院" if keywords == "兵马俑" else "西安城墙"
+            return [
+                SimpleNamespace(
+                    name=name,
+                    category="attraction",
+                    lat=34.3,
+                    lng=109.0,
+                    tags=["历史"],
+                    ticket_price=0,
+                    open_time="08:30",
+                    close_time="18:00",
+                )
+            ]
+
+        async def close(self):
+            pass
+
+    monkeypatch.setattr("tools.tool_executor.settings.amap_key", "test-key")
+    monkeypatch.setattr("data.collectors.amap.AmapCollector", FakeCollector)
+
+    result = await ToolExecutor._search_amap_pois(
+        "西安",
+        keywords=["历史文化"],
+        category="attraction",
+        required_pois=["兵马俑"],
+    )
+
+    assert calls == ["", "兵马俑"]
+    matched = next(item for item in result if item["name"] == "秦始皇帝陵博物院")
+    assert matched["required_aliases"] == ["兵马俑"]
+    assert matched["match_provenance"] == "provider_exact_query_rank_1"
 
 
 @pytest.mark.asyncio

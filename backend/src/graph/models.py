@@ -97,11 +97,7 @@ class AgentState(TypedDict):
     subtask_step: NotRequired[int]
     agent_status: NotRequired[str]
     agent_execution_mode: NotRequired[str]
-    agent_policy_routing: NotRequired[dict[str, Any]]
     termination_reason: NotRequired[str | None]
-    shadow_scenario_id: NotRequired[str]
-    shadow_input_hash: NotRequired[str]
-    shadow_status: NotRequired[str]
     # Accumulator: nodes return only their *new* warnings; the reducer concatenates.
     # NOTE: Annotated must be top-level (not wrapped in NotRequired) for LangGraph
     # to detect the reducer; the channel still defaults to [] when unset.

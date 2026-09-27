@@ -24,25 +24,20 @@ from agentic.environment import (
 )
 from agentic.interactive import InteractiveAgentSession, InteractiveTransition
 from agentic.loop import AgentLoopResult, PolicyAction
-from agentic.policy import constrain_policy_context, controller_policy_action, policy_prompt_payload
+from agentic.policy import constrain_policy_context, policy_prompt_payload
 from agentic.policy_actions import (
     PolicyArgumentValidationError,
     controller_override_attempt,
-    controller_tradeoff_options,
     model_visible_policy_actions,
     policy_action_schema,
     policy_action_schemas_for_state,
     validate_policy_arguments,
 )
 from agentic.reward import EpisodeReward, HierarchicalRewardEngine
-from agentic.reason_quality import verifier_reason_quality_checks
 from agentic.grpo import policy_return_to_go_credit, policy_turn_credit_records
 from agentic.grpo_training import (
     AUTHORITY_PAYLOAD_ENCODING,
     FRESH_LEDGER_ROLLOUT_CONTRACT,
-    VERIFIER_REPAIR_ACTIONS_BY_ROUTE,
-    VERIFIER_REPAIR_DECISION_SCHEMA_VERSION,
-    VERIFIED_DECISION_STATE_REPLAY_CONTRACT,
     decode_authority_payload,
 )
 from agentic.runtime import initialize_agent_ledger
@@ -51,7 +46,7 @@ from evaluation.validator import VALIDATOR_VERSION
 
 
 _AUDIT_LOCK = threading.Lock()
-GRPOExecutionMode = Literal["policy_driven", "controller_first", "react"]
+GRPOExecutionMode = Literal["react"]
 
 
 def _bounded_audit_arguments(arguments: Any) -> tuple[Any, bool, list[str]]:
@@ -104,9 +99,7 @@ def _tolerate_copied_schema_annotations(method: Callable[..., str]) -> Callable[
     def wrapped(self: Any, *args: Any, **kwargs: Any) -> str:
         self._policy_call_attempt_count += 1
         parameter_names = [
-            name
-            for name in method.__annotations__
-            if name not in {"return", "self"}
+            name for name in method.__annotations__ if name not in {"return", "self"}
         ]
         if len(args) > len(parameter_names):
             return method(self, *args, **kwargs)
@@ -183,9 +176,7 @@ def _tolerate_copied_schema_annotations(method: Callable[..., str]) -> Callable[
         # route-specific TRL method intentionally no longer exposes.  Only pass
         # arguments present in the actual callable signature; the Agent Loop
         # will hydrate controller-owned fields at its authorization boundary.
-        validated = {
-            name: value for name, value in validated.items() if name in parameter_names
-        }
+        validated = {name: value for name, value in validated.items() if name in parameter_names}
         if getattr(self, "_pending_model_action_audit", None) is None:
             self._set_pending_model_action_audit(
                 PolicyAction(
@@ -226,9 +217,7 @@ def canonical_trl_tool_schemas(
     ordered_names = action_order or tuple(tools_by_name)
     actual_names = tuple(tools_by_name)
     if capability is not None:
-        actual_names = tuple(
-            model_visible_policy_actions(actual_names, capability=capability)
-        )
+        actual_names = tuple(model_visible_policy_actions(actual_names, capability=capability))
     if set(ordered_names) != set(actual_names):
         raise ValueError(
             "TRL environment tool surface differs from the declared action order: "
@@ -258,7 +247,7 @@ class _TRLTravelEnvironmentBase:
         # agentic.legacy; live wiring only ever passes "react". Validation
         # lives at the factory and composition root so archived classes can
         # still be constructed verbatim for ablation reproduction.
-        if execution_mode not in {"policy_driven", "controller_first", "react"}:
+        if execution_mode != "react":
             raise ValueError(f"unsupported GRPO execution mode: {execution_mode}")
         self._session: InteractiveAgentSession | None = None
         self._runner: _SessionLoopThread | None = None
@@ -325,12 +314,10 @@ class _TRLTravelEnvironmentBase:
                 for name, responses in (decoded_snapshot.get("tool_responses") or {}).items()
             }
         parsed_snapshot = EnvironmentSnapshot(**normalized_snapshot)
+        if parsed_snapshot.hidden_test_facts.get("grpo_decision_state"):
+            raise ValueError("Legacy decision replay is retired; use fresh full episodes")
         self._validate_initial_prompt(prompt, user_request=parsed_task.user_request)
-        self._rollout_contract = (
-            VERIFIED_DECISION_STATE_REPLAY_CONTRACT
-            if isinstance(prompt, list) and len(prompt) > 2
-            else FRESH_LEDGER_ROLLOUT_CONTRACT
-        )
+        self._rollout_contract = FRESH_LEDGER_ROLLOUT_CONTRACT
         self._task = parsed_task
         self._snapshot = parsed_snapshot
         self._task_id = parsed_task.task_id
@@ -341,16 +328,16 @@ class _TRLTravelEnvironmentBase:
         self._frozen_moment: datetime | None = self._frozen_reference_moment()
         with frozen_reference_time(self._frozen_moment):
             initialized = initialize_agent_ledger(
-            {
-                "user_input": parsed_task.user_request,
-                "slots": parsed_task.slots,
-                "profile": parsed_task.profile,
-                "missing_slots": parsed_task.missing_slots,
-                "feasibility_report": parsed_task.feasibility_report,
-            },
-            mode="agent",
-            task_graph_mode="react" if self.execution_mode == "react" else "configured",
-        )
+                {
+                    "user_input": parsed_task.user_request,
+                    "slots": parsed_task.slots,
+                    "profile": parsed_task.profile,
+                    "missing_slots": parsed_task.missing_slots,
+                    "feasibility_report": parsed_task.feasibility_report,
+                },
+                mode="agent",
+                task_graph_mode="react" if self.execution_mode == "react" else "configured",
+            )
         ledger = AgentLedgerState(**initialized["agent_ledger"])
         backend = SnapshotToolExecutor(parsed_snapshot)
         self._backend = backend
@@ -361,9 +348,6 @@ class _TRLTravelEnvironmentBase:
             validator_version=VALIDATOR_VERSION,
             policy_name=f"trl-grpo-{self.execution_mode}",
             policy_version="online-rollout",
-            automatic_action=(
-                None if self.execution_mode == "policy_driven" else controller_policy_action
-            ),
         )
         self._runner = _SessionLoopThread()
         start = self._session.start()
@@ -488,7 +472,12 @@ class _TRLTravelEnvironmentBase:
             nonlocal latest
             if isinstance(node, dict):
                 for key, value in node.items():
-                    if key in {"queried_at", "retrieved_at", "created_at", "generated_at"} and isinstance(value, str):
+                    if key in {
+                        "queried_at",
+                        "retrieved_at",
+                        "created_at",
+                        "generated_at",
+                    } and isinstance(value, str):
                         try:
                             moment = datetime.fromisoformat(value.replace("Z", "+00:00"))
                         except ValueError:
@@ -524,9 +513,7 @@ class _TRLTravelEnvironmentBase:
         if pending is not None and pending.get("action") != action:
             raise RuntimeError("pending model action audit does not match submitted action")
         model_arguments = (
-            dict(pending.get("model_arguments") or {})
-            if pending is not None
-            else dict(arguments)
+            dict(pending.get("model_arguments") or {}) if pending is not None else dict(arguments)
         )
         runner = self._require_runner()
         step = session.submit(
@@ -538,9 +525,7 @@ class _TRLTravelEnvironmentBase:
                     pending and pending.get("controller_override_attempt")
                 ),
                 model_contract_compliant=(
-                    bool(pending.get("model_contract_compliant"))
-                    if pending is not None
-                    else True
+                    bool(pending.get("model_contract_compliant")) if pending is not None else True
                 ),
             )
         )
@@ -562,9 +547,7 @@ class _TRLTravelEnvironmentBase:
         self._pending_model_action_audit = {
             "action": action.action,
             "model_arguments": dict(
-                action.model_arguments
-                if action.model_arguments is not None
-                else action.arguments
+                action.model_arguments if action.model_arguments is not None else action.arguments
             ),
             "controller_override_attempt": action.controller_override_attempt,
             "model_contract_compliant": action.model_contract_compliant,
@@ -751,61 +734,8 @@ class _SessionLoopThread:
             self.loop.close()
 
 
-class TRLClarificationEnvironment(_TRLTravelEnvironmentBase):
-    """Controller-first baseline exposing only the delegated clarification."""
-
-    def __init__(self, *, audit_enabled: bool = True) -> None:
-        super().__init__(audit_enabled=audit_enabled, execution_mode="controller_first")
-
-    def ask_user(self, question: str) -> str:
-        """Ask for information only the user can provide.
-
-        Args:
-            question: One concise, grounded question.
-
-        Returns:
-            The terminal clarification transition.
-        """
-        return self._act("ask_user", {"question": question})
-
-
-class TRLTradeoffEnvironment(_TRLTravelEnvironmentBase):
-    """Controller-first baseline exposing delegated terminal trade-offs."""
-
-    def __init__(self, *, audit_enabled: bool = True) -> None:
-        super().__init__(audit_enabled=audit_enabled, execution_mode="controller_first")
-
-    def propose_tradeoff(self, reason: str, options: list[str] | None = None) -> str:
-        """Offer grounded alternatives for the current conflict.
-
-        Args:
-            reason: The grounded constraint conflict.
-            options: Up to three grounded alternatives.
-
-        Returns:
-            The terminal tradeoff transition.
-        """
-        return self._act("propose_tradeoff", {"reason": reason, "options": options or []})
-
-    def abort(self, reason: str) -> str:
-        """Stop when no safe or feasible alternative exists.
-
-        Args:
-            reason: The grounded reason the task cannot continue.
-
-        Returns:
-            The terminal transition.
-        """
-        return self._act("abort", {"reason": reason})
-
-
-class TRLPolicyDrivenEnvironment(_TRLTravelEnvironmentBase):
-    """Expose the complete production action contract for every model turn.
-
-    TRL currently discovers a static tool schema from public environment
-    methods. The live state still supplies the authoritative ``allowed_actions``
-    subset and the production loop rejects any out-of-state call.
-    """
+class TRLAgentEnvironment(_TRLTravelEnvironmentBase):
+    """Full-episode adapter for the exact same loop used online; no automatic decisions."""
 
     def abort(self, reason: str) -> str:
         """Stop when the task cannot continue safely or feasibly.
@@ -817,14 +747,6 @@ class TRLPolicyDrivenEnvironment(_TRLTravelEnvironmentBase):
         """
         return self._act("abort", {"reason": reason})
 
-    def accept_candidates(self) -> str:
-        """Accept the grounded candidate set after observing search results."""
-        return self._act("accept_candidates", {})
-
-    def accept_itinerary(self) -> str:
-        """Accept the itinerary only after the latest hard-pass report."""
-        return self._act("accept_itinerary", {})
-
     def ask_user(self, question: str) -> str:
         """Ask one grounded question for information only the user can provide.
 
@@ -835,22 +757,6 @@ class TRLPolicyDrivenEnvironment(_TRLTravelEnvironmentBase):
         """
         return self._act("ask_user", {"question": question})
 
-    def capability_check(self) -> str:
-        """Commit the controller-computed capability assessment.
-
-        Returns:
-            The verified transition and next policy state, if any.
-        """
-        return self._act("capability_check", {})
-
-    def compose_draft(self) -> str:
-        """Compose a draft from the verified solver artifact.
-
-        Returns:
-            The verified transition and next policy state, if any.
-        """
-        return self._act("compose_draft", {})
-
     def finish(self) -> str:
         """Present the verified draft and wait for user confirmation.
 
@@ -859,30 +765,15 @@ class TRLPolicyDrivenEnvironment(_TRLTravelEnvironmentBase):
         """
         return self._act("finish", {})
 
-    def propose_tradeoff(
-        self,
-        reason: str,
-        options: list[str] | None = None,
-    ) -> str:
-        """Offer up to three grounded alternatives for a constraint conflict.
+    def propose_tradeoff(self, reason: str) -> str:
+        """Explain a constraint conflict and offer the authorized alternatives.
 
         Args:
-            reason: Grounded constraint conflict.
-            options: Up to three grounded alternatives.
+            reason: Grounded constraint conflict in the user's language.
         Returns:
-            The terminal trade-off transition.
+            The transition awaiting the user's choice.
         """
-        return self._act("propose_tradeoff", {"reason": reason, "options": options or []})
-
-    def retry_solve(self, reason: str) -> str:
-        """Request one controller-bounded retry with a verifier-grounded reason.
-
-        Args:
-            reason: Verifier-grounded reason that the previous solve must be retried.
-        Returns:
-            The verified transition and next policy state, if any.
-        """
-        return self._act("retry_solve", {"reason": reason})
+        return self._act("propose_tradeoff", {"reason": reason})
 
     def get_weather(self, date: str | None = None) -> str:
         """Read the trusted destination weather snapshot for an optional date.
@@ -954,10 +845,6 @@ class TRLPolicyDrivenEnvironment(_TRLTravelEnvironmentBase):
             arguments["date"] = date
         return self._act("search_transport", arguments)
 
-    def finalize_research(self) -> str:
-        """Ask the evidence verifier to confirm that research is sufficient."""
-        return self._act("finalize_research", {})
-
     def get_poi_detail(self) -> str:
         """Collect details for controller-selected POI candidates.
 
@@ -976,7 +863,7 @@ class TRLPolicyDrivenEnvironment(_TRLTravelEnvironmentBase):
 
     def solve_itinerary(
         self,
-        strategy: Literal["auto", "cpsat", "greedy"] = "auto",
+        strategy: Literal["auto", "cpsat", "greedy"] = "cpsat",
     ) -> str:
         """Run the deterministic itinerary solver with a bounded strategy.
 
@@ -996,848 +883,21 @@ class TRLPolicyDrivenEnvironment(_TRLTravelEnvironmentBase):
         return self._act("validate_itinerary", {})
 
 
-class TRLReactEnvironment(_TRLTravelEnvironmentBase):
-    """Train the same hybrid ReAct decision boundary used in production.
+# Use the same strict argument validator and raw-output audit for every exposed method.
+from agentic.policy_actions import POLICY_ACTION_MODELS
 
-    The model sees the complete static tool schema but only chooses actions at
-    genuine research, recovery, clarification, and trade-off branches. Mandatory
-    solver, verifier, composition, and completion transitions are advanced by
-    the shared production controller.
-    """
-
-    def __init__(self, *, audit_enabled: bool = True) -> None:
-        super().__init__(
-            audit_enabled=audit_enabled,
-            execution_mode="react",
-        )
-
-    # Only actions owned by the production policy are exposed. Solver,
-    # verifier, composition, completion, and the finalize-research gate remain
-    # controller-owned and therefore cannot be sampled by GRPO. The review
-    # actions below are intentionally included because production delegates a
-    # failed-verifier repair/trade-off choice back to the model.
-    abort = _tolerate_copied_schema_annotations(TRLPolicyDrivenEnvironment.abort)
-    accept_itinerary = _tolerate_copied_schema_annotations(
-        TRLPolicyDrivenEnvironment.accept_itinerary
-    )
-    ask_user = _tolerate_copied_schema_annotations(TRLPolicyDrivenEnvironment.ask_user)
-    propose_tradeoff = _tolerate_copied_schema_annotations(
-        TRLPolicyDrivenEnvironment.propose_tradeoff
-    )
-    retry_solve = _tolerate_copied_schema_annotations(
-        TRLPolicyDrivenEnvironment.retry_solve
-    )
-    get_weather = _tolerate_copied_schema_annotations(TRLPolicyDrivenEnvironment.get_weather)
-    search_pois = _tolerate_copied_schema_annotations(TRLPolicyDrivenEnvironment.search_pois)
-    retrieve_city_knowledge = _tolerate_copied_schema_annotations(
-        TRLPolicyDrivenEnvironment.retrieve_city_knowledge
-    )
-    get_poi_detail = _tolerate_copied_schema_annotations(
-        TRLPolicyDrivenEnvironment.get_poi_detail
-    )
-    get_route_matrix = _tolerate_copied_schema_annotations(
-        TRLPolicyDrivenEnvironment.get_route_matrix
+for _action_name in POLICY_ACTION_MODELS:
+    setattr(
+        TRLAgentEnvironment,
+        _action_name,
+        _tolerate_copied_schema_annotations(getattr(TRLAgentEnvironment, _action_name)),
     )
 
 
-class TRLReactCurrentInfoEnvironment(TRLReactEnvironment):
-    """ReAct research environment that additionally permits live current facts."""
-
-    search_current_info = _tolerate_copied_schema_annotations(
-        TRLPolicyDrivenEnvironment.search_current_info
-    )
-
-
-class TRLReactTransportEnvironment(TRLReactEnvironment):
-    """ReAct research environment that additionally permits live transport facts."""
-
-    search_transport = _tolerate_copied_schema_annotations(
-        TRLPolicyDrivenEnvironment.search_transport
-    )
-
-
-class TRLReactGetPoiDetailDecisionEnvironment(_TRLTravelEnvironmentBase):
-    """One verified production decision state for argument-level GRPO.
-
-    TRL 1.9 keeps one static tool schema for a complete tool loop, while the
-    production ReAct scheduler narrows that schema after every transition. This
-    environment replays a hidden, verified prefix and exposes only the current
-    decision. It therefore trains the same state-scoped contract used online
-    without teacher-forcing any tokens into the model prompt.
-    """
-
-    def __init__(self, *, audit_enabled: bool = True) -> None:
-        super().__init__(audit_enabled=audit_enabled, execution_mode="react")
-        self._decision_step_start = 0
-
-    def reset(self, **kwargs: Any) -> str:
-        rendered = super().reset(**kwargs)
-        snapshot = self._snapshot
-        if snapshot is None:
-            raise RuntimeError("decision-state snapshot was not initialized")
-        decision_state = snapshot.hidden_test_facts.get("grpo_decision_state")
-        if not isinstance(decision_state, dict):
-            raise ValueError("decision-state metadata is missing")
-        prompt = kwargs.get("prompt")
-        authoritative_prompt = decision_state.get("prompt_messages")
-        if isinstance(prompt, list) and len(prompt) > 2:
-            if not isinstance(authoritative_prompt, list) or prompt != authoritative_prompt:
-                raise ValueError("decision-state replay prompt is not authoritative")
-        if decision_state.get("target_action") != "get_poi_detail":
-            raise ValueError("decision-state target does not match environment")
-        for item in decision_state.get("prefix_actions") or []:
-            if not isinstance(item, dict):
-                raise ValueError("decision-state prefix action must be an object")
-            raw_arguments = item.get("arguments")
-            if not isinstance(raw_arguments, dict):
-                raise ValueError("decision-state prefix arguments must be an object")
-            if any(value is None for value in raw_arguments.values()):
-                raise ValueError("decision-state prefix arguments must not contain null")
-            prefix_arguments = dict(raw_arguments)
-            rendered = self._act(
-                str(item.get("action") or ""),
-                prefix_arguments,
-            )
-            if json.loads(rendered).get("done") is True:
-                raise ValueError("decision-state prefix terminated before the target")
-        session = self._require_session()
-        self._decision_step_start = len(session.recorder.episode.steps)
-        transition = json.loads(rendered)
-        allowed = list((transition.get("policy_state") or {}).get("allowed_actions") or [])
-        if "get_poi_detail" not in allowed:
-            raise ValueError("replayed decision state does not allow get_poi_detail")
-        rendered = json.dumps(
-            transition,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-        )
-        self._audit("decision_replay_ready", transition=self._transition)
-        # A verified replay prompt already ends with the exact transition above.
-        # TRL appends reset() output to the final message, so return an empty
-        # observation to avoid duplicating the state in that contract.
-        if isinstance(prompt, list) and len(prompt) > 2:
-            if str(prompt[-1].get("content") or "") != rendered:
-                raise ValueError("decision-state replay prompt does not match replayed state")
-            return ""
-        return rendered
-
-    @staticmethod
-    def _validate_initial_prompt(
-        prompt: list[dict[str, Any]] | None,
-        *,
-        user_request: str,
-    ) -> None:
-        if prompt is None or len(prompt) == 2:
-            _TRLTravelEnvironmentBase._validate_initial_prompt(
-                prompt,
-                user_request=user_request,
-            )
-            return
-        roles = [str(message.get("role") or "") for message in prompt]
-        if roles[:2] != ["system", "user"] or roles[-1] != "tool":
-            raise ValueError("decision-state replay prompt has an invalid role sequence")
-        if any(role not in {"system", "user", "assistant", "tool"} for role in roles):
-            raise ValueError("decision-state replay prompt contains an unsupported role")
-        for index in range(2, len(roles), 2):
-            if roles[index : index + 2] != ["assistant", "tool"]:
-                raise ValueError("decision-state replay prompt must alternate assistant/tool")
-
-    def _complete_decision(self, action: str, arguments: dict[str, Any]) -> str:
-        rendered = json.loads(self._act(action, arguments))
-        rendered.pop("policy_state", None)
-        rendered.update({"done": True, "decision_complete": True})
-        return json.dumps(rendered, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-
-    def retrieve_city_knowledge(self, topic: str | None = None) -> str:
-        """Read stable destination facts from the local knowledge base.
-
-        Args:
-            topic: Optional grounded topic to narrow the lookup.
-        Returns:
-            A terminal observation for this one-decision training episode.
-        """
-        return self._complete_decision(
-            "retrieve_city_knowledge",
-            {"topic": topic} if topic else {},
-        )
-
-    def get_poi_detail(self) -> str:
-        """Collect details for the controller-selected POI candidates.
-
-        Returns:
-            A terminal observation for this one-decision training episode.
-        """
-        return self._complete_decision("get_poi_detail", {})
-
-    def get_route_matrix(self) -> str:
-        """Build a route matrix from trusted candidate artifacts.
-
-        Returns:
-            A terminal observation for this one-decision training episode.
-        """
-        return self._complete_decision("get_route_matrix", {})
-
-    def get_reward(self) -> float:
-        """Reward the verified target decision, independent of unfinished downstream work."""
-        session = self._require_session()
-        decision_steps = session.recorder.episode.steps[self._decision_step_start :]
-        valid = any(
-            step.action.decision_source != "controller"
-            and step.action.action == "get_poi_detail"
-            and all(observation.ok for observation in step.observations)
-            and not step.verification.get("error_code")
-            for step in decision_steps
-        )
-        super().get_reward()
-        score = 1.0 if valid else -1.0
-        if self._reward is None:
-            raise RuntimeError("decision-state reward was not initialized")
-        self._reward = self._reward.model_copy(
-            update={
-                "episode_reward": score,
-                # The generic full-episode scorer correctly marks the replayed
-                # prefix as unfinished.  For this declared one-decision
-                # contract, however, a verified target action is the task and
-                # constraint success.  Keep these components aligned with the
-                # custom gate so curriculum routing does not send useful mixed
-                # groups back to SFT merely because the full trip is not done.
-                "components": self._reward.components.model_copy(
-                    update={"task": score, "constraint": score}
-                ),
-                "gate_status": "passed" if valid else "task_failed",
-                "gate_reasons": [] if valid else ["DECISION_ACTION_INVALID_OR_MISSING"],
-                "audit_metrics": {
-                    **self._reward.audit_metrics,
-                    "decision_state_training": True,
-                    "decision_step_valid": valid,
-                },
-            }
-        )
-        self._audit("decision_reward", reward=self._reward)
-        return score
-
-
-class _TRLReactVerifierRepairDecisionEnvironmentBase(_TRLTravelEnvironmentBase):
-    """Replay a verified prefix and train one production review decision.
-
-    The hidden prefix is executed through the same ReAct controller, snapshot
-    executor, CP-SAT boundary, and verifier transition used online. Only the
-    final model-owned review decision receives GRPO credit. This avoids
-    spending most rollout tokens relearning deterministic setup actions while
-    preserving the exact production state shown to the policy.
-    """
-
-    _SUPPORTED_TARGETS = {"retry_solve", "propose_tradeoff", "abort"}
-    _single_decision_tool_contract = True
-
-    def __init__(self, *, audit_enabled: bool = True) -> None:
-        super().__init__(audit_enabled=audit_enabled, execution_mode="react")
-        self._decision_step_start = 0
-        self._decision_contract: dict[str, Any] = {}
-
-
-    def reset(self, **kwargs: Any) -> str:
-        rendered = super().reset(**kwargs)
-        snapshot = self._snapshot
-        if snapshot is None:
-            raise RuntimeError("decision-state snapshot was not initialized")
-        decision_state = snapshot.hidden_test_facts.get("grpo_decision_state")
-        if not isinstance(decision_state, dict):
-            raise ValueError("decision-state metadata is missing")
-        schema_version = str(decision_state.get("schema_version") or "")
-        if schema_version != VERIFIER_REPAIR_DECISION_SCHEMA_VERSION:
-            raise ValueError(
-                "unsupported verifier-repair decision-state schema: "
-                f"{schema_version or 'missing'}"
-            )
-        prompt = kwargs.get("prompt")
-        authoritative_prompt = decision_state.get("prompt_messages")
-        if isinstance(prompt, list) and len(prompt) > 2:
-            if not isinstance(authoritative_prompt, list) or prompt != authoritative_prompt:
-                raise ValueError("decision-state replay prompt is not authoritative")
-        target = str(decision_state.get("target_action") or "")
-        if target not in self._SUPPORTED_TARGETS:
-            raise ValueError("verifier-repair target does not match environment")
-        expected_target = getattr(self, "_EXPECTED_TARGET", None)
-        if expected_target is not None and target != expected_target:
-            raise ValueError(
-                f"verifier-repair target {target!r} does not match route {expected_target!r}"
-            )
-        expected_actions = getattr(self, "_EXPECTED_ACTIONS", None)
-        if not isinstance(expected_actions, tuple) or not expected_actions:
-            raise RuntimeError("verifier-repair route action contract is not configured")
-        review_allowed_actions = decision_state.get("review_allowed_actions")
-        if not isinstance(review_allowed_actions, list) or tuple(
-            str(action) for action in review_allowed_actions
-        ) != expected_actions:
-            raise ValueError(
-                "verifier-repair decision metadata does not match route action contract"
-            )
-        # H-002: the state is frozen at authoring time.  Date-relative
-        # evidence requirements (the ten-day weather window) and freshness
-        # TTLs must be evaluated against that moment, not the wall clock, or
-        # the recorded prefix silently stops reaching itinerary review once
-        # the calendar crosses a requirement boundary.
-        for item in decision_state.get("prefix_actions") or []:
-            if not isinstance(item, dict):
-                raise ValueError("decision-state prefix action must be an object")
-            raw_arguments = item.get("arguments")
-            if not isinstance(raw_arguments, dict):
-                raise ValueError("decision-state prefix arguments must be an object")
-            if any(value is None for value in raw_arguments.values()):
-                raise ValueError("decision-state prefix arguments must not contain null")
-            prefix_arguments = dict(raw_arguments)
-            rendered = self._act(str(item.get("action") or ""), prefix_arguments)
-            if json.loads(rendered).get("done") is True:
-                raise ValueError("decision-state prefix terminated before the target")
-        session = self._require_session()
-        self._decision_step_start = len(session.recorder.episode.steps)
-        self._decision_contract = decision_state
-        transition = json.loads(rendered)
-        policy_state = transition.get("policy_state") or {}
-        if (policy_state.get("current_subtask") or {}).get("task_id") != "review_itinerary":
-            raise ValueError("replayed decision state did not reach itinerary review")
-        allowed = list(policy_state.get("allowed_actions") or [])
-        if tuple(str(action) for action in allowed) != expected_actions:
-            raise ValueError(
-                "replayed decision state does not match route action contract"
-            )
-        expected_arguments = decision_state.get("expected_arguments")
-        expected_controller_arguments = decision_state.get("controller_arguments")
-        expected_argument_keys: set[str] = set()
-        if (
-            not isinstance(expected_arguments, dict)
-            or set(expected_arguments) != expected_argument_keys
-            or "options" in expected_arguments
-        ):
-            raise ValueError("decision-state model-owned argument contract is invalid")
-        expected_controller_keys = {"strategy"} if target == "retry_solve" else set()
-        if (
-            not isinstance(expected_controller_arguments, dict)
-            or set(expected_controller_arguments) != expected_controller_keys
-            or (
-                target == "retry_solve"
-                and expected_controller_arguments.get("strategy") != "greedy"
-            )
-        ):
-            raise ValueError("decision-state controller argument contract is invalid")
-        supervised_options = decision_state.get("supervised_options")
-        if target == "propose_tradeoff":
-            authorized_options = controller_tradeoff_options(
-                dict(policy_state.get("capability") or {})
-            )
-            if (
-                decision_state.get("require_options") is not True
-                or not isinstance(supervised_options, list)
-                or supervised_options != authorized_options
-            ):
-                raise ValueError(
-                    "decision-state controller options do not match replayed authority"
-                )
-        elif decision_state.get("require_options") is not False or supervised_options not in (
-            [],
-            None,
-        ):
-            raise ValueError("non-tradeoff decision-state contains controller options")
-        rendered = json.dumps(
-            transition,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-        )
-        self._audit("decision_replay_ready", transition=self._transition)
-        if isinstance(prompt, list) and len(prompt) > 2:
-            if str(prompt[-1].get("content") or "") != rendered:
-                raise ValueError("decision-state replay prompt does not match replayed state")
-            return ""
-        return rendered
-
-    _validate_initial_prompt = staticmethod(
-        TRLReactGetPoiDetailDecisionEnvironment._validate_initial_prompt
-    )
-
-    def _complete_decision(self, action: str, arguments: dict[str, Any]) -> str:
-        rendered = json.loads(self._act(action, arguments))
-        rendered.pop("policy_state", None)
-        rendered.update({"done": True, "decision_complete": True})
-        return json.dumps(rendered, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-
-    def _trl_tool_loop_done(self) -> bool:
-        # A verifier-repair replay owns exactly one model decision. Invalid
-        # attempts also terminate the rollout; there is no within-turn repair.
-        return self._policy_call_attempt_count >= 1
-
-    @_tolerate_copied_schema_annotations
-    def accept_itinerary(self) -> str:
-        """Attempt to accept the current itinerary.
-
-        Returns:
-            A terminal observation for this one-decision training episode.
-        """
-        return self._complete_decision("accept_itinerary", {})
-
-    @_tolerate_copied_schema_annotations
-    def ask_user(self, question: str) -> str:
-        """Ask for a user-owned choice after verifier review.
-
-        Args:
-            question: One concise grounded question in the user's language.
-        Returns:
-            A terminal observation for this one-decision training episode.
-        """
-        return self._complete_decision("ask_user", {"question": question})
-
-    @_tolerate_copied_schema_annotations
-    def retry_solve(self, reason: str) -> str:
-        """Request a controller-bounded retry after a repairable verifier failure.
-
-        Args:
-            reason: Verifier-grounded reason for the retry.
-        Returns:
-            A terminal observation for this one-decision training episode.
-        """
-        return self._complete_decision("retry_solve", {"reason": reason})
-
-    @_tolerate_copied_schema_annotations
-    def propose_tradeoff(self, reason: str) -> str:
-        """Explain a conflict whose exact options are controller-owned.
-
-        Args:
-            reason: Verifier-grounded conflict.
-        Returns:
-            A terminal observation for this one-decision training episode.
-        """
-        return self._complete_decision(
-            "propose_tradeoff",
-            {"reason": reason},
-        )
-
-    @_tolerate_copied_schema_annotations
-    def abort(self, reason: str) -> str:
-        """Stop when verifier evidence has no safe or feasible repair.
-
-        Args:
-            reason: Verifier-grounded reason the task cannot continue.
-        Returns:
-            A terminal observation for this one-decision training episode.
-        """
-        return self._complete_decision("abort", {"reason": reason})
-
-    @_tolerate_copied_schema_annotations
-    def get_weather(self, date: str | None = None) -> str:
-        """Choose weather research when it is the best review repair.
-
-        Args:
-            date: Optional grounded date in YYYY-MM-DD format.
-        Returns:
-            A terminal observation for this one-decision training episode.
-        """
-        return self._complete_decision("get_weather", {"date": date} if date else {})
-
-    @_tolerate_copied_schema_annotations
-    def search_pois(self, keywords: list[str] | None = None) -> str:
-        """Choose another POI search when candidates caused verifier failure.
-
-        Args:
-            keywords: Up to eight grounded preference keywords.
-        Returns:
-            A terminal observation for this one-decision training episode.
-        """
-        return self._complete_decision("search_pois", {"keywords": keywords or []})
-
-    @_tolerate_copied_schema_annotations
-    def retrieve_city_knowledge(self, topic: str | None = None) -> str:
-        """Choose stable city research when review evidence is incomplete.
-
-        Args:
-            topic: Optional grounded topic to narrow the lookup.
-        Returns:
-            A terminal observation for this one-decision training episode.
-        """
-        return self._complete_decision(
-            "retrieve_city_knowledge",
-            {"topic": topic} if topic else {},
-        )
-
-    @_tolerate_copied_schema_annotations
-    def get_poi_detail(self) -> str:
-        """Choose another trusted POI-detail lookup after review.
-
-        Returns:
-            A terminal observation for this one-decision training episode.
-        """
-        return self._complete_decision("get_poi_detail", {})
-
-    @_tolerate_copied_schema_annotations
-    def get_route_matrix(self) -> str:
-        """Choose route-matrix refresh when review evidence requires it.
-
-        Returns:
-            A terminal observation for this one-decision training episode.
-        """
-        return self._complete_decision("get_route_matrix", {})
-
-    @_tolerate_copied_schema_annotations
-    def search_current_info(
-        self,
-        query: str,
-        info_type: Literal[
-            "event", "opening_hours", "restaurant", "seasonal_activity", "closure", "general"
-        ] = "general",
-        date: str | None = None,
-    ) -> str:
-        """Choose live information research when review evidence is stale.
-
-        Args:
-            query: Grounded current-information query.
-            info_type: Type of current information being requested.
-            date: Optional grounded date in YYYY-MM-DD format.
-        Returns:
-            A terminal observation for this one-decision training episode.
-        """
-        arguments: dict[str, Any] = {"query": query, "info_type": info_type}
-        if date:
-            arguments["date"] = date
-        return self._complete_decision("search_current_info", arguments)
-
-    @_tolerate_copied_schema_annotations
-    def search_transport(
-        self,
-        mode: Literal["flight", "train", "both"] = "both",
-        date: str | None = None,
-    ) -> str:
-        """Choose a transport refresh when review evidence requires it.
-
-        Args:
-            mode: Transport mode to search.
-            date: Optional grounded departure date in YYYY-MM-DD format.
-        Returns:
-            A terminal observation for this one-decision training episode.
-        """
-        arguments: dict[str, Any] = {"mode": mode}
-        if date:
-            arguments["date"] = date
-        return self._complete_decision("search_transport", arguments)
-
-    def get_reward(self) -> float:
-        """Score model-owned success plus verifier-decomposed partial progress.
-
-        The controller is allowed to sanitize a bad payload before execution so
-        serving stays safe.  That safety property must not become a training
-        credit: a completion which attempts to supply controller-owned fields
-        is a model-contract failure even when the authorized action succeeds.
-        Keep the two facts separately in the audit record.
-        """
-        session = self._require_session()
-        policy_steps = [
-            step
-            for step in session.recorder.episode.steps[self._decision_step_start :]
-            if step.action.decision_source != "controller"
-        ]
-        target = str(self._decision_contract.get("target_action") or "")
-        system_structural_checks: dict[str, bool] = {
-            "single_policy_call": self._policy_call_attempt_count == 1,
-            "no_policy_call_rejections": self._policy_call_rejection_count == 0,
-        }
-        model_structural_checks: dict[str, bool] = {
-            "model_contract_compliant": False,
-            "no_controller_override_attempt": False,
-            # Tradeoff options and retry strategy are controller-injected.
-            # Other routes correctly have no controller hydration to audit.
-            "controller_hydration_exact": target not in {"propose_tradeoff", "retry_solve"},
-        }
-        checks: dict[str, bool] = {"action_match": False}
-        if len(policy_steps) == 1:
-            step = policy_steps[0]
-            model_structural_checks["model_contract_compliant"] = bool(
-                step.action.model_contract_compliant
-            )
-            model_structural_checks["no_controller_override_attempt"] = not bool(
-                step.action.controller_override_attempt
-            )
-            if target in {"propose_tradeoff", "retry_solve"}:
-                model_structural_checks["controller_hydration_exact"] = bool(
-                    step.action.controller_hydration_exact
-                ) and step.action.controller_hydrated_fields == (
-                    ["options"] if target == "propose_tradeoff" else ["strategy"]
-                )
-            checks["action_match"] = step.action.action == target
-            if checks["action_match"]:
-                verification_error = step.verification.get("error_code")
-                expected_abort = target == "abort" and verification_error == "POLICY_ABORT"
-                checks["execution_valid"] = all(
-                    observation.ok for observation in step.observations
-                ) and (not verification_error or expected_abort)
-                checks.update(self._argument_contract_checks(step.action.arguments))
-        system_valid = all(system_structural_checks.values()) and all(checks.values())
-        valid = system_valid and all(model_structural_checks.values())
-        super().get_reward()
-        output_contract_valid = all(system_structural_checks.values()) and all(
-            model_structural_checks.values()
-        )
-        # Controller-argument equality is a serving-safety invariant, not a
-        # model skill.  It must be required for a passing rollout through
-        # ``system_valid``, but it must not inflate partial model credit merely
-        # because the controller injected its own fallback strategy.
-        model_scored_checks = {
-            name: value
-            for name, value in checks.items()
-            if name != "controller_arguments_match"
-        }
-        score = (
-            round(2 * sum(model_scored_checks.values()) / len(model_scored_checks) - 1, 6)
-            if output_contract_valid and checks.get("action_match")
-            else -1.0
-        )
-        if self._reward is None:
-            raise RuntimeError("decision-state reward was not initialized")
-        self._reward = self._reward.model_copy(
-            update={
-                "episode_reward": score,
-                "terminal_reward": score,
-                "components": self._reward.components.model_copy(
-                    update={
-                        "task": 1.0 if checks.get("action_match") else -1.0,
-                        "constraint": 1.0 if valid else score,
-                    }
-                ),
-                "gate_status": "passed" if valid else "task_failed",
-                "gate_reasons": [] if valid else ["VERIFIER_REPAIR_DECISION_INVALID"],
-                "audit_metrics": {
-                    **self._reward.audit_metrics,
-                    "decision_state_training": True,
-                    # ``decision_system_step_valid`` is the serving-safety
-                    # result after controller authorization.  It is useful for
-                    # incident analysis but must never be used as a model
-                    # reward or selector success criterion.
-                    "decision_system_step_valid": system_valid,
-                    "decision_step_valid": valid,
-                    "decision_target_action": target,
-                    "decision_policy_call_attempt_count": self._policy_call_attempt_count,
-                    "decision_policy_call_rejection_count": self._policy_call_rejection_count,
-                    "decision_policy_argument_rejection_count": (
-                        self._policy_argument_rejection_count
-                    ),
-                    "verified_partial_credit": True,
-                    "decision_partial_reward": score,
-                    **{
-                        f"decision_{name}": value
-                        for name, value in system_structural_checks.items()
-                    },
-                    **{
-                        f"decision_{name}": value
-                        for name, value in model_structural_checks.items()
-                    },
-                    **{f"decision_{name}": value for name, value in checks.items()},
-                },
-            }
-        )
-        self._audit("decision_reward", reward=self._reward)
-        return score
-
-    def _arguments_match_contract(self, arguments: dict[str, Any]) -> bool:
-        return all(self._argument_contract_checks(arguments).values())
-
-    def _argument_contract_checks(self, arguments: dict[str, Any]) -> dict[str, bool]:
-        checks: dict[str, bool] = {}
-        expected = self._decision_contract.get("expected_arguments")
-        if not isinstance(expected, dict):
-            checks["expected_arguments_match"] = False
-        else:
-            checks["expected_arguments_match"] = all(
-                arguments.get(key) == value for key, value in expected.items()
-            )
-        expected_controller = self._decision_contract.get("controller_arguments")
-        if not isinstance(expected_controller, dict):
-            checks["controller_arguments_match"] = False
-        else:
-            checks["controller_arguments_match"] = all(
-                arguments.get(key) == value for key, value in expected_controller.items()
-            )
-        phrases = [
-            str(item)
-            for item in self._decision_contract.get("grounding_phrases") or []
-            if str(item).strip()
-        ]
-        if phrases:
-            # One copied substring is not a complete user-facing explanation.
-            # Score all visible evidence phrases, concrete day/value anchors,
-            # language alignment, public wording, and action rationale.
-            checks.update(
-                verifier_reason_quality_checks(
-                    reason=arguments.get("reason", ""),
-                    target_action=str(
-                        self._decision_contract.get("target_action") or ""
-                    ),
-                    grounding_phrases=phrases,
-                    evidence=(
-                        _decision_visible_violation(self._decision_contract)
-                        or "；".join(phrases)
-                    ),
-                )
-            )
-        if self._decision_contract.get("require_options") is True:
-            options = arguments.get("options")
-            submitted_options = (
-                [str(item) for item in options if str(item).strip()]
-                if isinstance(options, list)
-                else []
-            )
-            supported_options = [
-                str(item)
-                for item in self._decision_contract.get("supervised_options") or []
-                if str(item).strip()
-            ]
-            checks["options_present"] = bool(submitted_options)
-            checks["option_contract_present"] = bool(supported_options)
-            checks["options_supported"] = bool(submitted_options) and all(
-                any(_decision_option_matches(item, expected) for expected in supported_options)
-                for item in submitted_options
-            )
-            checks["option_contract_covered"] = bool(supported_options) and all(
-                any(_decision_option_matches(item, expected) for item in submitted_options)
-                for expected in supported_options
-            )
-        return checks
-
-
-class TRLReactVerifierRetryDecisionEnvironment(
-    _TRLReactVerifierRepairDecisionEnvironmentBase
-):
-    """Expose exactly the production retry-state review action surface."""
-
-    _EXPECTED_TARGET = "retry_solve"
-    _EXPECTED_ACTIONS = VERIFIER_REPAIR_ACTIONS_BY_ROUTE[
-        "decision_verifier_repair_retry"
-    ]
-    accept_itinerary = None
-
-
-class TRLReactVerifierTradeoffDecisionEnvironment(
-    _TRLReactVerifierRepairDecisionEnvironmentBase
-):
-    """Expose only the two actions allowed by actionable infeasibility."""
-
-    _EXPECTED_TARGET = "propose_tradeoff"
-    _EXPECTED_ACTIONS = VERIFIER_REPAIR_ACTIONS_BY_ROUTE[
-        "decision_verifier_repair_tradeoff"
-    ]
-    accept_itinerary = None
-    ask_user = None
-    get_poi_detail = None
-    get_route_matrix = None
-    get_weather = None
-    retrieve_city_knowledge = None
-    retry_solve = None
-    search_current_info = None
-    search_pois = None
-    search_transport = None
-
-
-class TRLReactVerifierAbortDecisionEnvironment(
-    _TRLReactVerifierRepairDecisionEnvironmentBase
-):
-    """Expose only fail-closed abort for non-actionable infeasibility."""
-
-    _EXPECTED_TARGET = "abort"
-    _EXPECTED_ACTIONS = VERIFIER_REPAIR_ACTIONS_BY_ROUTE[
-        "decision_verifier_repair_abort"
-    ]
-    accept_itinerary = None
-    ask_user = None
-    get_poi_detail = None
-    get_route_matrix = None
-    get_weather = None
-    propose_tradeoff = None
-    retrieve_city_knowledge = None
-    retry_solve = None
-    search_current_info = None
-    search_pois = None
-    search_transport = None
-
-
-def _decision_text(value: Any) -> str:
-    """Normalize multilingual evidence without exposing hidden labels to the model."""
-    rendered = json.dumps(value, ensure_ascii=False) if not isinstance(value, str) else value
-    return "".join(character.casefold() for character in rendered if character.isalnum())
-
-
-def _decision_visible_violation(contract: dict[str, Any]) -> str:
-    """Read the verifier message from the same prompt state shown to the model."""
-    for message in reversed(list(contract.get("prompt_messages") or [])):
-        try:
-            payload = json.loads(str(message.get("content") or "{}"))
-        except (AttributeError, TypeError, ValueError, json.JSONDecodeError):
-            continue
-        state = payload.get("policy_state")
-        if not isinstance(state, dict):
-            continue
-        reports = [
-            item
-            for item in state.get("relevant_artifacts") or []
-            if isinstance(item, dict) and item.get("artifact_type") == "validation_report"
-        ]
-        violations = reports[-1].get("violations") or [] if reports else []
-        if violations and isinstance(violations[0], dict):
-            return str(violations[0].get("message") or "").strip()
-    return ""
-
-
-def _decision_option_matches(submitted: str, expected: str) -> bool:
-    """Match the explicit normalized option contract without substring loopholes."""
-    submitted_text = _decision_text(submitted)
-    expected_text = _decision_text(expected)
-    if not submitted_text or not expected_text:
-        return False
-    return submitted_text == expected_text
-
-
-def build_trl_environment_factories(
-    execution_mode: GRPOExecutionMode = "react",
-) -> dict[str, Callable[..., _TRLTravelEnvironmentBase]]:
-    """Build route-compatible factories for a declared train/serve contract.
-
-    react is the production contract; the retired policy_driven /
-    controller_first modes delegate to ``agentic.legacy.environments`` so
-    archived corpora can still be reproduced.
-    """
+def build_trl_environment_factories(execution_mode: GRPOExecutionMode = "react"):
     if execution_mode != "react":
-        from agentic.legacy.environments import build_legacy_environment_factories
-
-        return build_legacy_environment_factories(execution_mode)
-    if execution_mode == "react":
-        return {
-            "search": TRLReactEnvironment,
-            "search_current": TRLReactCurrentInfoEnvironment,
-            "search_transport": TRLReactTransportEnvironment,
-            "decision_get_poi_detail": TRLReactGetPoiDetailDecisionEnvironment,
-            "decision_verifier_repair_retry": TRLReactVerifierRetryDecisionEnvironment,
-            "decision_verifier_repair_tradeoff": (
-                TRLReactVerifierTradeoffDecisionEnvironment
-            ),
-            "decision_verifier_repair_abort": TRLReactVerifierAbortDecisionEnvironment,
-            "clarification": TRLClarificationEnvironment,
-            "tradeoff": TRLTradeoffEnvironment,
-        }
-    raise ValueError(f"unsupported GRPO execution mode: {execution_mode}")
+        raise ValueError("Only agent-harness-v1 is supported; regenerate legacy training corpora")
+    return {"travel": TRLAgentEnvironment}
 
 
-
-__all__ = [
-    "FRESH_LEDGER_ROLLOUT_CONTRACT",
-    "VERIFIED_DECISION_STATE_REPLAY_CONTRACT",
-    "VERIFIER_REPAIR_ACTIONS_BY_ROUTE",
-    "TRLClarificationEnvironment",
-    "TRLPolicyDrivenEnvironment",
-    "TRLReactCurrentInfoEnvironment",
-    "TRLReactEnvironment",
-    "TRLReactGetPoiDetailDecisionEnvironment",
-    "TRLReactVerifierAbortDecisionEnvironment",
-    "TRLReactVerifierRetryDecisionEnvironment",
-    "TRLReactVerifierTradeoffDecisionEnvironment",
-    "TRLReactTransportEnvironment",
-    "TRLTradeoffEnvironment",
-    "build_trl_environment_factories",
-    "canonical_trl_tool_schemas",
-]
+__all__ = ["TRLAgentEnvironment", "build_trl_environment_factories", "canonical_trl_tool_schemas"]

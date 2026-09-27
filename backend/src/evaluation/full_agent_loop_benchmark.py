@@ -25,6 +25,8 @@ class FullAgentLoopCase(BaseModel):
     required_artifacts: list[str] = Field(default_factory=list)
     required_actions: list[str] = Field(default_factory=list)
     safe_required_actions: list[str] = Field(default_factory=list)
+    safe_terminal_actions: list[str] = Field(default_factory=list)
+    required_action_arguments: dict[str, dict[str, object]] = Field(default_factory=dict)
     expected_slots: dict[str, object] = Field(default_factory=dict)
     revision_input: str | None = None
     expected_revision_hard: dict[str, object] = Field(default_factory=dict)
@@ -61,6 +63,7 @@ def build_frozen_cases() -> list[FullAgentLoopCase]:
         suite: Literal["core", "expanded"] = "core",
         extra_artifacts: list[str] | None = None,
         extra_actions: list[str] | None = None,
+        required_action_arguments: dict[str, dict[str, object]] | None = None,
         expected_slots: dict[str, object] | None = None,
     ) -> FullAgentLoopCase:
         return FullAgentLoopCase(
@@ -70,6 +73,7 @@ def build_frozen_cases() -> list[FullAgentLoopCase]:
             user_input=user_input,
             required_artifacts=[*core_artifacts, *(extra_artifacts or [])],
             required_actions=[*core_actions, *(extra_actions or [])],
+            required_action_arguments=required_action_arguments or {},
             expected_slots=expected_slots or {},
         )
 
@@ -81,6 +85,7 @@ def build_frozen_cases() -> list[FullAgentLoopCase]:
         suite: Literal["core", "expanded"] = "core",
         evidence_artifact: str,
         evidence_action: str,
+        evidence_arguments: dict[str, object] | None = None,
         expected_slots: dict[str, object] | None = None,
     ) -> FullAgentLoopCase:
         case = draft(
@@ -90,12 +95,21 @@ def build_frozen_cases() -> list[FullAgentLoopCase]:
             suite=suite,
             extra_artifacts=[evidence_artifact],
             extra_actions=[evidence_action],
+            required_action_arguments=(
+                {evidence_action: evidence_arguments} if evidence_arguments else None
+            ),
             expected_slots=expected_slots,
         )
         return case.model_copy(
             update={
                 "expected_outcome": "draft_or_safe_termination",
-                "safe_required_actions": [evidence_action, "propose_tradeoff"],
+                "safe_required_actions": [evidence_action],
+                # A live provider can fail without supplying controller-authorized
+                # alternatives. In that state production deliberately hides
+                # propose_tradeoff and permits only a grounded abort. Accept either
+                # terminal action here, then let the action-authority and grounding
+                # checks decide whether the termination was safe.
+                "safe_terminal_actions": ["propose_tradeoff", "abort"],
             }
         )
 
@@ -123,6 +137,9 @@ def build_frozen_cases() -> list[FullAgentLoopCase]:
             "2026年9月12日去苏州玩两天，预算3000元，想去拙政园，先核实最新营业时间。",
             extra_artifacts=["current_info_search"],
             extra_actions=["search_current_info"],
+            required_action_arguments={
+                "search_current_info": {"info_type": "opening_hours"}
+            },
         ),
         externally_bounded(
             "fal-v1-restaurant-chengdu",
@@ -130,6 +147,7 @@ def build_frozen_cases() -> list[FullAgentLoopCase]:
             "2026年9月5日去成都玩三天，预算4500元，想吃火锅，帮我查晚上还营业的店。",
             evidence_artifact="current_info_search",
             evidence_action="search_current_info",
+            evidence_arguments={"info_type": "restaurant"},
         ),
         draft(
             "fal-v1-seasonal-beijing",
@@ -137,6 +155,9 @@ def build_frozen_cases() -> list[FullAgentLoopCase]:
             "2026年10月20日去北京玩三天，预算5000元，想看红叶，先查今年红叶季的最新情况。",
             extra_artifacts=["current_info_search"],
             extra_actions=["search_current_info"],
+            required_action_arguments={
+                "search_current_info": {"info_type": "seasonal_activity"}
+            },
         ),
         externally_bounded(
             "fal-v1-train-jinan-shanghai",
@@ -144,6 +165,7 @@ def build_frozen_cases() -> list[FullAgentLoopCase]:
             "2026年9月20日从济南坐高铁去上海玩三天，预算5000元，查一个中午前到的车次。",
             evidence_artifact="transport_search_result",
             evidence_action="search_transport",
+            evidence_arguments={"mode": "train"},
         ),
         externally_bounded(
             "fal-v1-event-shanghai",
@@ -151,6 +173,7 @@ def build_frozen_cases() -> list[FullAgentLoopCase]:
             "2026年9月12日去上海玩两天，预算4000元，想看当周末的音乐节，日期和场馆你去查。",
             evidence_artifact="event_search_result",
             evidence_action="search_current_info",
+            evidence_arguments={"info_type": "event"},
         ),
         FullAgentLoopCase(
             case_id="fal-v1-clarify-chengdu",
@@ -285,6 +308,7 @@ def build_frozen_cases() -> list[FullAgentLoopCase]:
             update={
                 "expected_outcome": "draft_or_safe_termination",
                 "safe_required_actions": ["propose_tradeoff"],
+                "safe_terminal_actions": ["propose_tradeoff"],
             }
         ),
         externally_bounded(
@@ -294,6 +318,7 @@ def build_frozen_cases() -> list[FullAgentLoopCase]:
             suite="expanded",
             evidence_artifact="current_info_search",
             evidence_action="search_current_info",
+            evidence_arguments={"info_type": "closure"},
             expected_slots={
                 "destination": "南京",
                 "travel_days": 2,
@@ -307,6 +332,7 @@ def build_frozen_cases() -> list[FullAgentLoopCase]:
             suite="expanded",
             evidence_artifact="transport_search_result",
             evidence_action="search_transport",
+            evidence_arguments={"mode": "flight"},
             expected_slots={
                 "origin": "北京",
                 "destination": "三亚",
@@ -321,6 +347,7 @@ def build_frozen_cases() -> list[FullAgentLoopCase]:
             suite="expanded",
             evidence_artifact="event_search_result",
             evidence_action="search_current_info",
+            evidence_arguments={"info_type": "event"},
             expected_slots={
                 "destination": "上海",
                 "travel_days": 2,
@@ -335,6 +362,7 @@ def build_frozen_cases() -> list[FullAgentLoopCase]:
             suite="expanded",
             evidence_artifact="current_info_search",
             evidence_action="search_current_info",
+            evidence_arguments={"info_type": "restaurant"},
             expected_slots={
                 "destination": "广州",
                 "travel_days": 2,

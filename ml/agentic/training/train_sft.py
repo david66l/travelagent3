@@ -6,8 +6,10 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import sys
 from dataclasses import dataclass
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 
@@ -32,9 +34,21 @@ from agentic.chat_template_contract import (  # noqa: E402
 )
 from agentic.policy_actions import POLICY_ACTION_MODELS  # noqa: E402
 from agentic.reason_quality import repair_reason_rationale_prefixes  # noqa: E402
+from agentic.source_equal_sft import (  # noqa: E402
+    SOURCE_EQUAL_LOSS_CONTRACT,
+    completion_weighted_loss,
+    source_equal_weights,
+)
 
 
 LOSS_NORMALIZATION_CONTRACT = "mean-of-microbatch-token-weighted-means.v1"
+
+
+def _package_version(name: str) -> str | None:
+    try:
+        return version(name)
+    except PackageNotFoundError:
+        return None
 
 
 def apply_action_sequence_weights(
@@ -99,7 +113,9 @@ def stratify_sft_rows_by_action(rows: list[dict]) -> list[dict]:
     return ordered
 
 
-def sequence_match_count(token_ids: list[int], sequences: tuple[tuple[int, ...], ...]) -> int:
+def sequence_match_count(
+    token_ids: list[int], sequences: tuple[tuple[int, ...], ...]
+) -> int:
     """Count exact token-sequence matches without importing torch."""
     matches = 0
     for sequence in sequences:
@@ -159,6 +175,49 @@ def configure_agent_sft_tokenizer(tokenizer):
     return tokenizer
 
 
+def audit_trainer_completion_masks(trainer, tokenizer, rendered_splits) -> dict:
+    """Inspect actual TRL-preprocessed examples and its actual loss collator.
+
+    Fail before training if prompt/tool observations or padding receive labels,
+    or if a tool-call target is truncated. This audits both train and dev loss.
+    """
+    from agentic.local_policy import parse_local_tool_call
+    report = {"collator": type(trainer.data_collator).__name__, "splits": {}}
+    for split, dataset in (("train", trainer.train_dataset), ("validation", trainer.eval_dataset)):
+        counts = {"rows": 0, "masked_prompt_tokens": 0, "supervised_tokens": 0, "max_length": 0}
+        if len(dataset) != len(rendered_splits[split]):
+            raise RuntimeError("TRL preprocessing changed example coverage")
+        for row, rendered in zip(dataset, rendered_splits[split], strict=True):
+            prompt_ids = tokenizer.encode(rendered["prompt"], add_special_tokens=False)
+            full_ids = tokenizer.encode(rendered["prompt"] + rendered["completion"], add_special_tokens=False)
+            if full_ids[:len(prompt_ids)] != prompt_ids or row["input_ids"] != full_ids:
+                raise RuntimeError("TRL changed rendered input tokens or completion boundary")
+            # TRL may retain completion_mask or materialize labels directly.
+            # Derive the expected boundary independently from the source prompt.
+            mask = [0] * len(prompt_ids) + [1] * (len(full_ids) - len(prompt_ids))
+            batch = trainer.data_collator([row])
+            ids = batch["input_ids"][0].tolist()
+            labels = batch["labels"][0].tolist()
+            attention = batch["attention_mask"][0].tolist()
+            for index, (token, label, active) in enumerate(zip(ids, labels, attention, strict=True)):
+                expected = token if active and index < len(mask) and mask[index] else -100
+                if label != expected:
+                    raise RuntimeError(f"{split}: prompt/completion loss-mask mismatch")
+            targets = [label for label in labels if label != -100]
+            if not targets or targets.count(tokenizer.eos_token_id) != 1:
+                raise RuntimeError(f"{split}: EOS target is missing, duplicated, or truncated")
+            if tokenizer.decode(targets[targets.index(tokenizer.eos_token_id) + 1:], skip_special_tokens=False).strip():
+                raise RuntimeError(f"{split}: substantive target text after EOS")
+            parse_local_tool_call(tokenizer.decode(targets, skip_special_tokens=False))
+            counts["rows"] += 1
+            counts["masked_prompt_tokens"] += len(ids) - len(targets)
+            counts["supervised_tokens"] += len(targets)
+            counts["max_length"] = max(counts["max_length"], len(ids))
+        report["splits"][split] = counts
+    report["passed"] = True
+    return report
+
+
 def _adapter_sha256(path: str | Path) -> str | None:
     adapter = Path(path) / "adapter_model.safetensors"
     if not adapter.is_file():
@@ -168,6 +227,50 @@ def _adapter_sha256(path: str | Path) -> str | None:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def validate_source_snapshot_manifest(path: Path, repo_root: Path) -> dict:
+    """Verify a hash-locked execution copy when the remote has no Git metadata."""
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if (
+        payload.get("schema_version")
+        not in {"h006-source-snapshot.v1", "internal-sft-source-snapshot.v1"}
+        or payload.get("status") != "frozen_internal_run_input"
+        or not re.fullmatch(
+            r"[0-9a-f]{40}", str(payload.get("origin_git_commit") or "")
+        )
+        or payload.get("promotion_eligible") is not False
+        or payload.get("online_replacement_authorized") is not False
+    ):
+        raise ValueError("invalid source snapshot contract")
+    root = repo_root.resolve()
+    code_files = payload.get("code_files")
+    if not isinstance(code_files, dict) or not code_files:
+        raise ValueError("source snapshot has no code files")
+    for relative, expected in code_files.items():
+        target = (root / relative).resolve()
+        if not target.is_relative_to(root) or not target.is_file():
+            raise ValueError("source snapshot path escapes or is missing")
+        actual = hashlib.sha256(target.read_bytes()).hexdigest()
+        if actual != expected:
+            raise ValueError(f"source snapshot hash mismatch: {relative}")
+    dataset = Path(str(payload.get("dataset_dir") or "")).resolve()
+    dataset_files = payload.get("dataset_files")
+    if not isinstance(dataset_files, dict) or not dataset_files:
+        raise ValueError("source snapshot has no dataset files")
+    for relative, expected in dataset_files.items():
+        target = (dataset / relative).resolve()
+        if not target.is_relative_to(dataset) or not target.is_file():
+            raise ValueError("dataset snapshot path escapes or is missing")
+        actual = hashlib.sha256(target.read_bytes()).hexdigest()
+        if actual != expected:
+            raise ValueError(f"dataset snapshot hash mismatch: {relative}")
+    return {
+        "manifest_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        "origin_git_commit": payload["origin_git_commit"],
+        "code_files": len(code_files),
+        "dataset_files": len(dataset_files),
+    }
 
 
 def main() -> int:
@@ -186,6 +289,12 @@ def main() -> int:
     parser.add_argument("--max-length", type=int, default=2048)
     parser.add_argument("--epochs", type=float, default=2.0)
     parser.add_argument("--learning-rate", type=float, default=2e-4)
+    parser.add_argument(
+        "--optim",
+        default="adamw_torch",
+        choices=("adamw_torch", "paged_adamw_8bit"),
+        help="Explicit optimizer implementation recorded in the run manifest.",
+    )
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--gradient-accumulation", type=int, default=16)
     parser.add_argument("--lora-r", type=int, default=16)
@@ -237,6 +346,17 @@ def main() -> int:
         help="Optional deterministic validation prefix used only for smoke runs.",
     )
     parser.add_argument("--preflight-only", action="store_true")
+    parser.add_argument(
+        "--external-test-evaluation",
+        action="store_true",
+        help=(
+            "Allow an empty local test.jsonl for an internal-only run whose frozen "
+            "holdout is evaluated outside Trainer. Never grants promotion eligibility."
+        ),
+    )
+    parser.add_argument("--source-equal-loss", action="store_true")
+    parser.add_argument("--source-lineage", type=Path)
+    parser.add_argument("--source-snapshot-manifest", type=Path)
     parser.add_argument(
         "--quarantine",
         action="store_true",
@@ -295,9 +415,30 @@ def main() -> int:
         "must stay reproducible from a git commit.",
     )
     args = parser.parse_args()
-    git_commit = require_git_commit(
-        parser, REPO_ROOT, allow_unknown=args.allow_unknown_git_commit
-    )
+    if args.source_equal_loss and (
+        args.batch_size != 1
+        or int(os.environ.get("WORLD_SIZE", "1")) != 1
+        or args.max_train_examples
+        or args.max_eval_examples
+        or not args.source_lineage
+        or not args.source_lineage.is_file()
+    ):
+        parser.error(
+            "source-equal v1 requires batch size 1, one process, complete splits and --source-lineage"
+        )
+    if args.source_snapshot_manifest:
+        try:
+            source_snapshot = validate_source_snapshot_manifest(
+                args.source_snapshot_manifest, REPO_ROOT
+            )
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            parser.error(str(exc))
+        git_commit = f"snapshot:{source_snapshot['manifest_sha256']}"
+    else:
+        source_snapshot = None
+        git_commit = require_git_commit(
+            parser, REPO_ROOT, allow_unknown=args.allow_unknown_git_commit
+        )
     if args.termination_token_weight < 1.0:
         parser.error("--termination-token-weight must be at least 1.0")
     if args.action_token_weight < 1.0:
@@ -327,6 +468,7 @@ def main() -> int:
         args.dataset_dir,
         minimum_train_examples=minimum,
         require_dependencies=not args.preflight_only,
+        require_test_split=not args.external_test_evaluation,
     )
     print(report.model_dump_json(indent=2))
     from transformers import AutoTokenizer
@@ -341,9 +483,24 @@ def main() -> int:
         max_length=args.max_length,
     )
     print(model_preflight.model_dump_json(indent=2))
-    boundary_preflight = preflight_sft_termination_boundaries(args.dataset_dir, tokenizer)
+    boundary_preflight = preflight_sft_termination_boundaries(
+        args.dataset_dir, tokenizer
+    )
     print(boundary_preflight.model_dump_json(indent=2))
     data_errors = [error for error in report.errors if "DEPENDENCIES" not in error]
+    source_weight_reports = {}
+    if args.source_equal_loss:
+        source_lineage = load_jsonl(args.source_lineage)
+        for name, split in (("train", "train"), ("validation", "train-shadow")):
+            _, source_weight_reports[name] = source_equal_weights(
+                load_jsonl(args.dataset_dir / f"{name}.jsonl"),
+                source_lineage,
+                split=split,
+            )
+        source_weight_reports["lineage_sha256"] = hashlib.sha256(
+            args.source_lineage.read_bytes()
+        ).hexdigest()
+        print(json.dumps({"source_weighting": source_weight_reports}, indent=2))
     if args.preflight_only:
         return (
             0
@@ -374,6 +531,7 @@ def main() -> int:
         action_token_weight: float = 1.0
         rationale_token_sequences: tuple[tuple[int, ...], ...] = ()
         rationale_token_weight: float = 1.0
+        source_equal_loss: bool = False
 
         def torch_call(self, examples):
             batch = super().torch_call(examples)
@@ -397,6 +555,11 @@ def main() -> int:
                 self.rationale_token_weight,
             )
             batch["loss_weights"] = weights
+            if self.source_equal_loss:
+                batch["source_weights"] = torch.tensor(
+                    [item["source_weight"] for item in examples],
+                    dtype=torch.float32,
+                )
             return batch
 
     class BoundaryWeightedSFTTrainer(SFTTrainer):
@@ -420,19 +583,12 @@ def main() -> int:
             del num_items_in_batch
             labels = inputs.pop("labels")
             weights = inputs.pop("loss_weights")
+            source_weights = inputs.pop("source_weights", None)
             inputs["use_cache"] = False
             outputs = model(**inputs)
-            shift_logits = outputs.logits[..., :-1, :].contiguous()
-            shift_labels = labels[..., 1:].contiguous()
-            shift_weights = weights[..., 1:].to(shift_logits.device)
-            per_token_loss = torch.nn.functional.cross_entropy(
-                shift_logits.view(-1, shift_logits.size(-1)),
-                shift_labels.view(-1),
-                reduction="none",
-                ignore_index=-100,
-            ).view_as(shift_labels)
-            denominator = shift_weights.sum().clamp_min(1.0)
-            loss = (per_token_loss * shift_weights).sum() / denominator
+            loss = completion_weighted_loss(
+                outputs.logits, labels, weights, source_weights
+            )
             return (loss, outputs) if return_outputs else loss
 
     class StratifiedSFTTrainer(SFTTrainer):
@@ -531,7 +687,7 @@ def main() -> int:
     )
     rationale_token_sequences = tuple(
         tuple(tokenizer.encode(prefix, add_special_tokens=False))
-        for action in ("abort", "propose_tradeoff", "retry_solve")
+        for action in ("abort", "propose_tradeoff")
         for prefix in repair_reason_rationale_prefixes(action)
     )
     rationale_weight_preflight = preflight_rationale_sequence_coverage(
@@ -548,6 +704,22 @@ def main() -> int:
         tokenizer,
         chat_template_kwargs=AGENT_CHAT_TEMPLATE_KWARGS,
     )
+    # The canonical chat template permits whitespace after EOS. TRL's string
+    # path appends EOS unless the string ends with it, which otherwise creates
+    # a second supervised EOS. Local generation stops at the first EOS.
+    for rendered in [*train_rows, *validation_rows]:
+        rendered["completion"] = rendered["completion"].rstrip()
+        if not rendered["completion"].endswith(tokenizer.eos_token):
+            raise RuntimeError("Rendered tool completion does not end with EOS")
+    if args.source_equal_loss:
+        for raw, rendered, split in (
+            (raw_train_rows, train_rows, "train"),
+            (raw_validation_rows, validation_rows, "train-shadow"),
+        ):
+            weights, _ = source_equal_weights(raw, source_lineage, split=split)
+            for original, row, weight in zip(raw, rendered, weights, strict=True):
+                row["source_weight"] = weight
+                row["source_record_id"] = original["example_id"]
     train_dataset = Dataset.from_list(train_rows)
     eval_dataset = Dataset.from_list(validation_rows)
     report_to = ["mlflow"] if os.environ.get("MLFLOW_TRACKING_URI") else []
@@ -556,6 +728,7 @@ def main() -> int:
         num_train_epochs=args.epochs,
         max_steps=args.max_steps,
         learning_rate=args.learning_rate,
+        optim=args.optim,
         per_device_train_batch_size=args.batch_size,
         per_device_eval_batch_size=args.batch_size,
         gradient_accumulation_steps=args.gradient_accumulation,
@@ -563,8 +736,11 @@ def main() -> int:
         max_length=args.max_length,
         completion_only_loss=True,
         packing=False,
+        remove_unused_columns=not args.source_equal_loss,
         logging_steps=args.logging_steps,
-        eval_strategy="steps" if args.eval_during_smoke or args.max_steps <= 0 else "no",
+        eval_strategy="steps"
+        if args.eval_during_smoke or args.max_steps <= 0
+        else "no",
         eval_steps=args.eval_steps,
         save_strategy="steps",
         save_steps=args.save_steps,
@@ -580,7 +756,8 @@ def main() -> int:
         run_name=f"agent-policy-sft-{report.dataset_version}",
     )
     weighted_sft = (
-        args.termination_token_weight > 1.0
+        args.source_equal_loss
+        or args.termination_token_weight > 1.0
         or args.action_token_weight > 1.0
         or args.rationale_token_weight > 1.0
     )
@@ -606,6 +783,7 @@ def main() -> int:
             action_token_weight=args.action_token_weight,
             rationale_token_sequences=rationale_token_sequences,
             rationale_token_weight=args.rationale_token_weight,
+            source_equal_loss=args.source_equal_loss,
         )
     callbacks = (
         [StopAfterStepsCallback(args.stop_after_steps)]
@@ -622,12 +800,43 @@ def main() -> int:
         data_collator=data_collator,
         callbacks=callbacks,
     )
+    if args.source_equal_loss:
+        for dataset, expected in (
+            (trainer.train_dataset, train_rows),
+            (trainer.eval_dataset, validation_rows),
+        ):
+            expected_weights = {
+                row["source_record_id"]: row["source_weight"] for row in expected
+            }
+            actual_weights = dict(
+                zip(dataset["source_record_id"], dataset["source_weight"], strict=True)
+            )
+            if len(dataset) != len(expected) or actual_weights != expected_weights:
+                raise RuntimeError(
+                    "TRL preprocessing changed source-equal dataset coverage"
+                )
+        trainer.loss_normalization_contract = SOURCE_EQUAL_LOSS_CONTRACT
+    trainable_parameters = [
+        name for name, parameter in model.named_parameters() if parameter.requires_grad
+    ]
+    # PEFT expands packed Params4bit storage to logical parameter counts.
+    # Summing .numel() directly undercounts the quantized base model.
+    trainable_parameter_count, total_parameter_count = trainer.model.get_nb_trainable_parameters()
+    mask_audit = audit_trainer_completion_masks(trainer, tokenizer, {"train": train_rows, "validation": validation_rows})
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+    (args.output_dir / "completion-mask-audit.json").write_text(json.dumps(mask_audit, indent=2), encoding="utf-8")
+    probe_name, probe = next((name, p) for name, p in trainer.model.named_parameters() if p.requires_grad and "lora_B" in name)
+    probe_before = probe.detach().float().cpu().clone()
     train_result = trainer.train(
         resume_from_checkpoint=(
             str(args.resume_from_checkpoint) if args.resume_from_checkpoint else None
         )
     )
     eval_metrics = trainer.evaluate()
+    probe_after = probe.detach().float().cpu()
+    update_audit = {"parameter": probe_name, "l2_delta": float((probe_after - probe_before).norm()), "finite": bool(torch.isfinite(probe_after).all())}
+    if not update_audit["finite"] or update_audit["l2_delta"] <= 0:
+        raise RuntimeError("SFT did not produce a finite LoRA parameter update")
     trainer.save_model(str(args.output_dir))
     tokenizer.save_pretrained(str(args.output_dir))
     source_adapter_sha256_after = _adapter_sha256(args.model)
@@ -637,22 +846,42 @@ def main() -> int:
         "status": "trained",
         "candidate_status": "quarantine_pending_agent_loop_eval",
         "promotion_eligible": False,
+        "external_test_evaluation": args.external_test_evaluation,
         "quarantine_requested": args.quarantine,
-        "run_scope": "smoke" if args.max_steps > 0 or args.allow_small_dataset else "formal",
+        "run_scope": "smoke"
+        if args.max_steps > 0 or args.allow_small_dataset
+        else "formal",
         "base_model": args.model,
         "tokenizer": tokenizer_source,
         "continued_from_adapter": continued_from_adapter,
+        "adapter_config": (
+            peft_config.to_dict() if continued_from_adapter else lora.to_dict()
+        ),
+        "trainable_parameters": {
+            "names": trainable_parameters,
+            "trainable_count": trainable_parameter_count,
+            "total_count": total_parameter_count,
+            "trainable_fraction": trainable_parameter_count / total_parameter_count,
+        },
         "dataset_version": report.dataset_version,
         "git_commit": git_commit,
+        "source_snapshot": source_snapshot,
         "seed": args.seed,
         "quantization": "nf4-double-quant",
         "model_preflight": model_preflight.model_dump(mode="json"),
+        "completion_mask_audit": mask_audit,
+        "parameter_update_audit": update_audit,
         "termination_boundary_preflight": boundary_preflight.model_dump(mode="json"),
         "termination_token_weight": args.termination_token_weight,
         "action_token_weight": args.action_token_weight,
         "rationale_token_weight": args.rationale_token_weight,
         "rationale_weight_preflight": rationale_weight_preflight,
-        "loss_normalization_contract": LOSS_NORMALIZATION_CONTRACT,
+        "loss_normalization_contract": (
+            SOURCE_EQUAL_LOSS_CONTRACT
+            if args.source_equal_loss
+            else LOSS_NORMALIZATION_CONTRACT
+        ),
+        "source_weighting": source_weight_reports,
         "stratified_action_batches": args.stratified_action_batches,
         "resume_from_checkpoint": (
             str(args.resume_from_checkpoint) if args.resume_from_checkpoint else None
@@ -666,6 +895,7 @@ def main() -> int:
             "max_length": args.max_length,
             "epochs": args.epochs,
             "learning_rate": args.learning_rate,
+            "optimizer": args.optim,
             "batch_size": args.batch_size,
             "gradient_accumulation": args.gradient_accumulation,
             "effective_batch_size": args.batch_size * args.gradient_accumulation,
@@ -680,6 +910,10 @@ def main() -> int:
             "maximum_eval_examples": args.max_eval_examples,
             "completion_only_loss": True,
             "packing": False,
+        },
+        "runtime_versions": {
+            name: _package_version(name)
+            for name in ("transformers", "trl", "peft", "torch", "bitsandbytes")
         },
         "render_protocol": AGENT_RENDER_PROTOCOL_VERSION,
         "chat_template_sha256": AGENT_CHAT_TEMPLATE_SHA256,

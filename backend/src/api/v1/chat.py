@@ -50,6 +50,10 @@ logger = logging.getLogger(__name__)
 # across requests. Lazy-loading happens on first attachment parse.
 _attachment_parser = AttachmentParser()
 _IDEMPOTENCY_KEY_RE = re.compile(r"^[A-Za-z0-9._:-]{8,128}$")
+# Long enough to outlive any stream a slot can be held for (the route caps
+# `timeout` at 3600s and the slot key lives for timeout + 120s). If the index
+# itself expires the guard simply becomes laxer, never stricter.
+_SSE_INDEX_TTL = 2 * 60 * 60
 
 
 def get_attachment_parser() -> AttachmentParser:
@@ -126,17 +130,54 @@ def _sse_session_key(user_id: UUID, session_id: str) -> str:
     return f"sse:session:{user_id}:{session_id}"
 
 
+def _sse_index_key(user_id: UUID) -> str:
+    """Index of the slot keys this user may hold, so the count never scans Redis."""
+    return f"sse:index:{user_id}"
+
+
+async def _live_sse_slot_keys(user_id: UUID) -> list[str]:
+    """Return the user's slot keys that still have a TTL, pruning dead ones.
+
+    Deliberately not a keyspace ``SCAN``: ``SCAN`` walks the whole keyspace
+    regardless of how many keys this user owns, and this runs on the path that
+    opens a new conversation stream — with several conversations live per user
+    that becomes the most expensive thing the endpoint does. One ``MGET`` over
+    the user's own (bounded) index is O(slots), not O(keyspace).
+    """
+    index_key = _sse_index_key(user_id)
+    raw = await redis_client.get(index_key)
+    if not raw:
+        return []
+    try:
+        candidates = json.loads(raw)
+    except (TypeError, ValueError):
+        candidates = None
+    if not isinstance(candidates, list):
+        return []
+    keys = [item for item in candidates if isinstance(item, str) and item]
+    if not keys:
+        return []
+    values = await redis_client.mget(keys)
+    live = [key for key, value in zip(keys, values, strict=True) if value is not None]
+    if len(live) != len(keys):
+        await _write_sse_index(index_key, live)
+    return live
+
+
+async def _write_sse_index(index_key: str, keys: list[str]) -> None:
+    """Best-effort index maintenance: losing it only makes the guard laxer."""
+    try:
+        if keys:
+            await redis_client.set_json(index_key, keys, ttl=_SSE_INDEX_TTL)
+        else:
+            await redis_client.delete(index_key)
+    except Exception:
+        logger.debug("Failed to update SSE slot index %s", index_key, exc_info=True)
+
+
 async def _count_active_sse_sessions(user_id: UUID) -> int:
-    """Count live SSE session keys (each key has TTL — stale slots self-heal)."""
-    pattern = f"sse:session:{user_id}:*"
-    cursor = 0
-    total = 0
-    while True:
-        cursor, keys = await redis_client.scan(cursor, match=pattern, count=100)
-        total += len(keys)
-        if cursor == 0:
-            break
-    return total
+    """Count this user's live SSE conversation slots."""
+    return len(await _live_sse_slot_keys(user_id))
 
 
 async def _track_sse_connection(user_id: UUID, session_id: str, timeout: int) -> str:
@@ -147,26 +188,39 @@ async def _track_sse_connection(user_id: UUID, session_id: str, timeout: int) ->
     so frontend backoff/reconnect loops do not hit 429 spuriously.
     """
     key = _sse_session_key(user_id, session_id)
+    index_key = _sse_index_key(user_id)
     is_reconnect = await redis_client.get(key) is not None
     if not is_reconnect:
-        active = await _count_active_sse_sessions(user_id)
+        live = await _live_sse_slot_keys(user_id)
         limit = settings.rate_limit_max_concurrent_sse
         if settings.debug:
             limit = max(limit, 10)
-        if active >= limit:
+        if len(live) >= limit:
+            await _write_sse_index(index_key, live)
             raise RateLimitException(
                 "Too many concurrent SSE connections",
                 retry_after=30,
             )
+        await _write_sse_index(index_key, [*live, key])
     await redis_client.set(key, "1", ttl=timeout + 120)
     return key
 
 
-async def _release_sse_connection(key: str) -> None:
+async def _release_sse_connection(key: str, user_id: UUID | None = None) -> None:
     try:
         await redis_client.delete(key)
     except Exception:
         logger.debug("Failed to release SSE connection counter for %s", key)
+    if user_id is None:
+        return
+    # Drop the released slot from the user's index so a long-lived server does not
+    # accumulate dead entries between TTL expiries.
+    index_key = _sse_index_key(user_id)
+    try:
+        remaining = [item for item in await _live_sse_slot_keys(user_id) if item != key]
+        await _write_sse_index(index_key, remaining)
+    except Exception:
+        logger.debug("Failed to prune SSE slot index %s", index_key, exc_info=True)
 
 
 @router.get("/stream")
@@ -249,7 +303,7 @@ async def chat_stream(
                     await push_task
                 except asyncio.CancelledError:
                     pass
-            await _release_sse_connection(sse_key)
+            await _release_sse_connection(sse_key, user.id)
             schedule_disconnect_cleanup(
                 session_id,
                 str(user.id),

@@ -242,6 +242,38 @@ def _has_requested_poi_supply(items: list[dict[str, Any]], category: str | None)
     )
 
 
+def _candidate_matches_required(item: dict[str, Any], target: str) -> bool:
+    """Match a hard POI by identity or provider-backed exact-query provenance."""
+    target_identity = _normalize_poi_name(target)
+    if not target_identity:
+        return False
+    identities = [
+        _normalize_poi_name(item.get("name")),
+        *[
+            _normalize_poi_name(alias)
+            for alias in item.get("required_aliases") or []
+            if str(alias).strip()
+        ],
+    ]
+    return any(
+        identity and (target_identity in identity or identity in target_identity)
+        for identity in identities
+    )
+
+
+def _missing_required_pois(
+    items: list[dict[str, Any]], required_pois: list[str]
+) -> list[str]:
+    return [
+        target
+        for target in required_pois
+        if not any(
+            isinstance(item, dict) and _candidate_matches_required(item, target)
+            for item in items
+        )
+    ]
+
+
 def _merge_poi_candidates(
     first: list[dict[str, Any]], second: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
@@ -908,10 +940,18 @@ class ToolExecutor:
 
     async def _handle_search_pois(self, args: dict[str, Any]) -> ToolResult:
         keywords = args.get("keywords") or []
+        required_pois = list(
+            dict.fromkeys(
+                str(item).strip()
+                for item in (args.get("required_pois") or [])
+                if str(item).strip()
+            )
+        )
         city = canonical_city_name(args["city"])
         category = args.get("category")
         candidates = await self._search_local_pois(city, category=category)
-        if _has_requested_poi_supply(candidates, category):
+        missing_required = _missing_required_pois(candidates, required_pois)
+        if _has_requested_poi_supply(candidates, category) and not missing_required:
             return ToolResult(
                 data=_rank_poi_candidates(candidates, keywords),
                 data_source="built_in",
@@ -923,23 +963,27 @@ class ToolExecutor:
         # type and return restaurants for an attraction query, so validate the
         # normalized category before treating a non-empty payload as success.
         supply_category = category or "attraction"
-        amap = await self._search_amap_pois(
-            city,
-            keywords=keywords,
-            category=supply_category,
-        )
+        amap_kwargs: dict[str, Any] = {
+            "keywords": keywords,
+            "category": supply_category,
+        }
+        if missing_required:
+            amap_kwargs["required_pois"] = missing_required
+        amap = await self._search_amap_pois(city, **amap_kwargs)
         candidates = _merge_poi_candidates(candidates, amap)
-        if _has_requested_poi_supply(candidates, category):
+        missing_required = _missing_required_pois(candidates, required_pois)
+        if _has_requested_poi_supply(candidates, category) and not missing_required:
             return ToolResult(
                 data=_rank_poi_candidates(candidates, keywords),
                 data_source="api",
                 confidence=0.9,
             )
 
+        fallback_keywords = list(dict.fromkeys([*missing_required, *keywords]))
         fallback_supply = await self._poi.run(
             {
                 "city": city,
-                "keywords": keywords,
+                "keywords": fallback_keywords,
                 "category": supply_category,
             }
         )
@@ -1043,9 +1087,13 @@ class ToolExecutor:
 
     @staticmethod
     async def _search_amap_pois(
-        city: str, *, keywords: list[str], category: str | None = None
+        city: str,
+        *,
+        keywords: list[str],
+        category: str | None = None,
+        required_pois: list[str] | None = None,
     ) -> list[dict[str, Any]]:
-        """Use the configured map provider when the canonical store misses."""
+        """Use broad supply plus exact-query provenance for hard POI constraints."""
         if not city or not settings.amap_key:
             return []
         from data.collectors.amap import AmapCollector
@@ -1059,16 +1107,51 @@ class ToolExecutor:
         collector = AmapCollector(settings.amap_key)
         try:
             if category:
-                raw_items = await collector.search_pois(
-                    city,
-                    keywords=(
-                        " ".join(str(item) for item in keywords[:3])
-                        if category != "attraction"
-                        else ""
-                    ),
-                    types=type_map[category],
-                    limit=30,
+                exact_targets = (
+                    list(dict.fromkeys(required_pois or []))
+                    if category == "attraction"
+                    else []
                 )
+                calls = [
+                    collector.search_pois(
+                        city,
+                        keywords=(
+                            " ".join(str(item) for item in keywords[:3])
+                            if category != "attraction"
+                            else ""
+                        ),
+                        types=type_map[category],
+                        limit=20 if exact_targets else 30,
+                    ),
+                    *[
+                        collector.search_pois(
+                            city,
+                            keywords=target,
+                            types=type_map[category],
+                            limit=5,
+                        )
+                        for target in exact_targets
+                    ],
+                ]
+                batches = await asyncio.gather(*calls, return_exceptions=True)
+                raw_batches: list[tuple[str | None, list[Any]]] = []
+                broad = batches[0]
+                if isinstance(broad, Exception):
+                    logger.warning("AMap broad POI search failed for %s: %s", city, broad)
+                else:
+                    raw_batches.append((None, broad))
+                for target, batch in zip(exact_targets, batches[1:]):
+                    if isinstance(batch, Exception):
+                        logger.warning(
+                            "AMap exact POI search failed for %s/%s: %s",
+                            city,
+                            target,
+                            batch,
+                        )
+                    else:
+                        # Exact-query batches precede broad supply, so the
+                        # required entity survives the bounded candidate slice.
+                        raw_batches.insert(0, (target, batch))
             else:
                 attractions, restaurants = await asyncio.gather(
                     collector.search_pois(
@@ -1081,33 +1164,39 @@ class ToolExecutor:
                         limit=10,
                     ),
                 )
-                raw_items = [*attractions, *restaurants]
+                raw_batches = [(None, [*attractions, *restaurants])]
         except Exception as exc:
             logger.warning("AMap POI search failed for %s: %s", city, exc)
             return []
         finally:
             await collector.close()
-        return [
-            {
-                "id": f"amap:{item.category}:{index}:{item.name}",
-                "name": item.name,
-                "category": item.category,
-                "score": 0.7,
-                "location": {"lat": item.lat, "lng": item.lng},
-                "lat": item.lat,
-                "lng": item.lng,
-                "tags": item.tags,
-                "ticket_price": float(item.ticket_price or 0),
-                "open_time": item.open_time or "08:00",
-                "close_time": item.close_time or "18:00",
-                "duration_minutes": 120 if item.category == "attraction" else 90,
-                "recommended_hours": "2" if item.category == "attraction" else "1.5",
-                "data_source": "api",
-                "confidence": 0.9,
-                "is_fallback": False,
-            }
-            for index, item in enumerate(raw_items[:30])
-        ]
+        converted: list[dict[str, Any]] = []
+        for exact_target, raw_items in raw_batches:
+            for index, item in enumerate(raw_items):
+                normalized_name = _normalize_poi_name(item.name)
+                payload: dict[str, Any] = {
+                    "id": f"amap:{item.category}:{normalized_name}",
+                    "name": item.name,
+                    "category": item.category,
+                    "score": 0.7,
+                    "location": {"lat": item.lat, "lng": item.lng},
+                    "lat": item.lat,
+                    "lng": item.lng,
+                    "tags": item.tags,
+                    "ticket_price": float(item.ticket_price or 0),
+                    "open_time": item.open_time or "08:00",
+                    "close_time": item.close_time or "18:00",
+                    "duration_minutes": 120 if item.category == "attraction" else 90,
+                    "recommended_hours": "2" if item.category == "attraction" else "1.5",
+                    "data_source": "api",
+                    "confidence": 0.9,
+                    "is_fallback": False,
+                }
+                if exact_target and index == 0:
+                    payload["required_aliases"] = [exact_target]
+                    payload["match_provenance"] = "provider_exact_query_rank_1"
+                converted.append(payload)
+        return _merge_poi_candidates([], converted)[:30]
 
     async def _handle_get_route_matrix(self, args: dict[str, Any]) -> ToolResult:
         from planner.preprocessing.transport_selector import TransportSelector

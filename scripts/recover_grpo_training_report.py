@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from agentic.grpo_training import VERIFIED_DECISION_STATE_REPLAY_CONTRACT
+
 import argparse
 import ast
 import hashlib
@@ -24,7 +26,6 @@ from agentic.grpo_training import (  # noqa: E402
 )
 from agentic.reward import RewardConfig  # noqa: E402
 from agentic.trl_environment import (  # noqa: E402
-    VERIFIED_DECISION_STATE_REPLAY_CONTRACT,
     build_trl_environment_factories,
 )
 
@@ -38,7 +39,9 @@ def _sha256(path: Path) -> str:
 
 
 def _final_train_metrics(log_path: Path) -> dict[str, Any]:
-    for line in reversed(log_path.read_text(encoding="utf-8", errors="replace").splitlines()):
+    for line in reversed(
+        log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+    ):
         if line.startswith("{'train_runtime':"):
             parsed = ast.literal_eval(line)
             if isinstance(parsed, dict):
@@ -49,7 +52,9 @@ def _final_train_metrics(log_path: Path) -> dict[str, Any]:
 def _latest_eval_metrics(log_history: list[dict[str, Any]]) -> dict[str, Any]:
     for item in reversed(log_history):
         if item.get("eval_runtime") is not None and item.get("eval_reward") is not None:
-            return {key: value for key, value in item.items() if key.startswith("eval_")}
+            return {
+                key: value for key, value in item.items() if key.startswith("eval_")
+            }
     return {}
 
 
@@ -89,7 +94,9 @@ def main() -> int:
     args = parser.parse_args()
     eval_num_generations = args.num_generations_eval or args.num_generations
     if args.num_generations < 4 or eval_num_generations < 4:
-        raise ValueError("GRPO train and eval generation groups must both be at least 4")
+        raise ValueError(
+            "GRPO train and eval generation groups must both be at least 4"
+        )
     effective_batch = args.batch_size * args.gradient_accumulation
     if effective_batch % args.num_generations != 0:
         raise ValueError(
@@ -123,7 +130,9 @@ def main() -> int:
 
     from transformers import AutoTokenizer
 
-    tokenizer = AutoTokenizer.from_pretrained(args.source_model, trust_remote_code=False)
+    tokenizer = AutoTokenizer.from_pretrained(
+        args.source_model, trust_remote_code=False
+    )
     train_corpus = load_grpo_corpus(args.corpus_dir / "train.jsonl")
     validation_corpus = load_grpo_corpus(args.corpus_dir / "validation.jsonl")
     rollout_contracts = sorted(
@@ -167,7 +176,9 @@ def main() -> int:
         "turn_credit_totals": None,
         "turn_credit_gate_errors": [],
         "source_model": str(args.source_model),
-        "continued_from_sft_adapter": (args.source_model / "adapter_config.json").is_file(),
+        "continued_from_sft_adapter": (
+            args.source_model / "adapter_config.json"
+        ).is_file(),
         "git_commit": "unknown",
         "seed": args.seed,
         "num_generations": args.num_generations,

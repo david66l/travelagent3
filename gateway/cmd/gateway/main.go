@@ -85,9 +85,9 @@ func main() {
 		Format: "{time_rfc3339} method=${method}, uri=${uri}, status=${status}, latency=${latency_human}, request_id=${header:X-Request-ID}\n",
 	}))
 	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
-		AllowOrigins:     []string{"http://localhost:3000", "http://127.0.0.1:3000"},
+		AllowOrigins:     cfg.CORSAllowOrigins,
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Authorization", "Content-Type", "X-Device-Fingerprint", "X-Request-ID"},
+		AllowHeaders:     cfg.CORSAllowHeaders,
 		AllowCredentials: true,
 	}))
 	e.Use(gwMiddleware.RequestID())

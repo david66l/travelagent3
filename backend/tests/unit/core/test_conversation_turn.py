@@ -1,12 +1,32 @@
 """Unit tests for conversation_turn orchestration."""
 
+import asyncio
+from contextvars import ContextVar
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from core.conversation_turn import process_user_turn, retain_agent_semantics_from_previous_turn
+from core.conversation_turn import (
+    _trace_demand_parser,
+    process_user_turn,
+    retain_agent_semantics_from_previous_turn,
+)
 from core.conversation_state import default_conversation_state
+from core.inference_metrics import InferenceMetrics
 from models.travel_slots import ConstraintFlexibilityContract, SlotParseOutput, TravelSlots
+
+
+class ContextMetricProbe:
+    def __init__(self) -> None:
+        self._metrics = ContextVar("intent_metrics_probe", default=None)
+
+    @property
+    def last_request_metrics(self):
+        return self._metrics.get()
+
+    @last_request_metrics.setter
+    def last_request_metrics(self, value):
+        self._metrics.set(value)
 
 
 def _make_parsed(**overrides) -> SlotParseOutput:
@@ -20,6 +40,68 @@ def _make_parsed(**overrides) -> SlotParseOutput:
     }
     defaults.update(overrides)
     return SlotParseOutput(**defaults)
+
+
+@pytest.mark.asyncio
+async def test_demand_parser_returns_inference_metrics_across_async_context_boundary():
+    parsed = _make_parsed(slots=TravelSlots(destination="成都", travel_days=3))
+    metrics = InferenceMetrics(
+        model="intent-model",
+        backend="cloud-openai-compatible",
+        task_type="intent",
+    )
+
+    probe = ContextMetricProbe()
+
+    async def fake_parse(*_args, **_kwargs):
+        probe.last_request_metrics = metrics
+        return parsed
+
+    with (
+        patch("core.conversation_turn.llm", probe),
+        patch("core.conversation_turn.DemandParserAgent.parse", new=fake_parse),
+    ):
+        try:
+            actual, inference = await asyncio.create_task(
+                _trace_demand_parser("成都3天", [], None, {})
+            )
+            assert probe.last_request_metrics is None
+        finally:
+            probe.last_request_metrics = None
+
+    assert actual is parsed
+    assert inference is not None
+    assert inference["model"] == "intent-model"
+    assert inference["backend"] == "cloud-openai-compatible"
+
+
+@pytest.mark.asyncio
+async def test_demand_parser_keeps_concurrent_inference_metrics_isolated():
+    probe = ContextMetricProbe()
+
+    async def fake_parse(_self, content, *_args, **_kwargs):
+        probe.last_request_metrics = InferenceMetrics(
+            model=f"intent-{content}",
+            backend="cloud-openai-compatible",
+            task_type="intent",
+        )
+        await asyncio.sleep(0)
+        return _make_parsed(slots=TravelSlots(destination=content, travel_days=2))
+
+    with (
+        patch("core.conversation_turn.llm", probe),
+        patch("core.conversation_turn.DemandParserAgent.parse", new=fake_parse),
+    ):
+        first, second = await asyncio.gather(
+            _trace_demand_parser("上海", [], None, {}),
+            _trace_demand_parser("成都", [], None, {}),
+        )
+
+    assert first[0].slots.destination == "上海"
+    assert first[1]["model"] == "intent-上海"
+    assert second[0].slots.destination == "成都"
+    assert second[1]["model"] == "intent-成都"
+    assert probe.last_request_metrics is None
 
 
 def test_slot_filling_retains_model_derived_agent_semantics_only_when_omitted():
@@ -73,8 +155,13 @@ async def test_process_user_turn_parses_and_updates_state():
     parsed = _make_parsed(
         slots=TravelSlots(destination="成都", travel_days=3),
     )
+    inference_metrics = {
+        "model": "deepseek-v4-flash",
+        "backend": "cloud-openai-compatible",
+    }
     with patch(
-        "core.conversation_turn.DemandParserAgent.parse", new=AsyncMock(return_value=parsed)
+        "core.conversation_turn._trace_demand_parser",
+        new=AsyncMock(return_value=(parsed, inference_metrics)),
     ):
         with patch(
             "core.conversation_turn.ProfileRecallAgent.recall",
@@ -93,6 +180,8 @@ async def test_process_user_turn_parses_and_updates_state():
             result = await process_user_turn(state, "成都3天")
 
     assert result.intent == "generate_itinerary"
+    assert result.inference_metrics == inference_metrics
+    assert "inference_metrics" not in result.model_dump(mode="json")
     assert state["last_intent"] == "generate_itinerary"
     assert state["profile"]["trip"]["destination"] == "成都"
     assert state["profile"]["trip"]["travel_days"] == 3

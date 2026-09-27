@@ -24,7 +24,6 @@ from agentic.grpo_training import (  # noqa: E402
     AUTHORITY_PAYLOAD_ENCODING,
     DEFAULT_POLICY_DRIVEN_TOOL_ITERATIONS,
     GRPOCorpusRow,
-    MIN_POLICY_DRIVEN_TOOL_ITERATIONS,
     VERIFIER_REPAIR_DECISION_SCHEMA_VERSION,
     decode_authority_payload,
     load_grpo_corpus,
@@ -92,6 +91,12 @@ def boundary_stratum(row: GRPOCorpusRow) -> tuple[str, str] | None:
 def decision_loop_metadata(row: GRPOCorpusRow) -> dict[str, Any]:
     """Return the controlled Stage-3 decision-loop factors, when present."""
     metadata = row.snapshot.hidden_test_facts.get("decision_loop_curriculum")
+    return metadata if isinstance(metadata, dict) else {}
+
+
+def external_evidence_metadata(row: GRPOCorpusRow) -> dict[str, Any]:
+    """Return the controlled H008 external-evidence target, when present."""
+    metadata = row.snapshot.hidden_test_facts.get("h008_external_evidence")
     return metadata if isinstance(metadata, dict) else {}
 
 
@@ -201,12 +206,15 @@ def transport_trl_environment_rows(
         )
         if isinstance(decision_state, dict) and len(item["prompt"]) > 2:
             if item["prompt"] != decision_state.get("prompt_messages"):
-                raise RuntimeError("Arrow transport changed the authoritative replay prompt")
+                raise RuntimeError(
+                    "Arrow transport changed the authoritative replay prompt"
+                )
     task_feature = dataset.features.get("task")
     snapshot_feature = dataset.features.get("snapshot")
-    if getattr(task_feature, "dtype", None) != "string" or getattr(
-        snapshot_feature, "dtype", None
-    ) != "string":
+    if (
+        getattr(task_feature, "dtype", None) != "string"
+        or getattr(snapshot_feature, "dtype", None) != "string"
+    ):
         raise RuntimeError("Arrow authority payload features must be string")
     return transported, {
         "schema_version": "canonical-grpo-audit-transport.v1",
@@ -262,8 +270,7 @@ async def audit(args: argparse.Namespace) -> dict[str, Any]:
         rows = [
             row
             for row in rows
-            if decision_loop_metadata(row).get("target_position")
-            in requested_positions
+            if decision_loop_metadata(row).get("target_position") in requested_positions
         ]
     if args.verifier_repair_targets:
         requested_targets = set(args.verifier_repair_targets)
@@ -379,7 +386,9 @@ async def audit(args: argparse.Namespace) -> dict[str, Any]:
                     rollout.initial_state_fingerprint
                     != transported_row["initial_state_fingerprint"]
                 ):
-                    raise RuntimeError("audit rollout changed the initial-state fingerprint")
+                    raise RuntimeError(
+                        "audit rollout changed the initial-state fingerprint"
+                    )
                 rollout_latency_ms = (time.perf_counter() - rollout_started) * 1000
                 rollouts.append(rollout)
                 rollout_rows.append(
@@ -388,6 +397,7 @@ async def audit(args: argparse.Namespace) -> dict[str, Any]:
                         "family": task_family(row),
                         "city": row.task.slots.get("destination"),
                         "decision_loop": decision_loop_metadata(row),
+                        "external_evidence": external_evidence_metadata(row),
                         "verifier_repair": verifier_repair_metadata(row),
                         "sample_index": sample_index,
                         "rollout_seed": rollout_seed,
@@ -414,9 +424,7 @@ async def audit(args: argparse.Namespace) -> dict[str, Any]:
                         ),
                     }
                 )
-            decisions.append(
-                auditor.evaluate(f"audit:{row.task.task_id}", rollouts)
-            )
+            decisions.append(auditor.evaluate(f"audit:{row.task.task_id}", rollouts))
             print(
                 f"[{task_index}/{len(selected)}] {row.task.task_id} "
                 f"family={task_family(row)} rewards="
@@ -539,6 +547,11 @@ async def audit(args: argparse.Namespace) -> dict[str, Any]:
         "decisions": [item.model_dump(mode="json") for item in decisions],
         "priorities": [item.model_dump(mode="json") for item in priorities],
         "behavior_gate": behavior_gate_metrics(rollout_rows),
+        "behavior_gate_semantics": (
+            "capability reward gate; not complete end-to-end task success"
+        ),
+        "target_decision_gate": target_decision_metrics(rollout_rows),
+        "episode_outcomes": episode_outcome_metrics(rollout_rows),
         "decision_loop_breakdown": decision_loop_behavior_metrics(rollout_rows),
         "verifier_repair_breakdown": verifier_repair_behavior_metrics(rollout_rows),
         "rollout_latency": rollout_latency_metrics(rollout_rows),
@@ -569,7 +582,7 @@ async def rollout_trl_history(
     row: GRPOCorpusRow,
     policy: LocalCheckpointAgentPolicy,
     *,
-    execution_mode: GRPOExecutionMode = "policy_driven",
+    execution_mode: GRPOExecutionMode = "react",
     environment_factories: dict[str, Any] | None = None,
     max_tool_calling_iterations: int = DEFAULT_POLICY_DRIVEN_TOOL_ITERATIONS,
     policy_errors: list[dict[str, Any]] | None = None,
@@ -584,7 +597,9 @@ async def rollout_trl_history(
         transported_row = transport_trl_environment_rows([row])[0][0]
     trl_row = to_trl_environment_rows([row])[0]
     if transported_row != trl_row:
-        raise RuntimeError("audit rollout did not receive the canonical transported row")
+        raise RuntimeError(
+            "audit rollout did not receive the canonical transported row"
+        )
     reset_prompt = transported_row["prompt"]
     initial = environment.reset(**transported_row)
     if transported_row["rollout_contract"] == "verified_decision_state_replay.v1":
@@ -633,8 +648,17 @@ async def rollout_trl_history(
                             "raw_output": exc.raw_output,
                         }
                     )
+                generation_audit = getattr(policy, "last_generation_audit", None) or {}
+                failed_metrics = generation_audit.get("inference_metrics")
+                if policy_inference_metrics is not None and isinstance(
+                    failed_metrics, dict
+                ):
+                    policy_inference_metrics.append(dict(failed_metrics))
                 break
-            if action.inference_metrics is not None and policy_inference_metrics is not None:
+            if (
+                action.inference_metrics is not None
+                and policy_inference_metrics is not None
+            ):
                 policy_inference_metrics.append(
                     action.inference_metrics.model_dump(mode="json")
                 )
@@ -665,9 +689,7 @@ async def rollout_trl_history(
                 )
             environment._set_pending_model_action_audit(action)
             result = method(**action.arguments)
-            messages.append(
-                {"role": "tool", "name": action.action, "content": result}
-            )
+            messages.append({"role": "tool", "name": action.action, "content": result})
             rendered_transition = result
             if json.loads(rendered_transition).get("done") is True:
                 break
@@ -735,32 +757,11 @@ def rollout_action_rows(
     ]
 
 
-def _route_and_actions(row: GRPOCorpusRow) -> tuple[str, list[str]]:
-    route = to_trl_environment_rows([row])[0]["environment"]
-    initial_actions = {
-        "clarification": ["ask_user"],
-        "tradeoff": ["propose_tradeoff", "abort"],
-        "search": ["search_pois"],
-        "search_current": ["search_pois", "search_current_info"],
-        "search_transport": ["search_pois", "search_transport"],
-        "decision_get_poi_detail": ["get_poi_detail"],
-        "decision_verifier_repair_retry": [
-            "retry_solve",
-            "retrieve_city_knowledge",
-            "search_pois",
-            "get_poi_detail",
-            "get_weather",
-            "search_current_info",
-            "search_transport",
-            "get_route_matrix",
-            "ask_user",
-            "propose_tradeoff",
-            "abort",
-        ],
-        "decision_verifier_repair_tradeoff": ["propose_tradeoff", "abort"],
-        "decision_verifier_repair_abort": ["abort"],
-    }
-    return route, initial_actions[route]
+def _route_and_actions(row):
+    from agentic.grpo_training import _environment_route
+    from agentic.policy_actions import POLICY_ACTION_MODELS
+
+    return _environment_route(row.task, row.snapshot), list(POLICY_ACTION_MODELS)
 
 
 def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
@@ -791,12 +792,12 @@ def behavior_gate_metrics(rollout_rows: list[dict[str, Any]]) -> dict[str, Any]:
         for action in row.get("actions") or []
     )
     policy_errors = [
-        error
-        for row in rollout_rows
-        for error in row.get("policy_errors") or []
+        error for row in rollout_rows for error in row.get("policy_errors") or []
     ]
     argument_errors = [
-        error for error in policy_errors if error.get("code") == "POLICY_ARGUMENT_INVALID"
+        error
+        for error in policy_errors
+        if error.get("code") == "POLICY_ARGUMENT_INVALID"
     ]
     protected_argument_names = {
         "city",
@@ -818,9 +819,7 @@ def behavior_gate_metrics(rollout_rows: list[dict[str, Any]]) -> dict[str, Any]:
             schema = policy_action_schemas([action])[0]
         except (PolicyOutputError, ValueError):
             continue
-        allowed = set(
-            schema["function"]["parameters"].get("properties") or {}
-        )
+        allowed = set(schema["function"]["parameters"].get("properties") or {})
         supplied = set(arguments)
         if supplied & protected_argument_names:
             protected_argument_errors += 1
@@ -839,11 +838,142 @@ def behavior_gate_metrics(rollout_rows: list[dict[str, Any]]) -> dict[str, Any]:
         "policy_argument_errors": len(argument_errors),
         "policy_argument_error_rate": len(argument_errors) / total if total else 0.0,
         "unknown_argument_errors": unknown_argument_errors,
-        "unknown_argument_error_rate": unknown_argument_errors / total if total else 0.0,
+        "unknown_argument_error_rate": unknown_argument_errors / total
+        if total
+        else 0.0,
         "protected_argument_errors": protected_argument_errors,
         "protected_argument_error_rate": (
             protected_argument_errors / total if total else 0.0
         ),
+    }
+
+
+def _arguments_include(actual: Any, expected: Any) -> bool:
+    """Match evaluator-owned key/value constraints without requiring hydrated fields."""
+    if not isinstance(actual, dict) or not isinstance(expected, dict):
+        return False
+    return all(actual.get(name) == value for name, value in expected.items())
+
+
+def _verified_action(action: dict[str, Any]) -> bool:
+    observations = action.get("observations") or []
+    return (
+        action.get("error_code") is None
+        and bool(observations)
+        and all(bool(item.get("ok")) for item in observations)
+    )
+
+
+def _target_decision_result(row: dict[str, Any]) -> dict[str, Any] | None:
+    """Score the evaluator-owned decision boundary, not the later episode tail."""
+    actions = list(row.get("actions") or [])
+    external = row.get("external_evidence") or {}
+    if external:
+        expected_action = external.get("expected_action")
+        expected_arguments = external.get("expected_model_arguments") or {}
+        matching_actions = [
+            action for action in actions if action.get("action") == expected_action
+        ]
+        first = matching_actions[0] if matching_actions else None
+        return {
+            "kind": "external_evidence",
+            "cell": str(external.get("family") or "unknown"),
+            "target_action_present": first is not None,
+            "target_arguments_match": bool(
+                first and _arguments_include(first.get("arguments"), expected_arguments)
+            ),
+            "target_observation_verified": bool(
+                first
+                and _arguments_include(first.get("arguments"), expected_arguments)
+                and _verified_action(first)
+            ),
+        }
+
+    decision_loop = row.get("decision_loop") or {}
+    if decision_loop:
+        searches = [
+            action for action in actions if action.get("action") == "search_pois"
+        ]
+        recovery = searches[1] if len(searches) >= 2 else None
+        expected_arguments = {
+            "keywords": list(decision_loop.get("expected_recovery_keywords") or [])
+        }
+        return {
+            "kind": "decision_loop_recovery",
+            "cell": str(decision_loop.get("scenario") or "unknown"),
+            "target_action_present": recovery is not None,
+            "target_arguments_match": bool(
+                recovery
+                and _arguments_include(recovery.get("arguments"), expected_arguments)
+            ),
+            "target_observation_verified": bool(
+                recovery
+                and _arguments_include(recovery.get("arguments"), expected_arguments)
+                and _verified_action(recovery)
+            ),
+        }
+    return None
+
+
+def _summarize_target_results(results: list[dict[str, Any]]) -> dict[str, Any]:
+    total = len(results)
+    present = sum(bool(item["target_action_present"]) for item in results)
+    arguments = sum(bool(item["target_arguments_match"]) for item in results)
+    verified = sum(bool(item["target_observation_verified"]) for item in results)
+    return {
+        "rollouts": total,
+        "target_action_present": present,
+        "target_action_rate": present / total if total else 0.0,
+        "target_arguments_match": arguments,
+        "target_arguments_match_rate": arguments / total if total else 0.0,
+        "target_observation_verified": verified,
+        "target_observation_verified_rate": verified / total if total else 0.0,
+    }
+
+
+def target_decision_metrics(rollout_rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Report exact target decisions independently from incomplete episode tails."""
+    results = [
+        result
+        for row in rollout_rows
+        if (result := _target_decision_result(row)) is not None
+    ]
+    by_kind: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    by_cell: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for result in results:
+        by_kind[str(result["kind"])].append(result)
+        by_cell[f"{result['kind']}:{result['cell']}"].append(result)
+    return {
+        "semantics": (
+            "evaluator-owned target decision only; excludes unrelated episode tail"
+        ),
+        "overall": _summarize_target_results(results),
+        "by_kind": {
+            name: _summarize_target_results(items)
+            for name, items in sorted(by_kind.items())
+        },
+        "by_cell": {
+            name: _summarize_target_results(items)
+            for name, items in sorted(by_cell.items())
+        },
+    }
+
+
+def episode_outcome_metrics(rollout_rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Expose terminal outcomes without calling a capability pass task completion."""
+    total = len(rollout_rows)
+    statuses = Counter(str(row.get("status") or "missing") for row in rollout_rows)
+    terminations = Counter(
+        str(row.get("termination_reason") or "missing") for row in rollout_rows
+    )
+    completed = statuses.get("succeeded", 0)
+    return {
+        "semantics": "episode terminal state; succeeded is the complete-task proxy",
+        "rollouts": total,
+        "succeeded": completed,
+        "succeeded_rate": completed / total if total else 0.0,
+        "status_counts": dict(statuses),
+        "termination_reason_counts": dict(terminations),
     }
 
 
@@ -892,8 +1022,7 @@ def decision_loop_behavior_metrics(
         report[factor] = {}
         for value, rows in sorted(cells.items()):
             successes = sum(
-                row.get("gate_status") == "passed"
-                and float(row.get("reward") or 0) > 0
+                row.get("gate_status") == "passed" and float(row.get("reward") or 0) > 0
                 for row in rows
             )
             action_counts = [len(row.get("actions") or []) for row in rows]
@@ -1095,14 +1224,6 @@ def main() -> int:
         parser.error("group-size must be at least 4")
     if args.max_tool_calling_iterations < 1:
         parser.error("max-tool-calling-iterations must be positive")
-    if (
-        args.execution_mode == "policy_driven"
-        and args.max_tool_calling_iterations < MIN_POLICY_DRIVEN_TOOL_ITERATIONS
-    ):
-        parser.error(
-            "policy_driven audit requires at least "
-            f"{MIN_POLICY_DRIVEN_TOOL_ITERATIONS} tool-calling iterations"
-        )
     report = asyncio.run(audit(args))
     print(json.dumps(report, ensure_ascii=False, indent=2))
     return 0

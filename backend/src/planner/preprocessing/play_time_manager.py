@@ -142,6 +142,8 @@ class PlayTimeManager:
         """Return adjusted POIs with v4.0 play-mode intervalization."""
         mode: Literal["quick", "standard", "deep"] = constraints.play_mode or "standard"
         for p in pois:
+            if p.category=="restaurant":
+                continue  # Dining durations and opening facts are provider evidence.
             # 0. Apply real landmark dwell time before clamping, so theme parks /
             #    large attractions get a full/half-day block instead of the
             #    generic 60-120min default.
@@ -177,7 +179,9 @@ class PlayTimeManager:
 
             # 0c. Weekly closing day (周一闭馆). Only fill from the category table
             #     when real data did not already provide it.
-            if not p.closed_weekdays:
+            # Dated source evidence must not acquire an inferred weekly closure.
+            # Explicit source-provided recurring closures are retained above.
+            if not p.closed_weekdays and not p.date_opening_hours:
                 closed = self._category_closed(p.name)
                 if closed:
                     p.closed_weekdays = closed

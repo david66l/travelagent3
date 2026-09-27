@@ -20,7 +20,12 @@ except ImportError:
 
 
 def langsmith_enabled() -> bool:
-    return bool(os.environ.get("LANGSMITH_API_KEY", "")) and _langsmith_traceable is not None
+    tracing = os.environ.get("LANGSMITH_TRACING", "").strip().lower()
+    return (
+        tracing in {"1", "true", "yes", "on"}
+        and bool(os.environ.get("LANGSMITH_API_KEY", ""))
+        and _langsmith_traceable is not None
+    )
 
 
 def traceable_step(name: str, *, run_type: str = "chain") -> Callable[[F], F]:

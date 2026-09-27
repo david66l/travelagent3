@@ -1,0 +1,14 @@
+{
+  "schema_version": "travelagent-promotion-readiness-state.v1",
+  "protocol_sha256": "f0d8f53dd7014ed5c8f59313b76f9888c1a62798a3d73157c413f098819435c0",
+  "protocol_locked": true,
+  "promotion_dataset_authored": false,
+  "power_analysis_completed": false,
+  "lineage_audit_passed": false,
+  "h006_gpu_training_authorized": false,
+  "blocking_reasons": [
+    "promotion-val-v1 cases have not been authored",
+    "paired-discordance power analysis has not been completed",
+    "lineage manifest has not been registered and audited"
+  ]
+}

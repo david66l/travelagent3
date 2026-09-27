@@ -1,4 +1,4 @@
-"""Adapters that project the existing TravelAgent state into Agent Loop state."""
+"""Project user state, resume a session, and record explicit approval."""
 
 from __future__ import annotations
 
@@ -17,32 +17,23 @@ from agentic.state import (
     StateTransitionError,
     TaskGraphController,
 )
-from agentic.verifier import SubtaskVerifier
-from agentic.termination import CompletionDecision, CompletionGuard
+from agentic.termination import CompletionGuard
 from core.conversation_state import flatten_profile
 from core.settings import settings
 
 
-PolicyMode = Literal["deterministic", "shadow", "agent"]
-TaskGraphMode = Literal["configured", "legacy", "react"]
+PolicyMode = Literal["agent"]
+TaskGraphMode = Literal["configured", "react"]
 
 logger = logging.getLogger(__name__)
 
 
 def _configured_task_graph_planner(mode: TaskGraphMode = "configured"):
-    """Select the production ReAct graph.
+    if mode not in {"configured", "react"}:
+        raise ValueError("Only the unified agent harness is supported")
+    from agentic.react import ReactTaskGraphPlanner
 
-    The deterministic legacy DAG planner is archived in
-    ``agentic.legacy.planner_dag`` and only serves reproduction of the
-    retired policy_driven mode (never the react production default).
-    """
-    if mode == "react" or (mode == "configured" and settings.agentic_execution_mode == "react"):
-        from agentic.react import ReactTaskGraphPlanner
-
-        return ReactTaskGraphPlanner()
-    from agentic.legacy.planner_dag import DefaultTaskGraphPlanner
-
-    return DefaultTaskGraphPlanner()
+    return ReactTaskGraphPlanner()
 
 
 def _project_goal(state: dict[str, Any]) -> GoalLedger:
@@ -93,10 +84,13 @@ def _project_goal(state: dict[str, Any]) -> GoalLedger:
             "has_pregnant",
             "food_taboos",
             "constraint_flexibility",
+            "require_named_restaurants",
         )
         if (item := value(key)) not in (None, "", [])
     }
     hard_constraints["intent_kind"] = intent_kind
+    if any(term in request_text for term in ("具名餐厅", "具体餐厅")):
+        hard_constraints["require_named_restaurants"] = True
     event_query = value("event_query")
     if event_query:
         hard_constraints["event_query"] = str(event_query)
@@ -186,11 +180,14 @@ def initialize_agent_ledger(
     mode: PolicyMode,
     task_graph_mode: TaskGraphMode = "configured",
 ) -> dict[str, Any]:
-    """Initialize authoritative state without changing the legacy output path."""
-    if mode == "deterministic":
-        return {"policy_mode": mode, "agent_status": "disabled"}
+    """Initialize the authoritative single-session state."""
+    if mode != "agent":
+        raise ValueError("Only agent policy mode is supported")
     if state.get("agent_ledger"):
         ledger = AgentLedgerState(**state["agent_ledger"])
+        from agentic.harness import assert_session_contract
+
+        assert_session_contract(ledger)
         has_goal_projection = bool(state.get("slots") or state.get("profile"))
         projected_goal = _project_goal(state) if has_goal_projection else ledger.goal
         if has_goal_projection and (
@@ -245,89 +242,6 @@ def initialize_agent_ledger(
         "subtask_step": 0,
         "agent_status": "initialized",
     }
-
-
-def resume_agent_ledger(
-    ledger: AgentLedgerState | dict[str, Any],
-    *,
-    task_id: str,
-    user_value: Any,
-    fact_key: str,
-) -> AgentLedgerState:
-    """Resume a blocked task without resetting graph versions or budgets."""
-    state = ledger if isinstance(ledger, AgentLedgerState) else AgentLedgerState(**ledger)
-    task = state.task_graph.get(task_id)
-    if task.status != "blocked":
-        raise StateTransitionError("only a blocked task can be resumed by user input")
-    observation_ref = f"user:{state.trajectory_id}:{task_id}:{task.attempts}"
-    fact = FactRecord(
-        fact_id=observation_ref,
-        key=fact_key,
-        value=user_value,
-        observation_ref=observation_ref,
-        goal_version=state.goal.goal_version,
-        plan_version=state.task_graph.plan_version,
-        source="user",
-        confidence=1.0,
-    )
-    state.facts[fact.fact_id] = fact
-    if fact_key.startswith("user_input."):
-        field = fact_key.removeprefix("user_input.")
-        remaining_missing = [item for item in state.goal.missing_information if item != field]
-        hard_constraints = dict(state.goal.hard_constraints)
-        if field in {
-            "origin",
-            "destination",
-            "travel_days",
-            "start_date",
-            "end_date",
-            "budget_range",
-            "must_visit",
-            "mobility_constraints",
-        }:
-            hard_constraints[field] = user_value
-        state.goal = state.goal.model_copy(
-            update={
-                "missing_information": remaining_missing,
-                "hard_constraints": hard_constraints,
-                "capability": state.goal.capability.model_copy(
-                    update={"status": "solvable" if not remaining_missing else "needs_user"}
-                ),
-            }
-        )
-    controller = TaskGraphController()
-    state.task_graph = controller.transition(
-        state.task_graph, task_id, "ready", evidence_refs=[observation_ref]
-    )
-    required_user_keys = set(task.required_facts) | set(
-        task.success_criteria.get("required_fact_keys") or []
-    )
-    if fact_key not in required_user_keys:
-        # Open-ended clarification/tradeoff replies are observations for the
-        # next policy turn, not proof that the blocked planning task succeeded.
-        state.task_graph = controller.refresh_ready(state.task_graph)
-        state.current_task_id = task_id
-        state.termination_reason = None
-        return state
-    state.task_graph = controller.transition(state.task_graph, task_id, "running")
-    verification = SubtaskVerifier().verify(
-        state.task_graph.get(task_id), facts=state.facts, artifacts=state.artifacts
-    )
-    if verification.passed:
-        state.task_graph = controller.transition(
-            state.task_graph,
-            task_id,
-            "succeeded",
-            evidence_refs=verification.evidence_refs,
-        )
-        state.task_graph = controller.refresh_ready(state.task_graph)
-        ready = controller.ready_tasks(state.task_graph)
-        state.current_task_id = ready[0].task_id if ready else None
-    else:
-        state.task_graph = controller.transition(state.task_graph, task_id, "blocked")
-        state.current_task_id = task_id
-    state.termination_reason = None
-    return state
 
 
 _HARD_REVISION_FIELDS = frozenset(
@@ -573,10 +487,19 @@ async def revise_agent_ledger(
         "rejected_operations": rejected_operations,
     }
 
-    missing_information: list[str] = []
-    capability_status = "solvable"
+    missing_information = [
+        key
+        for key in state.goal.missing_information
+        if key != "revision_clarification" and hard.get(key) in (None, "", [])
+    ]
+    missing_information.extend(
+        key
+        for key in ("destination", "travel_days")
+        if hard.get(key) in (None, "", []) and key not in missing_information
+    )
+    capability_status = "needs_user" if missing_information else "solvable"
     if interpretation.needs_clarification or interpretation.confidence < 0.55:
-        missing_information = ["revision_clarification"]
+        missing_information.append("revision_clarification")
         capability_status = "needs_user"
         soft["revision_clarification_question"] = (
             interpretation.clarification_question or "你希望具体修改行程的哪一部分？"
@@ -595,12 +518,7 @@ async def revise_agent_ledger(
         }
     )
     new_plan_version = state.task_graph.plan_version + 1
-    if any(task.task_id == "research_evidence" for task in state.task_graph.tasks):
-        from agentic.react import ReactTaskGraphPlanner
-
-        planner = ReactTaskGraphPlanner()
-    else:
-        planner = _configured_task_graph_planner()
+    planner = _configured_task_graph_planner()
     graph = planner.plan(new_goal, plan_version=new_plan_version)
     graph = TaskGraphController().refresh_ready(graph)
     ready = TaskGraphController.ready_tasks(graph)
@@ -630,28 +548,96 @@ async def revise_agent_ledger(
     return revised
 
 
-def confirm_agent_ledger(
-    ledger: AgentLedgerState | dict[str, Any],
-) -> tuple[AgentLedgerState, CompletionDecision]:
-    """Close the confirmation task and enforce the global completion gate."""
-    state = ledger if isinstance(ledger, AgentLedgerState) else AgentLedgerState(**ledger)
-    state = resume_agent_ledger(
-        state,
-        task_id="await_confirmation",
-        user_value=True,
-        fact_key="user_confirmation",
+def confirm_agent_ledger(ledger):
+    """Record explicit user approval only after the model submitted a valid draft."""
+    from agentic.harness import assert_session_contract, latest_artifact, preflight_action
+    from agentic.loop import PolicyAction
+
+    state = (
+        ledger if isinstance(ledger, AgentLedgerState) else AgentLedgerState(**ledger)
+    ).model_copy(deep=True)
+    assert_session_contract(state)
+    task = state.task_graph.tasks[0]
+    if task.status != "blocked" or latest_artifact(state, "finish") is None:
+        raise StateTransitionError("no submitted itinerary is awaiting confirmation")
+    rejection = preflight_action(state, PolicyAction(action="finish"))
+    if rejection is not None:
+        raise StateTransitionError(rejection.error_code)
+    controller = TaskGraphController()
+    for status in ("ready", "running", "succeeded"):
+        state.task_graph = controller.transition(
+            state.task_graph,
+            task.task_id,
+            status,
+            evidence_refs=[latest_artifact(state, "validation_report").artifact_id]
+            if status == "succeeded"
+            else None,
+        )
+    confirmation = FactRecord(
+        fact_id=f"user:{state.trajectory_id}:confirmation",
+        key="user_confirmation",
+        value=True,
+        observation_ref="user_confirmation",
+        goal_version=state.goal.goal_version,
+        plan_version=state.task_graph.plan_version,
+        source="user",
+        confidence=1.0,
     )
-    reports = [
-        artifact
-        for artifact in state.artifacts.values()
-        if artifact.artifact_type == "validation_report"
-        and artifact.goal_version == state.goal.goal_version
-        and artifact.plan_version == state.task_graph.plan_version
-    ]
-    report = reports[-1].payload if reports else None
-    decision = CompletionGuard(mode="enforce").evaluate(report, ledger=state)
+    state.facts[confirmation.fact_id] = confirmation
+    report = latest_artifact(state, "validation_report")
+    decision = CompletionGuard(mode="enforce").evaluate(report.payload, ledger=state)
     if not decision.allowed:
-        codes = ", ".join(block.code for block in decision.blocks)
-        raise StateTransitionError(f"global completion guard rejected confirmation: {codes}")
+        raise StateTransitionError(", ".join(block.code for block in decision.blocks))
     state.termination_reason = "validated_finish"
     return state, decision
+
+
+async def resume_agent_conversation(ledger, *, user_input: str, interpretation=None):
+    """Interpret an answer with its question, then resume without resetting the budget."""
+    from agentic.harness import assert_session_contract
+
+    state = (
+        ledger if isinstance(ledger, AgentLedgerState) else AgentLedgerState(**ledger)
+    ).model_copy(deep=True)
+    assert_session_contract(state)
+    if state.task_graph.tasks[0].status != "blocked":
+        raise StateTransitionError("only a blocked session accepts clarification")
+    questions = [
+        a
+        for a in state.artifacts.values()
+        if a.artifact_type in {"user_question", "propose_tradeoff"}
+        and a.goal_version == state.goal.goal_version
+        and a.plan_version == state.task_graph.plan_version
+    ]
+    if not questions:
+        raise StateTransitionError("no pending model question")
+    question = questions[-1].payload
+    state.goal.soft_preferences["pending_question"] = question
+    if interpretation is None:
+        from agents.demand_parser import DemandParserAgent
+        from models.travel_slots import RevisionParseOutput
+
+        try:
+            interpretation = await DemandParserAgent().parse_revision(
+                user_input,
+                current_goal=state.goal.model_dump(mode="json"),
+                recent_messages=[
+                    {
+                        "role": "assistant",
+                        "content": str(question.get("question") or question.get("reason") or ""),
+                    }
+                ],
+            )
+        except Exception:
+            interpretation = RevisionParseOutput(
+                operations=[],
+                needs_clarification=True,
+                clarification_question="请进一步说明这条补充信息。",
+            )
+    revised = await revise_agent_ledger(
+        state, revision_reason=user_input, interpretation=interpretation
+    )
+    revised.budget = state.budget.model_copy(deep=True)
+    revised.goal.soft_preferences.pop("pending_question", None)
+    revised.goal.soft_preferences["last_user_answer"] = {"question": question, "answer": user_input}
+    return revised

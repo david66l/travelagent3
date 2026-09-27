@@ -5,75 +5,15 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from graph.nodes import _agent_clarification_message, output_node, tool_call_node
+from graph.nodes import _agent_clarification_message, output_node
 
 
-def test_event_tradeoff_hides_internal_verifier_language():
-    ledger = SimpleNamespace(
-        failures=[
-            SimpleNamespace(
-                message="EVENT_FIELDS_INCOMPLETE:start_time, EVENT_VENUE_UNGROUNDED:lat,lng"
-            )
-        ],
-        goal=SimpleNamespace(
-            hard_constraints={
-                "event_query": "某演唱会",
-                "start_date": "2026-10-01",
-            }
-        ),
-    )
+def test_clarification_renderer_preserves_model_question_despite_prior_failure():
+    ledger = SimpleNamespace(failures=[SimpleNamespace(message="EVENT_FIELDS_INCOMPLETE")])
     artifact = SimpleNamespace(
-        payload={
-            "reason": "finalize_research verifier failed",
-            "options": ["retry verifier"],
-        }
+        payload={"question": "请提供演出官方链接。", "options": ["稍后提供"]}
     )
-
-    question, options = _agent_clarification_message(ledger, artifact)
-
-    assert "2026-10-01" in question
-    assert "官方活动页" in question
-    assert "verifier" not in question
-    assert len(options) == 3
-
-
-@pytest.mark.asyncio
-async def test_tool_call_node_executes_default_calls():
-    state = {
-        "profile": {"destination": "北京"},
-        "itinerary": [
-            {
-                "day_number": 1,
-                "activities": [{"poi_name": "故宫"}],
-            }
-        ],
-    }
-    result = await tool_call_node(state)
-    assert "tool_results" in result
-    assert len(result["tool_results"]) > 0
-    assert result["stage"] == "tools_executed"
-
-
-@pytest.mark.asyncio
-async def test_tool_call_node_uses_pending_calls():
-    state = {
-        "pending_tool_calls": [
-            {
-                "id": "t1",
-                "type": "function",
-                "function": {"name": "get_weather", "arguments": '{"city": "北京"}'},
-            }
-        ]
-    }
-    result = await tool_call_node(state)
-    assert len(result["tool_results"]) == 1
-    assert result["tool_results"][0]["name"] == "get_weather"
-
-
-@pytest.mark.asyncio
-async def test_tool_call_node_empty():
-    result = await tool_call_node({})
-    assert result["tool_results"] == []
+    assert _agent_clarification_message(ledger, artifact) == ("请提供演出官方链接。", ["稍后提供"])
 
 
 @pytest.mark.asyncio

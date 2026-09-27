@@ -1,8 +1,10 @@
 # TravelAgent2
 
-AI 旅行规划助手，基于 SSE 流式对话 + 异步行程规划 + Redis/Celery 任务队列。支持游客/会员分级配额、成本熔断、模型分层路由、Prometheus 指标与 K8s 部署。
+AI 旅行规划助手，基于 SSE 流式对话 + 异步行程规划 + Redis/Celery 任务队列。支持游客/会员分级配额、成本熔断、模型接入、Prometheus 指标与 K8s 部署。
 
 当前架构、指标口径、发布门禁和未完成的生产证明见 [`docs/INDUSTRIAL_READINESS.md`](docs/INDUSTRIAL_READINESS.md)。该文档区分了“已验证”“历史消融”和“仍需真实集群验证”，避免把离线实验写成线上能力。
+
+最新后训练方案见 [`docs/POSTTRAINING_PLAN.md`](docs/POSTTRAINING_PLAN.md)：以提升小模型在 Agent Loop 中的决策能力为目标，按“职责盘点 → 基线评测 → 示范与纠偏 SFT → 条件满足后的 GRPO → 独立验收”推进，包含白话解释、任务清单和验收条件。
 
 ## 项目概述
 
@@ -51,7 +53,9 @@ TravelAgent2 接收用户的自然语言旅行需求。FastAPI 先持久化 `Pla
 
 主请求链路为：`POST 消息 → PlanningJob 事务提交 → Celery/LangGraph → PlanningJobEvent → SSE 重放`。FastAPI 进程内不保存任务完成状态；Redis Pub/Sub 丢失时，SSE 仍可从 PostgreSQL 事件日志恢复。
 
-核心规划闭环为：`结构化意图识别/补槽 → ReAct 模型逐轮选工具 → Guard/工具执行 → Observation/Facts/Artifacts → 证据充分性检查 → CP-SAT/Greedy → 硬 Verifier → 继续搜索、重试、重规划、询问或安全终止 → 用户确认/修改`。每个串行动作或安全的并行只读批次都形成可恢复 checkpoint；同一 Agent Ledger 保存预算、失败、动作历史和版本化证据，避免失败后无界循环或偷偷切回旧 Planner。旧 `controller_first`/`policy_driven` 模式与确定性 DAG 已**归档**至 `backend/src/agentic/legacy/`（仅用于历史语料/消融复现，代码默认与生产入口均为 `react` 单一执行模式）。
+核心规划闭环统一为 **Agent Loop + Harness (`agent-harness-v1`)**：模型每轮决定一个动作，harness 检查权限、参数、预算和前置证据，执行后把结果交回模型。求解、校验、失败恢复、追问与提交时机均由模型选择。在线与 TRL 训练共用同一循环；外层 LangGraph 只负责对话、checkpoint、展示和用户确认。旧 DAG、控制器代决策、specialist/shadow 包装及专用训练环境已从工作代码删除。
+
+当前架构的职责边界、13 个动作和多轮交互见 [`docs/AGENT_HARNESS_ARCHITECTURE.md`](docs/AGENT_HARNESS_ARCHITECTURE.md)。旧实验报告保留为历史证据；旧运行 checkpoint 需要新建会话，旧教师前缀语料需要重建。新的模型能力基线尚待测量。
 
 K8s 部署清单位于 [`k8s/`](k8s/) 目录：
 
@@ -98,6 +102,8 @@ python3 scripts/e2e_smoke.py
 | Gateway | http://127.0.0.1:8080 |
 | Backend | http://127.0.0.1:8000 |
 | Frontend | http://127.0.0.1:3000 |
+
+> **⚠️ 生产环境必须让浏览器流量走网关。** 默认 compose 把 `NEXT_PUBLIC_API_URL` 留空，由 Next.js 的 rewrite 直接发往 `backend:8000`（`frontend/next.config.js`），同时 `docker-compose.yml` 还把 `8000:8000` 发布到宿主机。这条路径**绕过了网关的 JWT 鉴权、限流与熔断**——后端自身仍会校验 Bearer token，但边缘策略不生效。生产部署请设置 `NEXT_PUBLIC_API_URL` 指向网关（如 `https://api.example.com`），并**不要**对外发布后端端口；同时用 `GATEWAY_CORS_ORIGINS` 列出真实的前端源（默认仅 `localhost:3000`，且因启用凭据不接受通配符）。
 
 ### 方式二：本地开发
 

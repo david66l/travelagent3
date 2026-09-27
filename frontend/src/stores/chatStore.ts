@@ -141,6 +141,57 @@ export interface PolicyRoutingSummary {
   request_latency_ms: number;
 }
 
+/**
+ * In-flight state for ONE conversation.
+ *
+ * Every field here used to be a single top-level value on the store. That shape
+ * can only describe the conversation the user is looking at, so a job running in
+ * a conversation the user switched away from had nowhere to live: its job id and
+ * event cursor were dropped and its progress was unrecoverable. These values are
+ * therefore keyed by conversation id, while the top-level mirrors keep the active
+ * conversation readable for existing components.
+ */
+export interface ConversationRuntime {
+  jobId: string | null;
+  /** Cursor into this job's durable event log. Never shared across jobs. */
+  lastEventId: number;
+  currentStage: string | null;
+  jobStatus: string | null;
+  activityPhase: "idle" | "gathering" | "planning";
+  streamingContent: string;
+  isStreaming: boolean;
+  isLoading: boolean;
+  needsClarification: boolean;
+  waitingForConfirmation: boolean;
+  /** Last few streamed prose chunks, so a background conversation can show a preview. */
+  recentTokens: string[];
+  /**
+   * Event cursor at which this conversation's live buffer was last folded into
+   * its durable transcript (0 = never). This is what makes the buffer
+   * replay-safe: a reconnect re-delivers frames from the cursor, and prose that
+   * was already committed must not be committed twice — nor silently dropped
+   * because its buffer was cleared.
+   */
+  foldedAtEventId: number;
+}
+
+export function emptyConversationRuntime(): ConversationRuntime {
+  return {
+    jobId: null,
+    lastEventId: 0,
+    currentStage: null,
+    jobStatus: null,
+    activityPhase: "idle",
+    streamingContent: "",
+    isStreaming: false,
+    isLoading: false,
+    needsClarification: false,
+    waitingForConfirmation: false,
+    recentTokens: [],
+    foldedAtEventId: 0,
+  };
+}
+
 export interface ChatSnapshot {
   id: string;
   title: string;
@@ -184,6 +235,15 @@ export interface ChatState {
   jobStatus: string | null;
   activityPhase: "idle" | "gathering" | "planning";
 
+  /**
+   * Per-conversation in-flight state. The top-level `jobId` / `currentStage` /
+   * `isLoading` / `streamingContent` above are the projection of
+   * `runtimeByConversation[activeConversationId]` and stay in sync with it.
+   */
+  runtimeByConversation: Record<string, ConversationRuntime>;
+  /** Conversations that currently hold an open SSE stream. */
+  connectedConversationIds: string[];
+
   // Exported artifact URLs from the graph runtime
   outputUrls: OutputUrls | null;
   policyRouting: PolicyRoutingSummary | null;
@@ -192,6 +252,12 @@ export interface ChatState {
   streamingContent: string;
   isStreaming: boolean;
 
+  /**
+   * Write the active conversation id. Only `useChat().adoptConversation` calls
+   * this — a bare write here changes which conversation is displayed without
+   * moving the stream, which is exactly the split the epoch guards exist to
+   * prevent.
+   */
   setSessionId: (id: string) => void;
   addMessage: (msg: Message) => void;
   setConnected: (v: boolean) => void;
@@ -211,10 +277,41 @@ export interface ChatState {
   setActiveBriefDay: (v: number) => void;
   setPendingSuggestions: (v: PendingSuggestion[]) => void;
   confirmCurrentItinerary: () => void;
+  /**
+   * Apply a saved trip to the store. Pure data operation: it deliberately does
+   * not write `sessionId`, so the caller must move the conversation itself via
+   * `useChat().switchConversation(trip.conversationId || null, () => loadTrip(id))`.
+   */
   loadTrip: (tripId: string) => void;
 
   // 新增方法
-  saveChatSnapshot: () => void;
+  /**
+   * Persist the active conversation's transcript under its own id. `snapshotId`
+   * lets a caller snapshot the conversation it is *leaving* right before the
+   * target's `restoreChat` replaces `messages`: at that instant `sessionId`
+   * still names the departing conversation, so the id is passed explicitly
+   * rather than inferred late.
+   */
+  saveChatSnapshot: (snapshotId?: string) => void;
+  /**
+   * Fold a conversation's pending live prose into its own snapshot before the
+   * user leaves it, so switching back shows the same transcript the user was
+   * looking at instead of dropping the in-flight reply.
+   *
+   * This is the deliberate counterpart to `scopedStore`, which refuses
+   * transcript writes for a *background* conversation: prose may only enter a
+   * transcript while that conversation is the one on screen, so the fold
+   * happens here — at the instant of leaving — rather than on arrival.
+   *
+   * Returns `true` when it stored something.
+   */
+  snapshotConversation: (conversationId: string) => boolean;
+  /**
+   * Apply a saved conversation snapshot to the store. Pure data operation, same
+   * contract as `loadTrip`: it does not write `sessionId` and does not open a
+   * stream, because a conversation switch is a numbered operation owned by
+   * `useChat().switchConversation`.
+   */
   restoreChat: (snapshotId: string) => void;
   refreshTripStatuses: () => void;
 
@@ -226,12 +323,50 @@ export interface ChatState {
   setOutputUrls: (urls: OutputUrls | null) => void;
   setPolicyRouting: (summary: PolicyRoutingSummary | null) => void;
 
-  // Streaming text setters
+  /**
+   * Merge a partial runtime into one conversation, and mirror it onto the
+   * top-level in-flight fields **only when that conversation is the active one**.
+   * Background conversations keep updating their own entry, so a job running in
+   * a conversation the user left neither loses its state nor leaks it onto the
+   * conversation being displayed.
+   */
+  setRuntime: (
+    conversationId: string,
+    patch: Partial<ConversationRuntime>
+  ) => void;
+  /**
+   * Append a streamed chunk to one conversation's buffer.
+   *
+   * Must be its own action: computing `previous + chunk` from a snapshot taken
+   * when the caller was constructed loses every chunk but the last, because
+   * several SSE frames are parsed in the same tick and all read the same base.
+   * The concatenation therefore happens inside the store update.
+   */
+  appendStreamingChunk: (conversationId: string, chunk: string) => void;
+  /** Drop a finished runtime entry; never removes the active conversation. */
+  retireRuntime: (conversationId: string) => void;
+  runtimeFor: (conversationId: string) => ConversationRuntime;
+  setConnectedIds: (ids: string[]) => void;
+  /**
+   * Append to the active conversation's streamed buffer.
+   *
+   * Kept alongside `appendStreamingChunk` because callers outside
+   * `chatEvents` (and the scoped facade) address the active conversation
+   * without naming it. It writes through to that conversation's runtime so the
+   * two views of the same buffer cannot drift apart.
+   */
   appendStreamingContent: (chunk: string) => void;
+
+  // Streaming text setters
   setStreamingContent: (content: string) => void;
   startStreaming: () => void;
   stopStreaming: () => void;
 
+  /**
+   * Drop the active conversation's state (and keep its snapshot). This empties
+   * `sessionId`, so it belongs to a numbered conversation operation: always call
+   * it through `useChat().leaveConversation()`, which also closes the stream.
+   */
   clear: () => void;
 }
 
@@ -342,6 +477,9 @@ export const useChatStore = create<ChatState>()(
       activityPhase: "idle",
       outputUrls: null,
       policyRouting: null,
+
+      runtimeByConversation: {},
+      connectedConversationIds: [],
 
       streamingContent: "",
       isStreaming: false,
@@ -474,13 +612,16 @@ export const useChatStore = create<ChatState>()(
         }));
       },
 
+      // Pure data operation — see the note on `loadTrip` in ChatState: it must
+      // not touch `sessionId` or `isConnected`, because moving the active
+      // conversation (and its stream) is a numbered operation owned by
+      // `useChat().switchConversation`.
       loadTrip: (tripId) => {
         const state = get();
         const trip = state.trips.find((t) => t.id === tripId);
         if (!trip) return;
 
         set({
-          sessionId: trip.conversationId || state.sessionId,
           currentTrip: trip,
           itinerary: trip.itinerary,
           preferencePanel: trip.preferencePanel,
@@ -492,7 +633,6 @@ export const useChatStore = create<ChatState>()(
             endDate: trip.endDate,
           },
           isLoading: false,
-          isConnected: false,
         });
       },
 
@@ -519,27 +659,165 @@ export const useChatStore = create<ChatState>()(
       setOutputUrls: (urls) => set({ outputUrls: urls }),
       setPolicyRouting: (summary) => set({ policyRouting: summary }),
 
-      appendStreamingContent: (chunk) =>
+      setRuntime: (conversationId, patch) =>
+        set((state) => {
+          if (!conversationId) return {};
+          const previous =
+            state.runtimeByConversation[conversationId] ??
+            emptyConversationRuntime();
+          const next: ConversationRuntime = { ...previous, ...patch };
+          const runtimeByConversation = {
+            ...state.runtimeByConversation,
+            [conversationId]: next,
+          };
+          // Only the active conversation owns the top-level mirror. Without this
+          // guard a background job's stage/tokens would overwrite what the user
+          // is currently looking at.
+          if (state.sessionId !== conversationId) {
+            return { runtimeByConversation };
+          }
+          return {
+            runtimeByConversation,
+            jobId: next.jobId,
+            currentStage: next.currentStage,
+            jobStatus: next.jobStatus,
+            activityPhase: next.activityPhase,
+            streamingContent: next.streamingContent,
+            isStreaming: next.isStreaming,
+            isLoading: next.isLoading,
+            needsClarification: next.needsClarification,
+            waitingForConfirmation: next.waitingForConfirmation,
+          };
+        }),
+
+      appendStreamingChunk: (conversationId, chunk) =>
+        set((state) => {
+          if (!conversationId) return {};
+          const previous =
+            state.runtimeByConversation[conversationId] ??
+            emptyConversationRuntime();
+          const cursor = previous.lastEventId;
+          // The buffer was committed at this very cursor and is empty now, so
+          // this chunk is a replay of prose the transcript already holds:
+          // rebuild the buffer from it instead of appending, or the committed
+          // reply would be followed by a duplicated tail.
+          const isReplay =
+            previous.streamingContent === "" &&
+            previous.foldedAtEventId > 0 &&
+            cursor <= previous.foldedAtEventId;
+          const next: ConversationRuntime = {
+            ...previous,
+            isStreaming: true,
+            streamingContent: isReplay
+              ? chunk
+              : previous.streamingContent + chunk,
+            // Bounded preview so a background conversation can show recent text
+            // without retaining the whole stream twice.
+            recentTokens: [...previous.recentTokens, chunk].slice(-40),
+            // The buffer is live prose again, so it is no longer a replay of
+            // what the transcript already holds.
+            foldedAtEventId: isReplay ? 0 : previous.foldedAtEventId,
+          };
+          const runtimeByConversation = {
+            ...state.runtimeByConversation,
+            [conversationId]: next,
+          };
+          // The active conversation must land in BOTH places: the runtime entry
+          // (so switching away and back preserves the buffered prose) and the
+          // top-level mirror (which is what the rendered panel reads while that
+          // conversation is the active one).
+          if (state.sessionId !== conversationId) {
+            return { runtimeByConversation };
+          }
+          return {
+            runtimeByConversation,
+            isStreaming: true,
+            streamingContent: next.streamingContent,
+          };
+        }),
+
+      retireRuntime: (conversationId) =>
+        set((state) => {
+          if (!(conversationId in state.runtimeByConversation)) return {};
+          // Never drop the active conversation's entry: the UI reads its
+          // isLoading/streaming flags from the mirror and needs them to settle.
+          if (state.sessionId === conversationId) {
+            return {
+              runtimeByConversation: {
+                ...state.runtimeByConversation,
+                [conversationId]: emptyConversationRuntime(),
+              },
+            };
+          }
+          const runtimeByConversation = { ...state.runtimeByConversation };
+          delete runtimeByConversation[conversationId];
+          return { runtimeByConversation };
+        }),
+
+      runtimeFor: (conversationId) =>
+        get().runtimeByConversation[conversationId] ??
+        emptyConversationRuntime(),
+
+      setConnectedIds: (ids) =>
         set((state) => ({
-          streamingContent: state.streamingContent + chunk,
+          connectedConversationIds: ids,
+          isConnected: ids.includes(state.sessionId),
         })),
+
+      appendStreamingContent: (chunk) =>
+        get().appendStreamingChunk(get().sessionId, chunk),
       setStreamingContent: (content) => set({ streamingContent: content }),
       startStreaming: () => set({ isStreaming: true, streamingContent: "" }),
       stopStreaming: () => set({ isStreaming: false }),
 
       // 保存当前对话快照
-      saveChatSnapshot: () => {
+      saveChatSnapshot: (explicitSnapshotId) => {
         const state = get();
-        if (state.messages.length === 0) return;
+        const snapshotId =
+          explicitSnapshotId || state.sessionId || `chat-${Date.now()}`;
 
-        const snapshotId = state.sessionId || `chat-${Date.now()}`;
-        const title = state.chatHistory[0]?.title || "未命名对话";
+        // A conversation's live prose is part of what the user saw, but it has
+        // not reached `messages` yet (only a `finalize` frame does that, and for
+        // a background conversation transcript writes are refused). Fold it in
+        // here so a snapshot taken while leaving keeps the reply on screen.
+        const pendingProse =
+          state.runtimeByConversation[snapshotId]?.streamingContent.trim() ?? "";
+        const messages = [...state.messages];
+        const last = messages[messages.length - 1];
+        const alreadyCommitted =
+          !!last &&
+          last.role === "assistant" &&
+          (last.content.trim() === pendingProse ||
+            (!!pendingProse && last.content.includes(pendingProse)));
+        if (pendingProse && !alreadyCommitted) {
+          messages.push({
+            role: "assistant",
+            content: pendingProse,
+            timestamp: Date.now(),
+          });
+        }
+
+        // Nothing worth persisting: the snapshot list must not gain empty
+        // entries for conversations the user merely visited.
+        if (messages.length === 0) return;
+
+        // The title belongs to the conversation, not to the transcript that
+        // happens to be loaded: when this snapshots a conversation being left,
+        // `chatHistory` still names the outgoing one, so reusing it would
+        // relabel the target's sidebar entry with the wrong conversation.
+        // Existing snapshots keep their own title; only a first-time save needs
+        // a name, and there `chatHistory` really does describe this transcript.
+        const existingSnapshot = state.chatSnapshots.find(
+          (cs) => cs.id === snapshotId
+        );
+        const title =
+          existingSnapshot?.title || state.chatHistory[0]?.title || "未命名对话";
 
         const snapshot: ChatSnapshot = {
           id: snapshotId,
           title,
           date: new Date().toISOString().split("T")[0],
-          messages: [...state.messages],
+          messages,
           confirmedInfo: state.confirmedInfo,
           itinerary: state.itinerary,
           preferencePanel: state.preferencePanel,
@@ -556,18 +834,48 @@ export const useChatStore = create<ChatState>()(
           } else {
             newSnapshots = [snapshot, ...s.chatSnapshots];
           }
+          // The prose now lives in the transcript, so drop it from the live
+          // buffer: otherwise switching back would render the same reply twice —
+          // once as a committed bubble and once as the streaming bubble, which
+          // reads the top-level mirror that `adoptConversation` projects from
+          // this same runtime entry.
+          const runtime = s.runtimeByConversation[snapshotId];
+          if (pendingProse && runtime) {
+            return {
+              chatSnapshots: newSnapshots,
+              runtimeByConversation: {
+                ...s.runtimeByConversation,
+                [snapshotId]: {
+                  ...runtime,
+                  streamingContent: "",
+                  // Remember where this prose was committed so a reconnect that
+                  // re-delivers frames from this cursor rebuilds the buffer
+                  // rather than appending a second copy of it.
+                  foldedAtEventId: runtime.lastEventId,
+                },
+              },
+            };
+          }
           return { chatSnapshots: newSnapshots };
         });
       },
 
-      // 恢复对话快照
-      restoreChat: (snapshotId) => {
-        const state = get();
+      snapshotConversation: (conversationId) => {
+        if (!conversationId) return false;
+        // The transcript in `messages` always belongs to the active
+        // conversation, and this is only ever called for the conversation being
+        // left — so `messages` is the right transcript and the runtime entry
+        // under this id is the right prose buffer.
+        get().saveChatSnapshot(conversationId);
+        return true;
+      },
+
+      // Restore a saved snapshot
+      restoreChat: (snapshotId) => {        const state = get();
         const snapshot = state.chatSnapshots.find((s) => s.id === snapshotId);
         if (!snapshot) return;
 
         set({
-          sessionId: snapshot.id,
           messages: snapshot.messages,
           confirmedInfo: snapshot.confirmedInfo,
           itinerary: snapshot.itinerary,
@@ -592,6 +900,10 @@ export const useChatStore = create<ChatState>()(
         if (state.messages.length > 0) {
           state.saveChatSnapshot();
         }
+        // Background conversations keep their runtimes: they may still be
+        // streaming, and `leaveConversation` is what closes their streams.
+        const runtimeByConversation = { ...state.runtimeByConversation };
+        if (state.sessionId) delete runtimeByConversation[state.sessionId];
         set({
           sessionId: "",
           messages: [],
@@ -617,6 +929,8 @@ export const useChatStore = create<ChatState>()(
           policyRouting: null,
           streamingContent: "",
           isStreaming: false,
+          runtimeByConversation,
+          isConnected: state.connectedConversationIds.length > 0,
         });
       },
     }),
@@ -665,3 +979,19 @@ export const useChatStore = create<ChatState>()(
     }
   )
 );
+
+/**
+ * Expose the store for end-to-end tests only.
+ *
+ * The multi-conversation contract is about *per-conversation runtime state*
+ * (each conversation's cursor, stage and streamed tokens), which the DOM cannot
+ * show for a conversation that is not on screen. Exposing the store in
+ * development lets the e2e suite assert those internals directly instead of
+ * inferring them from the rendered conversation.
+ *
+ * Guarded by `NODE_ENV` so it never ships in a production build.
+ */
+if (process.env.NODE_ENV !== "production") {
+  (globalThis as unknown as { __chatStore?: typeof useChatStore }).__chatStore =
+    useChatStore;
+}

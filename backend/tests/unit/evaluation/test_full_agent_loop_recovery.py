@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+import evaluation.full_agent_loop_recovery as recovery_module
 from agentic.loop import ActionOutcome, PolicyAction
 from agentic.state import TaskNode
 from evaluation.full_agent_loop_recovery import (
@@ -68,11 +69,24 @@ def test_score_recovery_requires_direct_first_try_and_full_chain_pass():
         },
     ]
 
-    result = score_recovery(case, {"passed": True, "failures": []}, trace)
+    result = score_recovery(
+        case,
+        {
+            "passed": True,
+            "failures": [],
+            "intent_inference": {
+                "model": "intent-model",
+                "backend": "cloud-openai-compatible",
+            },
+        },
+        trace,
+    )
 
     assert result["passed"] is True
     assert result["recovery"]["first_try_recovery"] is True
     assert result["recovery"]["full_chain_passed"] is True
+    assert result["recovery"]["injection_status"] == "injected_once"
+    assert result["intent_inference"]["model"] == "intent-model"
 
 
 def test_score_retry_rejects_changed_arguments_and_policy_repair():
@@ -147,3 +161,64 @@ def test_recovery_benchmark_balances_four_semantic_strata():
         ("retry_same_arguments", "explicit_instruction"),
         ("retry_same_arguments", "diagnostic_evidence"),
     }
+
+
+def test_policy_failure_before_target_is_scored_as_non_reach_not_infrastructure():
+    case = build_recovery_cases()[0]
+    base = {
+        "passed": False,
+        "failures": ["STATUS:failed"],
+        "model_policy_failures": {
+            "initial": {
+                "classification": "model_policy_failure",
+                "error_code": "TOOL_CALL_SHAPE_ERROR",
+            }
+        },
+        "runtime_errors": {"initial": None},
+    }
+
+    result = score_recovery(case, base, [])
+
+    assert result["passed"] is False
+    assert result["recovery"]["injection_status"] == "not_reached_due_to_policy_failure"
+    assert "FAULT_NOT_REACHED_POLICY_FAILURE" in result["failures"]
+    assert "INJECTOR_ERROR" not in result["failures"]
+
+
+@pytest.mark.asyncio
+async def test_injector_exception_is_recorded_separately(monkeypatch):
+    class BrokenObservationEnvelope:
+        @staticmethod
+        def failure(**_kwargs):
+            raise RuntimeError("injector construction failed")
+
+    monkeypatch.setattr(recovery_module, "ObservationEnvelope", BrokenObservationEnvelope)
+    case = build_recovery_cases()[0]
+    executor = OneShotFaultExecutor(case.fault, SuccessfulExecutor())
+    task = TaskNode(
+        task_id="research_evidence",
+        goal="research",
+        allowed_actions=("search_pois",),
+    )
+
+    with pytest.raises(RuntimeError, match="injector construction failed"):
+        await executor.execute(
+            task=task,
+            action=PolicyAction(
+                action="search_pois",
+                arguments={"keywords": ["历史文化", "美食"]},
+            ),
+            ledger=None,
+        )
+
+    result = score_recovery(
+        case,
+        {
+            "passed": False,
+            "failures": ["EXCEPTION:RuntimeError"],
+            "runtime_errors": {"evaluation": {"error_type": "RuntimeError"}},
+        },
+        executor.trace,
+    )
+    assert result["recovery"]["injection_status"] == "injector_error"
+    assert "INJECTOR_ERROR" in result["failures"]

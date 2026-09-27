@@ -7,8 +7,6 @@ import pytest
 from agentic.loop import (
     PolicyAction,
     PolicyContext,
-    PolicyRouteTrace,
-    PolicyShadowTrace,
 )
 from agentic.observations import ObservationEnvelope
 from agentic.trajectory import AgentEpisode, TrajectoryStep
@@ -38,19 +36,6 @@ def _episode() -> AgentEpisode:
     action = PolicyAction(
         action="solve_itinerary",
         token_usage=12,
-        route_trace=PolicyRouteTrace(
-            requested_target="student",
-            executed_target="teacher",
-            family="recovery",
-            reason="student schema failure",
-            fallback_used=True,
-            fallback_error_code="INVALID_SCHEMA",
-        ),
-        shadow_trace=PolicyShadowTrace(
-            candidate_model="dpo-shadow",
-            status="completed",
-            action="abort",
-        ),
     )
     return AgentEpisode(
         trajectory_id="trajectory-1",
@@ -125,8 +110,6 @@ def _run(scenario_id: str, mode: str, **updates) -> EvaluationRun:
         "latency_ms": 1000,
         "tool_calls": 5,
         "policy_decisions": 1,
-        "policy_route_calls": 1,
-        "student_route_calls": 1,
     }
     values.update(updates)
     return EvaluationRun(**values)
@@ -145,14 +128,6 @@ def test_agent_episode_metrics_exclude_user_confirmation_from_autonomous_closure
     assert run.soft_score == pytest.approx(0.7)
     assert run.fallback is False
     assert run.policy_decisions == 1
-    assert run.policy_route_calls == 1
-    assert run.student_route_calls == 0
-    assert run.teacher_route_calls == 1
-    assert run.policy_route_fallbacks == 1
-    assert run.route_family_counts == {"recovery": 1}
-    assert run.policy_shadow_calls == 1
-    assert run.policy_shadow_failures == 0
-    assert run.policy_shadow_action_divergences == 1
 
 
 def test_deterministic_state_is_revalidated_and_uses_measured_costs():
@@ -206,8 +181,6 @@ def test_release_gate_passes_only_on_paired_quality_cost_and_latency():
     assert report.paired_scenarios == 2
     assert report.agent.p95_latency_ms == 1300
     assert all(check.passed for check in report.checks)
-    assert report.agent.policy_route_trace_rate == 1.0
-    assert report.agent.teacher_route_share == 0.0
 
 
 def test_release_gate_blocks_small_samples_and_quality_regressions():
@@ -252,19 +225,11 @@ def test_compare_rejects_silently_dropped_agent_failures():
         )
 
 
-def test_release_gate_blocks_missing_route_traces_and_excessive_student_fallbacks():
+def test_release_gate_blocks_excessive_tool_calls():
     report = AgenticEvaluator().compare(
         [_run("a", "deterministic"), _run("b", "deterministic")],
         [
-            _run(
-                "a",
-                "agent",
-                policy_decisions=2,
-                policy_route_calls=1,
-                student_route_calls=0,
-                teacher_route_calls=1,
-                policy_route_fallbacks=1,
-            ),
+            _run("a", "agent", tool_calls=99),
             _run("b", "agent"),
         ],
         gate=ReleaseGateConfig(minimum_paired_scenarios=2),
@@ -272,7 +237,4 @@ def test_release_gate_blocks_missing_route_traces_and_excessive_student_fallback
 
     failed = {check.code for check in report.checks if not check.passed}
     assert report.release_eligible is False
-    assert report.agent.policy_route_trace_rate == pytest.approx(2 / 3)
-    assert report.agent.policy_route_fallback_rate == pytest.approx(0.5)
-    assert "POLICY_ROUTE_TRACE_RATE" in failed
-    assert "POLICY_ROUTE_FALLBACK_RATE" in failed
+    assert "MEAN_TOOL_CALLS" in failed

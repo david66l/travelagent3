@@ -1,0 +1,16 @@
+{
+  "version": "harness-holdout16.v1",
+  "frozen_before_sft": true,
+  "test_targets_forbidden": true,
+  "files": {
+    "validation-cases.json": "6365cc9f341ce814b9e3a6baf1d05aed13e7286905b7bdc319935eada7ff9263",
+    "test-cases.json": "9498e064969aece3969439571811243708359d1dde43922f6b9093e2dc30cc0d"
+  },
+  "counts": {
+    "validation": 8,
+    "test": 8
+  },
+  "scope": "synthetic pilot; composition-separated, shared skills; no statistical independence claim",
+  "source_group_overlap": false,
+  "entity_overlap": false
+}

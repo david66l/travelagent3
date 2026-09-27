@@ -60,7 +60,7 @@ async def test_stream_graph_events_yields_final():
     mock_graph.astream_events = MagicMock(
         return_value=_AsyncIter(
             [
-                {"event": "on_chain_start", "name": "understand", "data": {}},
+                {"event": "on_chain_start", "name": "agent_loop", "data": {}},
                 {
                     "event": "on_chain_end",
                     "name": "output",
@@ -366,3 +366,46 @@ async def test_graph_runner_stream():
         async for event in runner.stream("北京3天", session_id="s1", user_id="u1"):
             events.append(event)
     assert events[0]["type"] == "final"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "action,next_action,target",
+    [
+        ("modify", "agent_continue", "agent_loop"),
+        ("reject", "agent_continue", "agent_loop"),
+        ("confirm", "agent_final", "output"),
+    ],
+)
+async def test_completed_checkpoint_uses_shared_agent_draft_transition(action, next_action, target):
+    from graph.approval import issue_pending_approval, public_approval
+    from graph.runner import stream_graph_events
+
+    values = {"user_id": "u1", "itinerary": [{"day_number": 1}], "policy_mode": "agent"}
+    values["pending_approval"] = issue_pending_approval(values)
+    graph = MagicMock()
+    graph.aget_state = AsyncMock(return_value=MagicMock(next=[], tasks=[], values=values))
+    graph.astream_events = MagicMock(return_value=_AsyncIter([]))
+    apply = AsyncMock(return_value={"next_action": next_action})
+    with (
+        patch("graph.runner.get_graph", new=AsyncMock(return_value=graph)),
+        patch("graph.nodes.apply_draft_decision", new=apply),
+        patch("graph.runner.SessionManager.save", new=AsyncMock()),
+    ):
+        _ = [
+            event
+            async for event in stream_graph_events(
+                "s1",
+                "u1",
+                "",
+                action=action,
+                action_payload={
+                    "approval": public_approval(values["pending_approval"]),
+                    "change": {"pace": "relaxed"},
+                    "reason": "太赶",
+                },
+            )
+        ]
+    apply.assert_awaited_once()
+    assert apply.call_args.args[1]["action"] == action
+    assert graph.astream_events.call_args.args[0].goto == target

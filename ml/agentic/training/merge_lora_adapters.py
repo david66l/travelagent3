@@ -65,7 +65,11 @@ def merge(
 
     if output_path.exists():
         raise ValueError(f"refusing to overwrite existing output: {output_path}")
-    dtype = torch.bfloat16 if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else torch.float32
+    dtype = (
+        torch.bfloat16
+        if torch.cuda.is_available() and torch.cuda.is_bf16_supported()
+        else torch.float32
+    )
     base = AutoModelForCausalLM.from_pretrained(
         primary_config["base_model_name_or_path"],
         dtype=dtype,
@@ -87,7 +91,11 @@ def merge(
         safe_serialization=True,
         selected_adapters=["default"],
     )
-    tokenizer_source = candidate_path if (candidate_path / "tokenizer_config.json").is_file() else primary_path
+    tokenizer_source = (
+        candidate_path
+        if (candidate_path / "tokenizer_config.json").is_file()
+        else primary_path
+    )
     from transformers import AutoTokenizer
 
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_source, trust_remote_code=False)

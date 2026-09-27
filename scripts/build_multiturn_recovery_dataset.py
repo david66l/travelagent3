@@ -15,7 +15,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "backend" / "src"))
 
 from agentic.policy import AGENT_TOOL_POLICY_SYSTEM_PROMPT, policy_prompt_payload  # noqa: E402
-from agentic.policy_actions import policy_action_schemas  # noqa: E402
+from agentic.policy_actions import policy_action_schemas_for_state  # noqa: E402
 from agentic.sft_dataset import (  # noqa: E402
     DatasetManifest,
     EpisodeCandidate,
@@ -67,7 +67,7 @@ def build_multiturn_example(
         step
         for step in candidate.episode.steps
         if step.action.decision_source != "controller"
-        and step.task_id == "search_candidates"
+        and step.task_id in {"search_candidates", "research_evidence"}
         and step.action.action == "search_pois"
     ]
     if len(policy_steps) != 2:
@@ -110,7 +110,10 @@ def build_multiturn_example(
             ),
             SFTMessage(role="assistant", tool_calls=[_tool_call(second.action)]),
         ],
-        tools=policy_action_schemas(first.context.allowed_actions),
+        tools=policy_action_schemas_for_state(
+            first.context.allowed_actions,
+            capability=first.context.capability,
+        ),
     )
 
 

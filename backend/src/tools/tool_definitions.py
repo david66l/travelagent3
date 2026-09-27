@@ -113,6 +113,10 @@ class ValidateItineraryParams(BaseModel):
 class SearchPOIsParams(BaseModel):
     city: str = Field(..., description="Destination city grounded in the goal ledger")
     keywords: list[str] = Field(default_factory=list, description="Preference keywords")
+    required_pois: list[str] = Field(
+        default_factory=list,
+        description="Controller-grounded must-visit POI names that require exact retrieval",
+    )
     category: Literal["attraction", "restaurant", "hotel", "shopping"] | None = None
 
 

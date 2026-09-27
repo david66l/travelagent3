@@ -10,19 +10,12 @@ from agentic.integration import (
     _configured_policy,
     _policy_identity,
     run_agent_branch,
-    summarize_policy_routing,
 )
-from agentic.loop import ActionOutcome, PolicyAction, PolicyContext, PolicyRouteTrace
+from agentic.loop import ActionOutcome, PolicyAction, PolicyContext
 from agentic.observations import ObservationEnvelope
 from agentic.runtime import initialize_agent_ledger
 from agentic.state import ArtifactRecord, FactRecord
-from agentic.policy import (
-    ApiAgentPolicy,
-    DecisionSpecialistRoutedAgentPolicy,
-    RoutedAgentPolicy,
-    ShadowComparingAgentPolicy,
-    VerifierRepairSpecialistRoutedAgentPolicy,
-)
+from agentic.policy import ApiAgentPolicy
 from data.collectors.amap import AmapCollector
 from core.settings import settings
 
@@ -32,19 +25,6 @@ class FirstAllowedPolicy:
         if "finish" in context.allowed_actions:
             return PolicyAction(action="finish")
         return PolicyAction(action=context.allowed_actions[0])
-
-
-class TracedFirstAllowedPolicy:
-    async def propose(self, context: PolicyContext) -> PolicyAction:
-        return PolicyAction(
-            action=context.allowed_actions[0],
-            route_trace=PolicyRouteTrace(
-                requested_target="student",
-                executed_target="student",
-                family="search",
-                reason="test route",
-            ),
-        )
 
 
 class RecordingGoalDirectedPolicy:
@@ -119,149 +99,6 @@ def test_local_checkpoint_backend_requires_path(monkeypatch):
             _configured_policy()
     finally:
         _configured_local_policy.cache_clear()
-
-
-def test_configured_routed_policy_supports_split_student_teacher_endpoints(monkeypatch):
-    created = []
-
-    class FakeClient:
-        def __init__(self, **kwargs):
-            created.append(kwargs)
-
-    monkeypatch.setattr(settings, "agentic_policy_backend", "api")
-    monkeypatch.setattr(settings, "agentic_policy_protocol", "native_tool")
-    monkeypatch.setattr(settings, "agentic_policy_routing_enabled", True)
-    monkeypatch.setattr(settings, "agentic_student_policy_model", "student-4b")
-    monkeypatch.setattr(settings, "agentic_teacher_policy_model", "teacher-8b")
-    monkeypatch.setattr(settings, "agentic_student_base_url", "http://student:8000/v1")
-    monkeypatch.setattr(settings, "agentic_teacher_base_url", "http://teacher:8002/v1")
-    monkeypatch.setattr(settings, "agentic_challenger_shadow_enabled", False)
-    monkeypatch.setattr(settings, "vllm_api_key", "test-key")
-    monkeypatch.setattr("core.llm_client.LLMClient", FakeClient)
-
-    policy = _configured_policy()
-
-    assert isinstance(policy, RoutedAgentPolicy)
-    assert policy.student.model == "student-4b"
-    assert policy.teacher.model == "teacher-8b"
-    assert created == [
-        {
-            "base_url": "http://student:8000/v1",
-            "api_key": "test-key",
-            "using_vllm": True,
-        },
-        {
-            "base_url": "http://teacher:8002/v1",
-            "api_key": "test-key",
-            "using_vllm": True,
-        },
-    ]
-    assert _policy_identity(policy) == (
-        "routed-native-tool-agent-policy",
-        "student=student-4b;teacher=teacher-8b",
-    )
-
-
-def test_configured_policy_builds_shared_base_decision_specialist(monkeypatch):
-    created = []
-
-    class FakeClient:
-        def __init__(self, **kwargs):
-            created.append(kwargs)
-
-    monkeypatch.setattr(settings, "agentic_policy_backend", "api")
-    monkeypatch.setattr(settings, "agentic_policy_protocol", "native_tool")
-    monkeypatch.setattr(settings, "agentic_policy_routing_enabled", False)
-    monkeypatch.setattr(settings, "agentic_decision_specialist_enabled", True)
-    monkeypatch.setattr(settings, "agentic_policy_model", "travel-sft")
-    monkeypatch.setattr(settings, "agentic_decision_specialist_model", "travel-grpo-poi")
-    monkeypatch.setattr(settings, "vllm_base_url", "http://policy:8001/v1")
-    monkeypatch.setattr(settings, "vllm_api_key", "test-key")
-    monkeypatch.setattr("core.llm_client.LLMClient", FakeClient)
-
-    policy = _configured_policy()
-
-    assert isinstance(policy, DecisionSpecialistRoutedAgentPolicy)
-    assert policy.generalist.model == "travel-sft"
-    assert policy.poi_detail_specialist.model == "travel-grpo-poi"
-    assert created == [
-        {
-            "base_url": "http://policy:8001/v1",
-            "api_key": "test-key",
-            "using_vllm": True,
-        }
-    ]
-    assert _policy_identity(policy) == (
-        "decision-specialist-native-tool-agent-policy",
-        "generalist=travel-sft;poi_detail_specialist=travel-grpo-poi",
-    )
-
-
-def test_configured_policy_builds_shared_base_verifier_repair_specialist(monkeypatch):
-    created = []
-
-    class FakeClient:
-        def __init__(self, **kwargs):
-            created.append(kwargs)
-
-    monkeypatch.setattr(settings, "agentic_policy_backend", "api")
-    monkeypatch.setattr(settings, "agentic_policy_protocol", "native_tool")
-    monkeypatch.setattr(settings, "agentic_policy_routing_enabled", False)
-    monkeypatch.setattr(settings, "agentic_decision_specialist_enabled", False)
-    monkeypatch.setattr(settings, "agentic_verifier_repair_specialist_enabled", True)
-    monkeypatch.setattr(settings, "agentic_policy_model", "travel-sft")
-    monkeypatch.setattr(
-        settings,
-        "agentic_verifier_repair_specialist_model",
-        "travel-grpo-verifier-repair",
-    )
-    monkeypatch.setattr(settings, "vllm_base_url", "http://policy:8001/v1")
-    monkeypatch.setattr(settings, "vllm_api_key", "test-key")
-    monkeypatch.setattr("core.llm_client.LLMClient", FakeClient)
-
-    policy = _configured_policy()
-
-    assert isinstance(policy, VerifierRepairSpecialistRoutedAgentPolicy)
-    assert policy.generalist.model == "travel-sft"
-    assert policy.specialist.model == "travel-grpo-verifier-repair"
-    assert created == [
-        {
-            "base_url": "http://policy:8001/v1",
-            "api_key": "test-key",
-            "using_vllm": True,
-        }
-    ]
-    assert _policy_identity(policy) == (
-        "verifier-repair-specialist-native-tool-agent-policy",
-        "generalist=travel-sft;verifier_repair_specialist=travel-grpo-verifier-repair",
-    )
-
-
-def test_configured_policy_builds_non_authoritative_challenger(monkeypatch):
-    class FakeClient:
-        def __init__(self, **kwargs):
-            self.kwargs = kwargs
-
-    monkeypatch.setattr(settings, "agentic_policy_backend", "api")
-    monkeypatch.setattr(settings, "agentic_policy_protocol", "native_tool")
-    monkeypatch.setattr(settings, "agentic_policy_routing_enabled", True)
-    monkeypatch.setattr(settings, "agentic_student_policy_model", "student-sft")
-    monkeypatch.setattr(settings, "agentic_teacher_policy_model", "teacher-8b")
-    monkeypatch.setattr(settings, "agentic_student_base_url", "http://student/v1")
-    monkeypatch.setattr(settings, "agentic_teacher_base_url", "http://teacher/v1")
-    monkeypatch.setattr(settings, "agentic_challenger_shadow_enabled", True)
-    monkeypatch.setattr(settings, "agentic_challenger_policy_model", "student-dpo")
-    monkeypatch.setattr(settings, "agentic_challenger_base_url", "http://student/v1")
-    monkeypatch.setattr("core.llm_client.LLMClient", FakeClient)
-
-    policy = _configured_policy()
-
-    assert isinstance(policy, ShadowComparingAgentPolicy)
-    assert policy.challenger_model == "student-dpo"
-    assert _policy_identity(policy) == (
-        "shadow-comparing-routed-native-tool-agent-policy",
-        "champion=student=student-sft;teacher=teacher-8b;challenger=student-dpo",
-    )
 
 
 def test_api_policy_identity_does_not_require_model_attribute():
@@ -380,7 +217,6 @@ class SuccessfulExecutor:
                     plan_version=ledger.task_graph.plan_version,
                 )
             ],
-            loop_control="continue" if action.action == "search_pois" else None,
         )
 
 
@@ -401,87 +237,6 @@ async def test_amap_nested_type_is_classified_as_restaurant():
 
     assert item is not None
     assert item.category == "restaurant"
-
-
-@pytest.mark.asyncio
-async def test_agent_branch_projects_verified_solver_draft_for_legacy_output():
-    initialized = initialize_agent_ledger(
-        {
-            "user_input": "Plan one day in Shanghai",
-            "slots": {"destination": "Shanghai", "travel_days": 1},
-        },
-        mode="agent",
-    )
-
-    result = await run_agent_branch(
-        initialized,
-        policy=FirstAllowedPolicy(),
-        executor=SuccessfulExecutor(),
-    )
-
-    assert result["agent_status"] == "awaiting_confirmation"
-    assert result["next_action"] == "agent_draft"
-    assert result["itinerary"][0]["activities"][0]["poi_name"] == "Museum"
-    assert result["validation_report"]["hard_pass"] is True
-    assert result["agent_episode"]["status"] == "interrupted"
-    assert result["agent_episode"]["content_hash"]
-
-
-
-@pytest.mark.asyncio
-async def test_react_runtime_keeps_deterministic_gates_controller_owned():
-    initialized = initialize_agent_ledger(
-        {
-            "user_input": "Plan one day in Shanghai",
-            "slots": {"destination": "Shanghai", "travel_days": 1},
-        },
-        mode="agent",
-    )
-    policy = RecordingGoalDirectedPolicy()
-
-    result = await run_agent_branch(
-        initialized,
-        policy=policy,
-        executor=SuccessfulExecutor(),
-        execution_mode="react",
-    )
-
-    assert result["agent_status"] == "awaiting_confirmation"
-    assert result["agent_execution_mode"] == "react"
-    assert [context.current_subtask["task_id"] for context in policy.contexts] == [
-        "search_candidates",
-        "search_candidates",
-    ]
-    sources = [step["action"]["decision_source"] for step in result["agent_episode"]["steps"]]
-    assert sources.count("policy") == 2
-    assert sources.count("controller") == 9
-
-
-
-
-@pytest.mark.asyncio
-async def test_agent_branch_exposes_ui_safe_policy_routing_summary():
-    initialized = initialize_agent_ledger(
-        {
-            "user_input": "Plan one day in Shanghai",
-            "slots": {"destination": "Shanghai", "travel_days": 1},
-        },
-        mode="agent",
-    )
-
-    result = await run_agent_branch(
-        initialized,
-        policy=TracedFirstAllowedPolicy(),
-        executor=SuccessfulExecutor(),
-    )
-
-    summary = result["agent_policy_routing"]
-    assert summary["schema_version"] == "agent-policy-routing-summary.v1"
-    assert summary["route_counts"]["student"] > 0
-    assert summary["route_counts"]["teacher"] == 0
-    assert summary["fallback_count"] == 0
-    assert summary["decisions"][0]["reason"] == "test route"
-    assert summarize_policy_routing is not None
 
 
 @pytest.mark.asyncio
@@ -547,3 +302,30 @@ async def test_policy_failure_exposes_terminal_error_for_observability():
     assert result["agent_error"] == "RuntimeError: policy endpoint unavailable"
 
 
+@pytest.mark.asyncio
+async def test_executor_exception_keeps_zero_step_runtime_terminal_episode(monkeypatch):
+    initialized = initialize_agent_ledger(
+        {
+            "user_input": "Plan one day in Shanghai",
+            "slots": {"destination": "Shanghai", "travel_days": 1},
+        },
+        mode="agent",
+    )
+
+    async def crashing_loop(*_args, **_kwargs):
+        raise ConnectionError("tool transport unavailable")
+
+    monkeypatch.setattr("agentic.integration.BoundedAgentLoop.run", crashing_loop)
+
+    result = await run_agent_branch(
+        initialized,
+        policy=FirstAllowedPolicy(),
+        executor=SuccessfulExecutor(),
+    )
+
+    assert result["termination_reason"] == "runtime_error_fallback"
+    assert result["agent_error"] == "ConnectionError: tool transport unavailable"
+    assert result["agent_episode"]["status"] == "failed"
+    terminal = result["agent_episode"]["events"][-1]["payload"]
+    assert terminal["failure_class"] == "runtime_error"
+    assert terminal["error_type"] == "ConnectionError"

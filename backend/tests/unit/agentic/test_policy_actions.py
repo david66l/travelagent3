@@ -18,6 +18,7 @@ from agentic.policy_actions import (
     validate_policy_arguments,
     validate_policy_arguments_for_state,
 )
+from agentic.reason_quality import assemble_repair_reason
 
 
 def test_solve_schema_hides_controller_owned_solver_payloads():
@@ -57,15 +58,18 @@ def test_policy_arguments_strip_exact_schema_annotations_only():
 
 
 def test_policy_arguments_drop_controller_owned_poi_fields():
-    assert validate_policy_arguments(
-        "get_poi_detail",
-        {
-            "candidate_poi_ids": ["poi-1", "poi-2"],
-            "poi_ids": ["poi-1"],
-            "poi_names": ["Museum"],
-            "city": "Beijing",
-        },
-    ) == {}
+    assert (
+        validate_policy_arguments(
+            "get_poi_detail",
+            {
+                "candidate_poi_ids": ["poi-1", "poi-2"],
+                "poi_ids": ["poi-1"],
+                "poi_names": ["Museum"],
+                "city": "Beijing",
+            },
+        )
+        == {}
+    )
 
 
 def test_policy_arguments_still_reject_unknown_poi_fields():
@@ -76,23 +80,15 @@ def test_policy_arguments_still_reject_unknown_poi_fields():
 def test_policy_argument_rejections_have_stable_machine_codes():
     with pytest.raises(PolicyArgumentValidationError) as unexpected:
         validate_policy_arguments(
-            "retry_solve",
-            {"strategy": "greedy", "reason": "grounded", "candidates": ["poi-1"]},
+            "solve_itinerary", {"strategy": "greedy", "candidates": ["poi-1"]}
         )
     assert unexpected.value.rejection_code == "UNEXPECTED_ARGUMENT:candidates"
-    assert unexpected.value.validation_errors[0]["type"] == "extra_forbidden"
-
     with pytest.raises(PolicyArgumentValidationError) as missing:
-        validate_policy_arguments("retry_solve", {"strategy": "greedy"})
-    assert missing.value.rejection_code == "MISSING_ARGUMENT:reason"
-
-    # ``strategy`` is intentionally controller-owned.  It is removed from the
-    # model-visible payload here and separately recorded as an override attempt
-    # at the central authorization boundary.
-    assert validate_policy_arguments(
-        "retry_solve",
-        {"strategy": "auto", "reason": "grounded"},
-    ) == {"reason": "grounded"}
+        validate_policy_arguments("ask_user", {})
+    assert missing.value.rejection_code == "MISSING_ARGUMENT:question"
+    assert validate_policy_arguments("solve_itinerary", {"strategy": "greedy"}) == {
+        "strategy": "greedy"
+    }
 
 
 def test_unified_search_supports_open_ended_event_queries():
@@ -142,9 +138,10 @@ def test_tradeoff_options_are_hidden_and_hydrated_from_controller_capability():
     assert set(properties) == {"reason"}
     assert model_arguments == {"reason": "餐饮费用超过预算"}
     assert authorized.arguments == {
-        "reason": "餐饮费用超过预算",
+        "reason": assemble_repair_reason("餐饮费用超过预算", "propose_tradeoff"),
         "options": ["提高总预算"],
     }
+    assert authorized.model_arguments == {"reason": "餐饮费用超过预算"}
 
 
 def test_tradeoff_fails_closed_without_exact_controller_authority():
@@ -219,33 +216,26 @@ def test_controller_override_is_audited_but_never_executed_or_exported():
     assert project_model_owned_arguments(authorized) == {"reason": "餐饮费用超过预算"}
 
 
-def test_retry_strategy_is_hidden_hydrated_and_audited_as_controller_owned():
-    raw_arguments = {"strategy": "cpsat", "reason": "验证器确认当前排程仍可重排"}
-    model_arguments = validate_policy_arguments_for_state(
-        "retry_solve", raw_arguments, capability={}
-    )
+def test_abort_reason_is_assembled_while_raw_model_text_is_preserved():
+    raw_reason = "两项锁定活动在第1天重叠45分钟，且没有获准的调整项"
+
     authorized = authorize_policy_action(
         SimpleNamespace(capability={}, hard_constraints={}),
-        PolicyAction(
-            action="retry_solve",
-            arguments=model_arguments,
-            model_arguments=raw_arguments,
-        ),
+        PolicyAction(action="abort", arguments={"reason": raw_reason}),
     )
 
-    assert model_arguments == {"reason": "验证器确认当前排程仍可重排"}
-    assert authorized.arguments == {
-        "reason": "验证器确认当前排程仍可重排",
-        "strategy": "greedy",
-    }
-    assert authorized.model_arguments == raw_arguments
-    assert authorized.controller_override_attempt is True
-    assert authorized.model_contract_compliant is False
-    assert authorized.controller_hydration_exact is True
-    assert authorized.controller_hydrated_fields == ["strategy"]
-    assert project_model_owned_arguments(authorized) == {
-        "reason": "验证器确认当前排程仍可重排"
-    }
+    assert authorized.action == "abort"
+    assert authorized.model_arguments == {"reason": raw_reason}
+    assert authorized.arguments == {"reason": assemble_repair_reason(raw_reason, "abort")}
+    assert authorized.controller_hydrated_fields == []
+    assert authorized.controller_hydration_exact is None
+
+
+def test_tool_schema_rejects_retired_retry_action():
+    from agentic.policy_actions import policy_action_schema
+
+    with pytest.raises(ValueError, match="unknown policy action: retry_solve"):
+        policy_action_schema("retry_solve")
 
 
 def test_state_scoped_structured_schema_exposes_reason_only():

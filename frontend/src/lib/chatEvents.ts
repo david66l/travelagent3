@@ -2,11 +2,67 @@ import {
   deriveItineraryBudget,
   useChatStore,
   type ConfirmedInfo,
+  type Message,
   type PreferencePanel,
   type PolicyRoutingSummary,
   type PendingApproval,
 } from "@/stores/chatStore";
 import { labelForStage, resolveActivityPhase } from "@/lib/stageLabels";
+
+/**
+ * Merge the server's `recent_messages` into the locally held transcript.
+ *
+ * Why not replace: `recent_messages` is truncated server-side (last 10), so
+ * assigning it over `local` would discard older history the client still has
+ * (a freshly reloaded page keeps a longer window in its snapshots).
+ *
+ * Why not a plain "skip contents that already appear": a user can legitimately
+ * send the same text twice, and collapsing those would delete a real message.
+ * Instead we look for the longest suffix of `server` that matches a suffix of
+ * `local` and append only what lies beyond it. That is exact for the case this
+ * exists for — the client is behind the server because a reply was produced
+ * while the user was looking at another conversation — and it cannot silently
+ * drop a repeated message, because a repeated *older* message is never part of
+ * the matched suffix unless everything after it also matches in order.
+ *
+ * Known residual limitation: `Message` carries no stable id, so a misalignment
+ * (e.g. a local optimistic message the server never accepted) prevents the
+ * suffix match and the merge appends nothing. Distinguishing "missing reply"
+ * from "diverged transcript" needs a server-assigned id — a backend contract
+ * change, deliberately out of scope here. Appending nothing is the safe side:
+ * the alternative loses or duplicates user-visible content.
+ */
+export function mergeRecentMessages(local: Message[], server: Message[]): Message[] {
+  if (server.length === 0) return local;
+  if (local.length === 0) return server;
+
+  const same = (a: Message, b: Message): boolean =>
+    a.role === b.role && a.content === b.content;
+
+  // Longest suffix of `server` that equals a suffix of `local`.
+  let matched = 0;
+  const maxOverlap = Math.min(local.length, server.length);
+  for (let size = maxOverlap; size > 0; size -= 1) {
+    let allEqual = true;
+    for (let index = 0; index < size; index += 1) {
+      if (
+        !same(
+          local[local.length - size + index],
+          server[server.length - size + index]
+        )
+      ) {
+        allEqual = false;
+        break;
+      }
+    }
+    if (allEqual) {
+      matched = size;
+      break;
+    }
+  }
+
+  return matched === server.length ? local : [...local, ...server.slice(matched)];
+}
 
 function splitTravelDates(value: unknown): {
   travel_dates?: string;
@@ -63,27 +119,125 @@ export function profileToPreferencePanel(profile: unknown): PreferencePanel | nu
   return panel;
 }
 
-export function applyProfileFromServer(profile: unknown) {
+export function applyProfileFromServer(
+  profile: unknown,
+  store: ChatStoreApi = useChatStore.getState()
+) {
   const confirmed = profileToConfirmedInfo(profile);
   const preference = profileToPreferencePanel(profile);
   if (confirmed) {
-    useChatStore.getState().setConfirmedInfo(confirmed);
+    store.setConfirmedInfo(confirmed);
   }
   if (preference) {
-    useChatStore.getState().setPreferencePanel(preference);
+    store.setPreferencePanel(preference);
   }
 }
 
-type EventRefs = {
+export type EventRefs = {
   activeJobIdRef: { current: string | null };
   lastEventIdRef: { current: number };
+  /**
+   * The conversation this event belongs to. The server stamps every frame with
+   * it, so an event can be attributed even when the user has already switched to
+   * a different conversation. Absent only in tests that call
+   * `handleChatEvent` directly, where the single-conversation behaviour applies.
+   */
+  conversationId?: string;
 };
 
+type ChatStoreApi = ReturnType<typeof useChatStore.getState>;
+
+/**
+ * The store slice an event may write to.
+ *
+ * Writing every event straight onto the global store only works while exactly
+ * one conversation can be in flight. Now that several can stream at once, an
+ * event carries its own conversation and has to be attributed: progress from a
+ * background conversation belongs in `runtimeByConversation`, never on the
+ * conversation the user is looking at.
+ *
+ * Rather than branch at ~95 call sites, the whole handler runs against this
+ * facade. Streaming-state methods are mapped onto the runtime entry for
+ * `conversationId`; transcript-writing methods become no-ops for a background
+ * conversation, because its durable messages arrive again from the server
+ * (`state_restored` / durable replay) when the user switches back — writing them
+ * into the active transcript is exactly the corruption this prevents.
+ */
+function scopedStore(conversationId: string | undefined): ChatStoreApi {
+  const global = useChatStore.getState();
+  if (!conversationId || conversationId === global.sessionId) {
+    return global;
+  }
+
+  const runtime = global.runtimeFor(conversationId);
+  const patch = (values: Parameters<typeof global.setRuntime>[1]) =>
+    global.setRuntime(conversationId, values);
+  const noop = () => undefined;
+
+  return {
+    ...global,
+    // --- conversation-scoped reads ---
+    isLoading: runtime.isLoading,
+    isStreaming: runtime.isStreaming,
+    streamingContent: runtime.streamingContent,
+    needsClarification: runtime.needsClarification,
+    waitingForConfirmation: runtime.waitingForConfirmation,
+    currentStage: runtime.currentStage,
+    jobStatus: runtime.jobStatus,
+    activityPhase: runtime.activityPhase,
+    // --- conversation-scoped writes ---
+    setLoading: (value: boolean) => patch({ isLoading: value }),
+    setNeedsClarification: (value: boolean) => patch({ needsClarification: value }),
+    setWaitingForConfirmation: (value: boolean) =>
+      patch({ waitingForConfirmation: value }),
+    setCurrentStage: (value: string | null) => patch({ currentStage: value }),
+    setJobStatus: (value: string | null) => patch({ jobStatus: value }),
+    setActivityPhase: (value: typeof runtime.activityPhase) =>
+      patch({ activityPhase: value }),
+    setStreamingContent: (value: string) => patch({ streamingContent: value }),
+    startStreaming: () => patch({ isStreaming: true }),
+    stopStreaming: () => patch({ isStreaming: false }),
+    // Appending is an atomic store action: several frames are parsed in one tick
+    // and a value computed from this facade's snapshot would drop all but the
+    // last chunk.
+    appendStreamingContent: (chunk: string) =>
+      global.appendStreamingChunk(conversationId, chunk),
+    setJobId: (value: string | null) => patch({ jobId: value }),
+    // --- transcript writes never apply to a background conversation ---
+    addMessage: noop,
+    setItinerary: noop,
+    setPendingApproval: noop,
+    setBudgetPanel: noop,
+    setPolicyRouting: noop,
+    setOutputUrls: noop,
+    saveChatSnapshot: noop,
+    confirmCurrentItinerary: noop,
+  } as unknown as ChatStoreApi;
+}
+
+/**
+ * Persist the coarse progress of a background conversation after a handler ran,
+ * so the sidebar and any runtime indicator can show that it is still working.
+ */
+function mirrorBackgroundProgress(
+  conversationId: string,
+  store: ChatStoreApi
+): void {
+  const global = useChatStore.getState();
+  if (conversationId === global.sessionId) return;
+  global.setRuntime(conversationId, {
+    isLoading: store.isLoading,
+    isStreaming: store.isStreaming,
+    currentStage: store.currentStage,
+    jobStatus: store.jobStatus,
+    activityPhase: store.activityPhase,
+  });
+}
+
 /** Commit assistant prose once — skip if the latest bubble already matches. */
-function commitAssistantProse(content: string) {
+function commitAssistantProse(content: string, store: ChatStoreApi) {
   const text = content.trim();
   if (!text) return;
-  const store = useChatStore.getState();
   const last = store.messages[store.messages.length - 1];
   if (last?.role === "assistant" && last.content.trim() === text) {
     return;
@@ -95,30 +249,27 @@ function commitAssistantProse(content: string) {
   });
 }
 
-function finalizeStreamingToMessage() {
-  const store = useChatStore.getState();
+function finalizeStreamingToMessage(store: ChatStoreApi) {
   if (!store.isStreaming && !store.streamingContent.trim()) {
     return;
   }
   const text = store.streamingContent.trim();
   if (text) {
-    commitAssistantProse(text);
+    commitAssistantProse(text, store);
   }
   store.stopStreaming();
   store.setStreamingContent("");
 }
 
-function commitConfirmedItinerary() {
-  const store = useChatStore.getState();
+function commitConfirmedItinerary(store: ChatStoreApi) {
   if (!store.itinerary?.length || store.waitingForConfirmation) return;
   store.confirmCurrentItinerary();
 }
 
-function applyServerBudget(raw: unknown) {
+function applyServerBudget(raw: unknown, store: ChatStoreApi) {
   if (!raw || typeof raw !== "object") return;
   const budget = raw as Record<string, unknown>;
   if (typeof budget.total !== "number") return;
-  const store = useChatStore.getState();
   const totalBudget = store.confirmedInfo?.budget_range ?? undefined;
   const spent = budget.total;
   const breakdown = Object.fromEntries(
@@ -141,7 +292,7 @@ function applyServerBudget(raw: unknown) {
   });
 }
 
-function applyPolicyRouting(raw: unknown) {
+function applyPolicyRouting(raw: unknown, store: ChatStoreApi) {
   if (!raw || typeof raw !== "object") return;
   const summary = raw as Partial<PolicyRoutingSummary>;
   if (
@@ -151,14 +302,19 @@ function applyPolicyRouting(raw: unknown) {
   ) {
     return;
   }
-  useChatStore.getState().setPolicyRouting(summary as PolicyRoutingSummary);
+  store.setPolicyRouting(summary as PolicyRoutingSummary);
 }
 
 export function handleChatEvent(
   data: Record<string, unknown>,
   refs: EventRefs
 ) {
-  const store = useChatStore.getState();
+  // The frame names its conversation; fall back to the stream that delivered it
+  // so a missing field can never silently attribute progress to the wrong one.
+  const conversationId =
+    (typeof data.conversation_id === "string" && data.conversation_id) ||
+    refs.conversationId;
+  const store = scopedStore(conversationId);
   const type = data.type as string | undefined;
 
   // Event ids belong to the durable PlanningJob event log, regardless of the
@@ -185,7 +341,7 @@ export function handleChatEvent(
   if (type === "intent_ready") {
     const content =
       (data.content as string) || "意图识别已完成，接下来将进行大致的规划。";
-    applyProfileFromServer(data.profile);
+    applyProfileFromServer(data.profile, store);
     store.addMessage({
       role: "assistant",
       content,
@@ -208,7 +364,7 @@ export function handleChatEvent(
     store.setLoading(false);
     store.setCurrentStage(null);
     store.setActivityPhase("idle");
-    applyProfileFromServer(data.profile);
+    applyProfileFromServer(data.profile, store);
     store.addMessage({
       role: "assistant",
       content: text,
@@ -231,18 +387,18 @@ export function handleChatEvent(
     store.setNeedsClarification(false);
     store.setWaitingForConfirmation(false);
     store.setPendingApproval(null);
-    applyProfileFromServer(data.profile);
+    applyProfileFromServer(data.profile, store);
     if (itinerary) {
       store.setItinerary(itinerary);
     }
-    applyServerBudget(data.budget_breakdown);
-    applyPolicyRouting(data.agent_policy_routing);
+    applyServerBudget(data.budget_breakdown, store);
+    applyPolicyRouting(data.agent_policy_routing, store);
     store.setOutputUrls(outputUrls);
-    finalizeStreamingToMessage();
+    finalizeStreamingToMessage(store);
     if (content) {
-      commitAssistantProse(content);
+      commitAssistantProse(content, store);
     }
-    commitConfirmedItinerary();
+    commitConfirmedItinerary(store);
     store.saveChatSnapshot();
     return;
   }
@@ -256,13 +412,18 @@ export function handleChatEvent(
     if (itinerary) {
       store.setItinerary(itinerary);
     }
-    applyPolicyRouting(data.agent_policy_routing);
+    applyPolicyRouting(data.agent_policy_routing, store);
     // Ensure streamed / partial prose is persisted before we drop the buffer.
-    finalizeStreamingToMessage();
+    finalizeStreamingToMessage(store);
     store.setWaitingForConfirmation(true);
-    store.setPendingApproval(
-      (data.pending_approval as PendingApproval | undefined) || null
-    );
+    // Only replace the stored approval when the event actually carries one.
+    // Coercing a missing key to null erased the approval the user must echo
+    // back, so confirmation always failed with APPROVAL_REQUIRED.
+    if ("pending_approval" in data) {
+      store.setPendingApproval(
+        (data.pending_approval as PendingApproval | undefined) || null
+      );
+    }
     store.saveChatSnapshot();
     return;
   }
@@ -274,7 +435,7 @@ export function handleChatEvent(
     if (itinerary) {
       store.setItinerary(itinerary);
     }
-    applyPolicyRouting(payload?.agent_policy_routing);
+    applyPolicyRouting(payload?.agent_policy_routing, store);
     if (content) {
       // A full `content` payload supersedes the live token buffer. Drop the
       // buffer (without committing it) and commit the consolidated prose once
@@ -283,9 +444,9 @@ export function handleChatEvent(
       const finalContent = streamed.length > content.length ? streamed : content;
       store.stopStreaming();
       store.setStreamingContent("");
-      commitAssistantProse(finalContent);
+      commitAssistantProse(finalContent, store);
     } else if (store.isStreaming) {
-      finalizeStreamingToMessage();
+      finalizeStreamingToMessage(store);
     }
     const outputUrls = {
       pdf: (payload?.output_pdf_url as string) || undefined,
@@ -326,20 +487,20 @@ export function handleChatEvent(
     if (itinerary) {
       store.setItinerary(itinerary);
     }
-    applyPolicyRouting(payload?.agent_policy_routing);
+    applyPolicyRouting(payload?.agent_policy_routing, store);
     store.setOutputUrls(outputUrls);
-    finalizeStreamingToMessage();
+    finalizeStreamingToMessage(store);
     if (content) {
-      commitAssistantProse(content);
+      commitAssistantProse(content, store);
     }
-    commitConfirmedItinerary();
+    commitConfirmedItinerary(store);
     store.saveChatSnapshot();
     return;
   }
 
   if (type === "state_restored") {
-    applyProfileFromServer(data.profile);
-    applyPolicyRouting(data.agent_policy_routing);
+    applyProfileFromServer(data.profile, store);
+    applyPolicyRouting(data.agent_policy_routing, store);
     const phase = (data.phase as string) || "gathering";
     const itinerary = data.itinerary as Parameters<typeof store.setItinerary>[0] | undefined;
     const recentMessages = Array.isArray(data.recent_messages)
@@ -359,11 +520,15 @@ export function handleChatEvent(
           }))
       : [];
     useChatStore.setState((current) => ({
-      messages: current.messages.length > 0 ? current.messages : recentMessages,
+      // The transcript may already hold this conversation's earlier history
+      // (restored from a snapshot when the user switched back). Merge the
+      // server's window into it so a reply produced while the user was looking
+      // at another conversation is not discarded — see mergeRecentMessages.
+      messages: mergeRecentMessages(current.messages, recentMessages),
       itinerary: itinerary?.length ? itinerary : current.itinerary,
       waitingForConfirmation: phase === "awaiting_confirm",
       pendingApproval:
-        (data.pending_approval as PendingApproval | undefined) ||
+        (data.pending_approval as PendingApproval | undefined) ??
         current.pendingApproval,
       isLoading: phase === "planning",
       currentStage:
@@ -375,7 +540,7 @@ export function handleChatEvent(
       activityPhase: phase === "planning" ? "planning" : "idle",
     }));
     if (data.budget_breakdown) {
-      applyServerBudget(data.budget_breakdown);
+      applyServerBudget(data.budget_breakdown, store);
     } else if (itinerary?.length) {
       const current = useChatStore.getState();
       current.setBudgetPanel(
@@ -387,19 +552,19 @@ export function handleChatEvent(
       );
     }
     if (phase === "completed") {
-      commitConfirmedItinerary();
+      commitConfirmedItinerary(store);
     }
     return;
   }
 
   if (type === "revision_created") {
-    applyProfileFromServer(data.profile);
+    applyProfileFromServer(data.profile, store);
     return;
   }
 
   if (type === "stage" || data.stage) {
     const stagePayload = data.payload as Record<string, unknown> | undefined;
-    applyPolicyRouting(stagePayload?.agent_policy_routing);
+    applyPolicyRouting(stagePayload?.agent_policy_routing, store);
     const stage = data.stage as string;
     store.setJobStatus(stage);
 
@@ -452,9 +617,9 @@ export function handleChatEvent(
       // streaming buffer for cases where the backend did not send a proposal.
       const finalText =
         (payload?.proposal_text as string) || store.streamingContent;
-      finalizeStreamingToMessage();
+      finalizeStreamingToMessage(store);
       if (finalText) {
-        commitAssistantProse(finalText);
+        commitAssistantProse(finalText, store);
       }
       if (payload?.itinerary || payload?.itinerary_final) {
         store.setItinerary(
@@ -463,7 +628,7 @@ export function handleChatEvent(
           >[0]
         );
       }
-      commitConfirmedItinerary();
+      commitConfirmedItinerary(store);
       store.saveChatSnapshot();
     } else if (stage === "failed" || stage === "cancelled") {
       refs.activeJobIdRef.current = null;

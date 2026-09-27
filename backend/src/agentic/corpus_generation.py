@@ -55,12 +55,10 @@ class CurriculumTeacherPolicy:
             )
         if "propose_tradeoff" in context.allowed_actions and capability == "infeasible":
             evidence = [str(item) for item in context.capability.get("evidence") or []]
-            alternatives = [str(item) for item in context.capability.get("alternatives") or []]
             return PolicyAction(
                 action="propose_tradeoff",
                 arguments={
                     "reason": evidence[0] if evidence else "当前预算与行程天数冲突",
-                    "options": alternatives or ["提高预算", "减少行程天数"],
                 },
             )
         if "finish" in context.allowed_actions:
@@ -75,6 +73,39 @@ class CurriculumTeacherPolicy:
                 return PolicyAction(action="accept_candidates")
             interests = list(context.soft_preferences.get("interests") or [])
             return PolicyAction(action="search_pois", arguments={"keywords": interests[:2]})
+        if task_id == "research_evidence":
+            present = {
+                str(item.get("artifact_type") or "") for item in context.relevant_artifacts
+            }
+            required = set(
+                context.current_subtask.get("success_criteria", {}).get(
+                    "research_required_artifact_types", []
+                )
+            )
+            research_steps = (
+                ("city_knowledge", "retrieve_city_knowledge"),
+                ("poi_candidate_set", "search_pois"),
+                ("poi_detail_set", "get_poi_detail"),
+                ("weather_snapshot", "get_weather"),
+                ("route_matrix", "get_route_matrix"),
+            )
+            for artifact_type, action_name in research_steps:
+                if (
+                    artifact_type in required
+                    and artifact_type not in present
+                    and action_name in context.allowed_actions
+                ):
+                    arguments: dict[str, Any] = {}
+                    if action_name == "search_pois":
+                        interests = list(context.soft_preferences.get("interests") or [])
+                        arguments["keywords"] = interests[:2]
+                    elif action_name == "get_weather":
+                        start_date = context.hard_constraints.get("start_date")
+                        if start_date:
+                            arguments["date"] = str(start_date)
+                    return PolicyAction(action=action_name, arguments=arguments)
+            if required.issubset(present) and "finalize_research" in context.allowed_actions:
+                return PolicyAction(action="finalize_research")
         if task_id == "review_itinerary":
             latest_report = next(
                 (
@@ -111,11 +142,19 @@ class AdaptiveRecoveryTeacherPolicy(CurriculumTeacherPolicy):
     """
 
     async def propose(self, context: PolicyContext) -> PolicyAction:
-        if str(context.current_subtask.get("task_id") or "") == "search_candidates" and any(
+        has_candidates = any(
             item.get("artifact_type") == "poi_candidate_set" and int(item.get("poi_count") or 0) > 0
             for item in context.relevant_artifacts
-        ):
+        )
+        task_id = str(context.current_subtask.get("task_id") or "")
+        if task_id == "search_candidates" and has_candidates:
             return PolicyAction(action="accept_candidates")
+        # In the current ReAct graph, search is only one part of the wider
+        # research_evidence task. Once a candidate set exists, delegate back to
+        # the normal teacher so it can gather the remaining declared evidence
+        # instead of consuming the snapshot by repeating a successful search.
+        if task_id == "research_evidence" and has_candidates:
+            return await super().propose(context)
         if "search_pois" not in context.allowed_actions:
             return await super().propose(context)
 
@@ -227,6 +266,16 @@ def build_curriculum_case(index: int) -> tuple[EnvironmentTask, EnvironmentSnaps
         snapshot_version=CURRICULUM_SCHEMA_VERSION,
         state_id=f"curriculum-state-{index:05d}",
         tool_responses={
+            "retrieve_city_knowledge": [
+                {
+                    "data": {
+                        "city": city,
+                        "topic": "travel",
+                        "record_count": len(candidates),
+                        "pois": candidates,
+                    }
+                }
+            ],
             "get_weather": [
                 {
                     "data": [

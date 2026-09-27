@@ -256,10 +256,24 @@ def test_planning_event_projection_preserves_public_event_and_cursor():
         stage="draft_ready",
         event_type="awaiting_confirm",
     )
+    approval = {
+        "schema_version": "itinerary-approval.v1",
+        "approval_id": "approval-1",
+        "goal_version": 1,
+        "plan_version": 1,
+        "itinerary_hash": "abc",
+        "issued_at": "2026-01-01T00:00:00+00:00",
+        "expires_at": "2026-01-01T00:30:00+00:00",
+        "action_scope": ["confirm", "modify", "reject"],
+    }
 
     message = _planning_event_message(
         event,
-        {"itinerary": [{"day_number": 1}], "warnings": ["rain"]},
+        {
+            "itinerary": [{"day_number": 1}],
+            "warnings": ["rain"],
+            "pending_approval": approval,
+        },
         "job-1",
     )
 
@@ -269,7 +283,9 @@ def test_planning_event_projection_preserves_public_event_and_cursor():
         "type": "awaiting_confirm",
         "itinerary": [{"day_number": 1}],
         "warnings": ["rain"],
-        "agent_policy_routing": None,
+        # The client must echo the issued approval back on confirm/modify/reject.
+        # Dropping it here made every confirmation fail with APPROVAL_REQUIRED.
+        "pending_approval": approval,
     }
 
 

@@ -20,7 +20,9 @@ from core.conversation_state import (
     flatten_profile,
     merge_profile,
 )
+from core.inference_metrics import InferenceMetrics
 from core.langsmith_trace import traceable_step
+from core.llm_client import llm
 from models.travel_slots import SlotParseOutput, TravelSlots
 from schemas import IntentResult, ProfilePatch, UserProfile
 
@@ -185,6 +187,7 @@ def slot_parse_output_to_intent_result(
         disambiguation_candidates=candidates,
         feasibility_report=feasibility,
         reasoning="Parsed by DemandParserAgent with profile recall and feasibility check.",
+        parse_source=parsed.parse_source,
         token_usage=parsed.token_usage,
     )
 
@@ -254,9 +257,12 @@ async def _trace_demand_parser(
     history: list[dict[str, str]],
     user_profile: UserProfile | None,
     flat: dict[str, Any],
-) -> SlotParseOutput:
+) -> tuple[SlotParseOutput, dict[str, Any] | None]:
     parser = DemandParserAgent()
-    return await parser.parse(content, history, user_profile, known_profile=flat)
+    parsed = await parser.parse(content, history, user_profile, known_profile=flat)
+    metrics = llm.last_request_metrics
+    inference = metrics.model_dump(mode="json") if isinstance(metrics, InferenceMetrics) else None
+    return parsed, inference
 
 
 @traceable_step("intent/profile_recall", run_type="chain")
@@ -368,7 +374,7 @@ async def process_user_turn(state: dict[str, Any], content: str) -> IntentResult
     profile_kwargs = {k: v for k, v in flat.items() if v is not None and v != []}
     user_profile = UserProfile(**profile_kwargs) if profile_kwargs else None
 
-    parsed = await _trace_demand_parser(content, history, user_profile, flat)
+    parsed, intent_inference = await _trace_demand_parser(content, history, user_profile, flat)
     current_slots = retain_agent_semantics_from_previous_turn(
         parsed.slots,
         state.get("slots"),
@@ -392,6 +398,7 @@ async def process_user_turn(state: dict[str, Any], content: str) -> IntentResult
     result = _trace_build_intent_result(
         parsed, merged_slots, inferred_slots, feasibility, merged_flat
     )
+    result.inference_metrics = intent_inference
     missing_required = result.missing_required
     state["last_intent"] = result.intent
     state["missing_required"] = missing_required

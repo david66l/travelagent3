@@ -1,0 +1,18 @@
+{
+  "version": "public-data-review.v1",
+  "checked_date": "2026-09-05",
+  "status": "official_cards_reviewed_import_pending",
+  "teacher_model": "glm-5.3-flash",
+  "api_batch_cap_cny": 100,
+  "api_calls_this_review": 0,
+  "cloud_network_probe": "/root/autodl-tmp/travelagent-public-data-review-20260905/summary.json",
+  "datasets": [
+    {"id": "nvidia/When2Call", "url": "https://huggingface.co/datasets/nvidia/When2Call", "license": "cc-by-4.0", "sft_train_rows": 15000, "preference_train_rows": 9000, "role": "priority_generic_auxiliary_training_review", "pinned_revision": null, "imported": false, "caveat": "retain source schema; preserve train/pref lineage and overlapping test subsets"},
+    {"id": "Team-ACE/ToolACE", "url": "https://huggingface.co/datasets/Team-ACE/ToolACE", "license": "apache-2.0", "train_rows_approx": 11300, "role": "priority_generic_auxiliary_training_review", "pinned_revision": null, "imported": false, "caveat": "format and multi-action conversion require audit; not executed TravelAgent2 episodes"},
+    {"id": "Alibaba-NLP/Open-Travel", "url": "https://huggingface.co/datasets/Alibaba-NLP/Open-Travel", "license": "cc-by-nc-4.0", "rl_train_requests": 1626, "test_rows": 250, "role": "separate_research_domain_task_candidate", "pinned_revision": null, "imported": false, "caveat": "requests are not verified action demonstrations; environment compatibility pending"},
+    {"id": "LAMDA-NeSy/ChinaTravel", "url": "https://huggingface.co/datasets/LAMDA-NeSy/ChinaTravel", "license": "cc-by-nc-sa-4.0", "role": "external_evaluation_candidate", "pinned_revision": null, "imported": false, "caveat": "phase2 full contains competition_test; quarantine hidden programs; sandbox required"},
+    {"id": "small-xiangcheng/TravelBench", "url": "https://github.com/small-xiangcheng/TravelBench", "license": "cc-by-nc-4.0", "code_license": "mit", "role": "external_multi_turn_evaluation_candidate", "pinned_revision": null, "imported": false, "caveat": "default simulators judges and embedding services not authorized for launch; protocol changes must be disclosed"},
+    {"id": "osunlp/TravelPlanner", "url": "https://huggingface.co/datasets/osunlp/TravelPlanner", "license": "cc-by-4.0", "train_rows": 45, "validation_rows": 180, "test_rows": 1000, "role": "supplementary_domain_reference_and_evaluation", "pinned_revision": null, "imported": false, "caveat": "annotated plans are not native action traces; total 1225 is not training count"},
+    {"id": "Salesforce/xlam-function-calling-60k", "url": "https://huggingface.co/datasets/Salesforce/xlam-function-calling-60k", "license": "cc-by-4.0", "train_rows": 60000, "role": "optional_generic_training_candidate", "pinned_revision": null, "imported": false, "access": "dataset_page_requires_condition_acceptance", "caveat": "no gate bypass; function-call count is not domain task count"}
+  ]
+}

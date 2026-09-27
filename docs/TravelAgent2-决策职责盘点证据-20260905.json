@@ -1,0 +1,1046 @@
+{
+  "schema_version": "decision-ownership-audit.v1",
+  "date": "2026-09-05",
+  "scope": "Read-only source inventory and synthetic CPU branch probes; no model inference, full task evaluation or training",
+  "local_repo": "E:\\A_Louis\\TravelAgent2",
+  "cloud_repo": "/root/autodl-tmp/TravelAgent2-h005-eval-20260903",
+  "local_head": "e51e896cc32e9fb38654163b4a15e2dd680a4400",
+  "cloud_head": "7a4bb63762571f7225404694614955366873ba78",
+  "interpretation_limits": [
+    "HEAD alone does not identify uncommitted working-tree content; consult captured source hashes.",
+    "Delegate reached means a spy policy was called, not that a real model selected a correct action.",
+    "Synthetic branch counts are not production ownership rates or benchmark scores.",
+    "Hydration checks call the real parameter transformation function without executing external tools.",
+    "Captured source files are a subset of the repository, not a complete executable snapshot."
+  ],
+  "source_files": [
+    {
+      "path": "backend/src/agentic/legacy/__init__.py",
+      "sha256": "9103cc96d5f5018fde3ac361ec77e909dbda71b4fe39ff671cb649977c284690",
+      "local_exists": true,
+      "local_same": false,
+      "local_same_normalized_newlines": true
+    },
+    {
+      "path": "backend/src/agentic/legacy/environments.py",
+      "sha256": "d67682214d685ec539ac40a7d8c9ef6aa200bc864ecc1ed7fa37f060ea002bd5",
+      "local_exists": true,
+      "local_same": false,
+      "local_same_normalized_newlines": true
+    },
+    {
+      "path": "backend/src/agentic/legacy/planner_dag.py",
+      "sha256": "af8f71647aa145e84885d05446fb8da88739ed3da01e4b68ebf3a89fac13afb3",
+      "local_exists": true,
+      "local_same": false,
+      "local_same_normalized_newlines": true
+    },
+    {
+      "path": "backend/src/agentic/templates/qwen3_agent_prefix_preserving_v1.jinja",
+      "sha256": "dfe4e379b6439a9f01e881660c5f1ea57cd8026a8831553492723b38d15c9e63",
+      "local_exists": true,
+      "local_same": true,
+      "local_same_normalized_newlines": true
+    },
+    {
+      "path": "backend/src/agentic/__init__.py",
+      "sha256": "f3a2893f99a4b11f28e31409514f38efd0d9b322bda289998b76941c1e600bb0",
+      "local_exists": true,
+      "local_same": false,
+      "local_same_normalized_newlines": true
+    },
+    {
+      "path": "backend/src/agentic/action_executor.py",
+      "sha256": "278f9c62e7167e6e6cb04d66e20e12718178e4c85245860cf153585fe5a03ac4",
+      "local_exists": true,
+      "local_same": true,
+      "local_same_normalized_newlines": true
+    },
+    {
+      "path": "backend/src/agentic/cascade_distillation.py",
+      "sha256": "d0ac6c4a31fd20bf69f7de8674958fdb9d0e05bcec6e2a6025eb02799a639c1a",
+      "local_exists": true,
+      "local_same": false,
+      "local_same_normalized_newlines": true
+    },
+    {
+      "path": "backend/src/agentic/chat_template_contract.py",
+      "sha256": "d9ef76d6dca6e6534fbacf7566e51595792b8c786ccd1fa64e659a7d90afdf8f",
+      "local_exists": true,
+      "local_same": true,
+      "local_same_normalized_newlines": true
+    },
+    {
+      "path": "backend/src/agentic/clock.py",
+      "sha256": "4cb5ecdaafbe34846e1c2c06b7a549cd6a337e86341b2927bcdd7ffb35b92008",
+      "local_exists": true,
+      "local_same": false,
+      "local_same_normalized_newlines": true
+    },
+    {
+      "path": "backend/src/agentic/corpus_generation.py",
+      "sha256": "7acc24eb34523938fc516c4f94784cec802c4cf871343dab4518ffc3db032566",
+      "local_exists": true,
+      "local_same": true,
+      "local_same_normalized_newlines": true
+    },
+    {
+      "path": "backend/src/agentic/distillation.py",
+      "sha256": "16b052ba6c3740ac2e333f91a060ae58e3fdca2c2f79f361b1c3e85c2ad7b63b",
+      "local_exists": true,
+      "local_same": false,
+      "local_same_normalized_newlines": true
+    },
+    {
+      "path": "backend/src/agentic/environment.py",
+      "sha256": "cb29f7880818f231f9ed1fdb17ec89ea634b004ea06f71f3808eeaade6225d82",
+      "local_exists": true,
+      "local_same": false,
+      "local_same_normalized_newlines": false
+    },
+    {
+      "path": "backend/src/agentic/grpo.py",
+      "sha256": "aec79adfed54d388ba0df192d8f850e273d4c7cd7206fdb493b7e77fd825cd7f",
+      "local_exists": true,
+      "local_same": false,
+      "local_same_normalized_newlines": true
+    },
+    {
+      "path": "backend/src/agentic/grpo_dataset.py",
+      "sha256": "e4cc93a96c5bfa9617747f36b7587c8b751a63ea7e215de26b171657b35631cd",
+      "local_exists": true,
+      "local_same": false,
+      "local_same_normalized_newlines": true
+    },
+    {
+      "path": "backend/src/agentic/grpo_training.py",
+      "sha256": "741e2ce5e10f56679857e852643ba865a66d17f5caebdf76d148c15312b3e09e",
+      "local_exists": true,
+      "local_same": false,
+      "local_same_normalized_newlines": false
+    },
+    {
+      "path": "backend/src/agentic/guard.py",
+      "sha256": "2c2d4b42ebfd0b816b14807cfad29121c2f62bcf64fbdd02f3a68d72838201d6",
+      "local_exists": true,
+      "local_same": false,
+      "local_same_normalized_newlines": true
+    },
+    {
+      "path": "backend/src/agentic/integration.py",
+      "sha256": "c4a78576c0875f999bb3d78a8a2af13978d3e2dec7886d247c43825976a8329b",
+      "local_exists": true,
+      "local_same": true,
+      "local_same_normalized_newlines": true
+    },
+    {
+      "path": "backend/src/agentic/interactive.py",
+      "sha256": "dd9dd65808a00e81518ed32535ffcc5295df92e42a16790fcf8226e113c3876c",
+      "local_exists": true,
+      "local_same": false,
+      "local_same_normalized_newlines": true
+    },
+    {
+      "path": "backend/src/agentic/local_policy.py",
+      "sha256": "4759e5045736c49bc1d3a08808f843e3afb5236a86a52497475232c46ddeb39b",
+      "local_exists": true,
+      "local_same": true,
+      "local_same_normalized_newlines": true
+    },
+    {
+      "path": "backend/src/agentic/loop.py",
+      "sha256": "1d3cb9d0528a71877617cce104a6f6ae83bcf8e9fd4450a8ca43c50322a5acb9",
+      "local_exists": true,
+      "local_same": false,
+      "local_same_normalized_newlines": false
+    },
+    {
+      "path": "backend/src/agentic/observations.py",
+      "sha256": "75c0af6b58a8b85b6f973bd4bf54edbdd4c8c9e8dbd5e1f32c8598b86f6f29f3",
+      "local_exists": true,
+      "local_same": false,
+      "local_same_normalized_newlines": false
+    },
+    {
+      "path": "backend/src/agentic/policy.py",
+      "sha256": "a57671de1584445c8f0cadd5144ebdddb42756c51f5f486faaae2a41c32d30f7",
+      "local_exists": true,
+      "local_same": true,
+      "local_same_normalized_newlines": true
+    },
+    {
+      "path": "backend/src/agentic/policy_actions.py",
+      "sha256": "fbbd523c38f0cc7da20f49d9d81dfe3fbc4b087ea678c2141941f48afb0c1202",
+      "local_exists": true,
+      "local_same": false,
+      "local_same_normalized_newlines": false
+    },
+    {
+      "path": "backend/src/agentic/policy_backends.py",
+      "sha256": "19f8cb1310e27d8304ce84425cc79f4d3fccb7cb5c458522fd9290ebb44a8fc0",
+      "local_exists": true,
+      "local_same": true,
+      "local_same_normalized_newlines": true
+    },
+    {
+      "path": "backend/src/agentic/policy_controller.py",
+      "sha256": "b83cb3a8b1a020d7d58c50d85a8b7afda18ea192d147973cf93d5fdf5f6da81e",
+      "local_exists": true,
+      "local_same": true,
+      "local_same_normalized_newlines": true
+    },
+    {
+      "path": "backend/src/agentic/policy_prompts.py",
+      "sha256": "c7ba936303044741397379f39b3092cf92d1b39daad9b1a064c2c42ad2dfd3b8",
+      "local_exists": true,
+      "local_same": true,
+      "local_same_normalized_newlines": true
+    },
+    {
+      "path": "backend/src/agentic/policy_repair.py",
+      "sha256": "4054e939de9d197ac2826bec9691dc37815da54f1255b866efed45077640e713",
+      "local_exists": true,
+      "local_same": true,
+      "local_same_normalized_newlines": true
+    },
+    {
+      "path": "backend/src/agentic/policy_routing.py",
+      "sha256": "69313986e697b026d91f573201190298e98b7ad2a8a3a68f6a8f0e5927c6df5f",
+      "local_exists": true,
+      "local_same": false,
+      "local_same_normalized_newlines": true
+    },
+    {
+      "path": "backend/src/agentic/policy_shadow.py",
+      "sha256": "cd32ad2b4337d7f272f6a0e384e707de762c4c65f150b4bcbce3d3333fba447a",
+      "local_exists": true,
+      "local_same": false,
+      "local_same_normalized_newlines": true
+    },
+    {
+      "path": "backend/src/agentic/react.py",
+      "sha256": "e80fdd704d4f973866d80af5498147606bc25d87c156b8035fb42d680d571846",
+      "local_exists": true,
+      "local_same": true,
+      "local_same_normalized_newlines": true
+    },
+    {
+      "path": "backend/src/agentic/reason_quality.py",
+      "sha256": "f0984aeca0a5aeb5433ac7b16a9d3f212bd31bf49fc9b3347cdf6a77bdd899b7",
+      "local_exists": true,
+      "local_same": true,
+      "local_same_normalized_newlines": true
+    },
+    {
+      "path": "backend/src/agentic/replanner.py",
+      "sha256": "3345af976f44a4312751d0500c14b8f79e7418a0770025a862514fd01cf4f699",
+      "local_exists": true,
+      "local_same": false,
+      "local_same_normalized_newlines": true
+    },
+    {
+      "path": "backend/src/agentic/reward.py",
+      "sha256": "7e4c46df57f90f4c859fa4d46c9db12885621e3f0a0e2e01f7aa73aa91d35eb2",
+      "local_exists": true,
+      "local_same": false,
+      "local_same_normalized_newlines": true
+    },
+    {
+      "path": "backend/src/agentic/runtime.py",
+      "sha256": "816c414b10301017941a2da8e9fd0306d1041a45dc92e9458ffec8a88243f009",
+      "local_exists": true,
+      "local_same": false,
+      "local_same_normalized_newlines": true
+    },
+    {
+      "path": "backend/src/agentic/scheduler.py",
+      "sha256": "8861c6a4e45fa501fab47b4298a747ae45d236199afd7b94ac22594db24a0a49",
+      "local_exists": true,
+      "local_same": false,
+      "local_same_normalized_newlines": true
+    },
+    {
+      "path": "backend/src/agentic/sft_curriculum.py",
+      "sha256": "d49ce9129e7f0b92bdad9e146676de989901a856974af6dd175ffeefd8105bf6",
+      "local_exists": true,
+      "local_same": false,
+      "local_same_normalized_newlines": true
+    },
+    {
+      "path": "backend/src/agentic/sft_dataset.py",
+      "sha256": "9f9cd85abbfe51323a36e4f2a79f3e455499b7b3c0df43b832ccf00afbae21d9",
+      "local_exists": true,
+      "local_same": false,
+      "local_same_normalized_newlines": true
+    },
+    {
+      "path": "backend/src/agentic/shadow.py",
+      "sha256": "b7b49a1763324d9d9072c83164e4f317e0d2a7924024e35fc7b09d3315c1281d",
+      "local_exists": true,
+      "local_same": false,
+      "local_same_normalized_newlines": true
+    },
+    {
+      "path": "backend/src/agentic/source_equal_sft.py",
+      "sha256": "2db9bf2b58715f3552db55bc1d84b0ca882240781b8e7abe955fac02e2bbfa3a",
+      "local_exists": true,
+      "local_same": true,
+      "local_same_normalized_newlines": true
+    },
+    {
+      "path": "backend/src/agentic/state.py",
+      "sha256": "fa3d3b63ae3e3bbd720ca6f2a86d54ad261bc15312f9e52c4bbbd47bff040198",
+      "local_exists": true,
+      "local_same": false,
+      "local_same_normalized_newlines": false
+    },
+    {
+      "path": "backend/src/agentic/termination.py",
+      "sha256": "2ad9302e49e1ea3289ebc6f284064106e2e6388844c7704cb9ccc24c86377701",
+      "local_exists": true,
+      "local_same": false,
+      "local_same_normalized_newlines": true
+    },
+    {
+      "path": "backend/src/agentic/training.py",
+      "sha256": "9911b1b1d433aa7360a239440711bdf4fd0a700db7057799e06b319b19d8940b",
+      "local_exists": true,
+      "local_same": true,
+      "local_same_normalized_newlines": true
+    },
+    {
+      "path": "backend/src/agentic/trajectory.py",
+      "sha256": "c18062a0d1b706aac32af23f21d821ad92910ca42a10f6a8d12f348bfccb0ce4",
+      "local_exists": true,
+      "local_same": false,
+      "local_same_normalized_newlines": true
+    },
+    {
+      "path": "backend/src/agentic/trl_environment.py",
+      "sha256": "13a20fe219755975dbef839cc16e2586cd13b0c4cc47a5052127395c812af930",
+      "local_exists": true,
+      "local_same": true,
+      "local_same_normalized_newlines": true
+    },
+    {
+      "path": "backend/src/agentic/turn_credit.py",
+      "sha256": "5044ac18c1151233f9d9fbdc53453fb109f5cb9dea33590ca278169917d5e1c9",
+      "local_exists": true,
+      "local_same": false,
+      "local_same_normalized_newlines": true
+    },
+    {
+      "path": "backend/src/agentic/verifier.py",
+      "sha256": "32cf53c1a1de7cc2742d830cd49a0e439d29ea9b303099a148fa802385187f2d",
+      "local_exists": true,
+      "local_same": false,
+      "local_same_normalized_newlines": true
+    },
+    {
+      "path": "backend/src/agentic/verifier_repair.py",
+      "sha256": "e1f4f75fa79f8bce36c43cf5ed0e0656b8a8f573712869eadb3a97a778793258",
+      "local_exists": true,
+      "local_same": false,
+      "local_same_normalized_newlines": true
+    },
+    {
+      "path": "backend/src/agentic/recovery_contract.py",
+      "sha256": "c0264e5ee4e95443770089d8ffbba3054d5a964b377acd9f297d82bdb3810ea8",
+      "local_exists": false,
+      "local_same": false,
+      "local_same_normalized_newlines": false
+    },
+    {
+      "path": "backend/src/core/conversation_turn.py",
+      "sha256": "cf4b390a224f8892bb248fb0ff2f1035805d3495abf35d98b8ebb6bbb7779587",
+      "local_exists": true,
+      "local_same": true,
+      "local_same_normalized_newlines": true
+    },
+    {
+      "path": "backend/src/core/settings.py",
+      "sha256": "ae86907e90ef740bee1f2fdd3f0c22df69034dccf697eb49e36de6c61cc85a5b",
+      "local_exists": true,
+      "local_same": false,
+      "local_same_normalized_newlines": true
+    },
+    {
+      "path": "backend/src/schemas.py",
+      "sha256": "7b0cff701d9549adc6bb767df4c78ad464223c1b2fe25707c9e3066c70212573",
+      "local_exists": true,
+      "local_same": true,
+      "local_same_normalized_newlines": true
+    },
+    {
+      "path": "backend/src/tools/tool_executor.py",
+      "sha256": "6bf0ceec3257a192a3f00af68330226895909b459673618d0311e258327a9a4f",
+      "local_exists": true,
+      "local_same": false,
+      "local_same_normalized_newlines": false
+    },
+    {
+      "path": "backend/src/tools/tool_definitions.py",
+      "sha256": "1c184ffbc716c91b3f95ca994ea0d45414ed7f3ad118861534580baa25795192",
+      "local_exists": true,
+      "local_same": true,
+      "local_same_normalized_newlines": true
+    },
+    {
+      "path": "backend/src/evaluation/full_agent_loop_benchmark.py",
+      "sha256": "b8165925d2de5b4ccfdd0c33f4ae59f7983bd144539e3c1b70f9c70b2e4cfba0",
+      "local_exists": true,
+      "local_same": true,
+      "local_same_normalized_newlines": true
+    },
+    {
+      "path": "backend/src/evaluation/full_agent_loop_recovery.py",
+      "sha256": "0165a50430a95d904c137e75482199b79e2c40a14845ee7b41d13c51dc86fe91",
+      "local_exists": true,
+      "local_same": true,
+      "local_same_normalized_newlines": true
+    }
+  ],
+  "probe_source_sha256": "9128bd01627a547f01a4aa2a096ab25f7aff924d5c40b422a0ff4cbd6d0a419a",
+  "probe_source": "\"\"\"Read-only branch probes: no model, provider, GPU or benchmark is called.\"\"\"\nimport asyncio\nimport json\nfrom agentic.loop import BoundedAgentLoop, PolicyAction, PolicyContext\nfrom agentic.policy_controller import ControllerFirstPolicy, constrain_policy_context\nfrom agentic.policy_actions import POLICY_ACTION_MODELS, policy_action_schemas_for_state, authorize_policy_action\nfrom agentic.policy_prompts import policy_prompt_payload\nfrom agentic.react import ReactTaskGraphPlanner\nfrom agentic.state import GoalLedger, AgentLedgerState\nfrom agentic.action_executor import TravelActionExecutor\nfrom agentic.recovery_contract import RecoveryDirective, ArgumentTransform, bind_recovery_contract\n\nclass DelegateReached(Exception):\n    pass\n\nclass ProbeDelegate:\n    def __init__(self):\n        self.context=None\n    async def propose(self,context):\n        self.context=constrain_policy_context(context)\n        raise DelegateReached()\n\ngoal=GoalLedger(original_request='杭州两天，关注无障碍景点，查询开放时间。',hard_constraints={'destination':'杭州','origin':'上海','travel_days':2,'start_date':'2026-10-01','end_date':'2026-10-02','current_info_queries':['西湖开放时间'],'information_needs':['opening_hours'],'transport_modes_requested':['train']},soft_preferences={'interests':['无障碍','博物馆']})\ngraph=ReactTaskGraphPlanner().plan(goal)\nledger=AgentLedgerState(goal=goal,task_graph=graph)\nresearch=graph.get('research_evidence')\n\ndef context(task='research_evidence',present=(),**kwargs):\n    node=graph.get(task)\n    payload=dict(trajectory_id='ownership-probe',goal_version=1,plan_version=1,original_request=goal.original_request,current_subtask=node.model_dump(mode='json'),hard_constraints=goal.hard_constraints,soft_preferences=goal.soft_preferences,capability={'status':'solvable'},relevant_fact_refs=[],relevant_artifact_refs=[],relevant_artifacts=[{'artifact_type':p} for p in present],failure_summary=[],remaining_tasks=6,remaining_steps=20,allowed_actions=list(node.allowed_actions))\n    payload.update(kwargs)\n    return PolicyContext(**payload)\n\nrequired=research.success_criteria['research_required_artifact_types']\ncases=[('research_multiple_gaps',context()),('research_only_current_info_missing',context(present=[x for x in required if x!='current_info_search'])),('research_all_artifact_types_present',context(present=required)),('review_hard_pass',context('review_itinerary',relevant_artifacts=[{'artifact_type':'validation_report','hard_pass':True}]))]\nfor task in ['solve_itinerary','validate_itinerary','compose_draft','await_confirmation']:\n    cases.append((task,context(task)))\ncases.append(('clarify_first_missing_field',context(missing_information=['origin','start_date'],capability={'status':'needs_user'})))\nfailure={'code':'QUERY_TOO_BROAD','message':'查询结果相关性不足，需要根据证据调整。','retryable':True,'retry_budget_remaining':2,'attempted_strategy':'search_pois','attempted_arguments':{'keywords':['无障碍','博物馆']}}\ncases.append(('search_failure_without_contract',context(failure_summary=[failure],decision_history=[{'task_id':'research_evidence','action':'search_pois','outcome_status':'failed'}])))\nexhausted=context()\nexhausted.current_subtask['action_attempt_counts']={'search_current_info':2}\ncases.append(('exhausted_no_alternatives',exhausted))\nexhausted_alt=exhausted.model_copy(deep=True,update={'capability':{'status':'missing_tool','actionable_alternatives':True,'alternatives':['请用户补充官方开放信息']}})\ncases.append(('exhausted_authorized_alternatives',exhausted_alt))\ncontract=bind_recovery_contract(RecoveryDirective(retry_mode='change_arguments',allowed_next_actions=('search_pois',),argument_transform=ArgumentTransform(remove_keyword_values=('博物馆',))),authority='internal_verifier',failure_id='probe-failure',action_id='probe-action',task_id='research_evidence',failed_action='search_pois',error_code='QUERY_TOO_BROAD',attempted_arguments={'keywords':['无障碍','博物馆']},evidence_refs=['probe-observation'],retry_budget_remaining=2,goal_version=1,plan_version=1)\ncases.append(('trusted_recovery_contract',context(active_recovery=contract.model_dump(mode='json'))))\n\nasync def main():\n    records=[]\n    for name,ctx in cases:\n        spy=ProbeDelegate()\n        try:\n            action=await BoundedAgentLoop._propose_or_execute_recovery(ControllerFirstPolicy(spy),ctx)\n            item={'controller_action':action.action,'controller_arguments':action.arguments,'decision_source':action.decision_source,'delegate_reached':False}\n        except DelegateReached:\n            visible=spy.context\n            item={'delegate_reached':True,'visible_actions':visible.allowed_actions,'visible_missing_information':visible.missing_information,'visible_argument_fields':{s['function']['name']:list(s['function']['parameters'].get('properties',{})) for s in policy_action_schemas_for_state(visible.allowed_actions,capability=visible.capability)}}\n        records.append({'probe':name,'kind':'synthetic_code_branch_not_task_evaluation',**item})\n    executor=TravelActionExecutor(tool_executor=object())\n    mutations=[]\n    for name,args in [('search_current_info',{'query':'自定义查询','info_type':'opening_hours','date':'2026-11-01'}),('search_transport',{'mode':'both','date':'2026-11-01'}),('search_pois',{'keywords':[]}),('search_pois',{'keywords':['无障碍']}),('solve_itinerary',{'strategy':'greedy'})]:\n        action=PolicyAction(action=name,arguments=args,model_arguments=args)\n        executed=executor._hydrate_arguments(ledger,action)\n        mutations.append({'action':name,'input':args,'hydrated_payload':executed,'changed_or_added_fields':[k for k in executed if executed[k]!=args.get(k) or k not in args],'action_record_after':action.arguments,'action_hydrated_fields_after':action.controller_hydrated_fields})\n    schemas={name:schema['function']['parameters'] for name in POLICY_ACTION_MODELS for schema in policy_action_schemas_for_state([name],capability={'status':'infeasible','actionable_alternatives':True,'alternatives':['A']})}\n    print(json.dumps({'scope':'read-only runtime branch and hydration probes; no real model decisions or full tasks','probes':records,'hydration_probes':mutations,'state_scoped_schemas':schemas,'react_tasks':[{'task_id':t.task_id,'depends_on':t.depends_on,'allowed_actions':t.allowed_actions} for t in graph.tasks]},ensure_ascii=False))\n\nasyncio.run(main())\n",
+  "probe_runtime": {
+    "python": "/root/autodl-tmp/venvs/travelagent-eval-h007-20260905/bin/python",
+    "cwd": "/root/autodl-tmp/TravelAgent2-h005-eval-20260903",
+    "PYTHONPATH": "backend/src:.",
+    "PYTHONDONTWRITEBYTECODE": "1"
+  },
+  "results": {
+    "scope": "read-only runtime branch and hydration probes; no real model decisions or full tasks",
+    "probes": [
+      {
+        "probe": "research_multiple_gaps",
+        "kind": "synthetic_code_branch_not_task_evaluation",
+        "delegate_reached": true,
+        "visible_actions": [
+          "retrieve_city_knowledge",
+          "search_pois",
+          "get_poi_detail",
+          "get_route_matrix",
+          "search_transport",
+          "search_current_info"
+        ],
+        "visible_missing_information": [],
+        "visible_argument_fields": {
+          "retrieve_city_knowledge": [
+            "topic"
+          ],
+          "search_pois": [
+            "keywords"
+          ],
+          "get_poi_detail": [],
+          "get_route_matrix": [],
+          "search_transport": [
+            "mode",
+            "date"
+          ],
+          "search_current_info": [
+            "query",
+            "info_type",
+            "date"
+          ]
+        }
+      },
+      {
+        "probe": "research_only_current_info_missing",
+        "kind": "synthetic_code_branch_not_task_evaluation",
+        "controller_action": "search_current_info",
+        "controller_arguments": {
+          "query": "西湖开放时间",
+          "info_type": "opening_hours",
+          "date": "2026-10-01"
+        },
+        "decision_source": "controller",
+        "delegate_reached": false
+      },
+      {
+        "probe": "research_all_artifact_types_present",
+        "kind": "synthetic_code_branch_not_task_evaluation",
+        "controller_action": "finalize_research",
+        "controller_arguments": {},
+        "decision_source": "controller",
+        "delegate_reached": false
+      },
+      {
+        "probe": "review_hard_pass",
+        "kind": "synthetic_code_branch_not_task_evaluation",
+        "controller_action": "accept_itinerary",
+        "controller_arguments": {},
+        "decision_source": "controller",
+        "delegate_reached": false
+      },
+      {
+        "probe": "solve_itinerary",
+        "kind": "synthetic_code_branch_not_task_evaluation",
+        "controller_action": "solve_itinerary",
+        "controller_arguments": {},
+        "decision_source": "controller",
+        "delegate_reached": false
+      },
+      {
+        "probe": "validate_itinerary",
+        "kind": "synthetic_code_branch_not_task_evaluation",
+        "controller_action": "validate_itinerary",
+        "controller_arguments": {},
+        "decision_source": "controller",
+        "delegate_reached": false
+      },
+      {
+        "probe": "compose_draft",
+        "kind": "synthetic_code_branch_not_task_evaluation",
+        "controller_action": "compose_draft",
+        "controller_arguments": {},
+        "decision_source": "controller",
+        "delegate_reached": false
+      },
+      {
+        "probe": "await_confirmation",
+        "kind": "synthetic_code_branch_not_task_evaluation",
+        "controller_action": "finish",
+        "controller_arguments": {},
+        "decision_source": "controller",
+        "delegate_reached": false
+      },
+      {
+        "probe": "clarify_first_missing_field",
+        "kind": "synthetic_code_branch_not_task_evaluation",
+        "delegate_reached": true,
+        "visible_actions": [
+          "ask_user"
+        ],
+        "visible_missing_information": [
+          "origin"
+        ],
+        "visible_argument_fields": {
+          "ask_user": [
+            "question"
+          ]
+        }
+      },
+      {
+        "probe": "search_failure_without_contract",
+        "kind": "synthetic_code_branch_not_task_evaluation",
+        "delegate_reached": true,
+        "visible_actions": [
+          "search_pois"
+        ],
+        "visible_missing_information": [],
+        "visible_argument_fields": {
+          "search_pois": [
+            "keywords"
+          ]
+        }
+      },
+      {
+        "probe": "exhausted_no_alternatives",
+        "kind": "synthetic_code_branch_not_task_evaluation",
+        "delegate_reached": true,
+        "visible_actions": [
+          "abort"
+        ],
+        "visible_missing_information": [],
+        "visible_argument_fields": {
+          "abort": [
+            "reason"
+          ]
+        }
+      },
+      {
+        "probe": "exhausted_authorized_alternatives",
+        "kind": "synthetic_code_branch_not_task_evaluation",
+        "delegate_reached": true,
+        "visible_actions": [
+          "propose_tradeoff",
+          "abort"
+        ],
+        "visible_missing_information": [],
+        "visible_argument_fields": {
+          "propose_tradeoff": [
+            "reason"
+          ],
+          "abort": [
+            "reason"
+          ]
+        }
+      },
+      {
+        "probe": "trusted_recovery_contract",
+        "kind": "synthetic_code_branch_not_task_evaluation",
+        "controller_action": "search_pois",
+        "controller_arguments": {
+          "keywords": [
+            "无障碍"
+          ]
+        },
+        "decision_source": "controller",
+        "delegate_reached": false
+      }
+    ],
+    "hydration_probes": [
+      {
+        "action": "search_current_info",
+        "input": {
+          "query": "自定义查询",
+          "info_type": "opening_hours",
+          "date": "2026-11-01"
+        },
+        "hydrated_payload": {
+          "query": "西湖开放时间",
+          "info_type": "opening_hours",
+          "date": "2026-10-01",
+          "city": "杭州"
+        },
+        "changed_or_added_fields": [
+          "query",
+          "date",
+          "city"
+        ],
+        "action_record_after": {
+          "query": "自定义查询",
+          "info_type": "opening_hours",
+          "date": "2026-11-01"
+        },
+        "action_hydrated_fields_after": []
+      },
+      {
+        "action": "search_transport",
+        "input": {
+          "mode": "both",
+          "date": "2026-11-01"
+        },
+        "hydrated_payload": {
+          "mode": "train",
+          "date": "2026-10-01",
+          "origin": "上海",
+          "destination": "杭州",
+          "return_date": "2026-10-02"
+        },
+        "changed_or_added_fields": [
+          "mode",
+          "date",
+          "origin",
+          "destination",
+          "return_date"
+        ],
+        "action_record_after": {
+          "mode": "both",
+          "date": "2026-11-01"
+        },
+        "action_hydrated_fields_after": []
+      },
+      {
+        "action": "search_pois",
+        "input": {
+          "keywords": []
+        },
+        "hydrated_payload": {
+          "keywords": [
+            "无障碍",
+            "博物馆"
+          ],
+          "city": "杭州",
+          "category": null,
+          "required_pois": []
+        },
+        "changed_or_added_fields": [
+          "keywords",
+          "city",
+          "category",
+          "required_pois"
+        ],
+        "action_record_after": {
+          "keywords": []
+        },
+        "action_hydrated_fields_after": []
+      },
+      {
+        "action": "search_pois",
+        "input": {
+          "keywords": [
+            "无障碍"
+          ]
+        },
+        "hydrated_payload": {
+          "keywords": [
+            "无障碍"
+          ],
+          "city": "杭州",
+          "category": null,
+          "required_pois": []
+        },
+        "changed_or_added_fields": [
+          "city",
+          "category",
+          "required_pois"
+        ],
+        "action_record_after": {
+          "keywords": [
+            "无障碍"
+          ]
+        },
+        "action_hydrated_fields_after": []
+      },
+      {
+        "action": "solve_itinerary",
+        "input": {
+          "strategy": "greedy"
+        },
+        "hydrated_payload": {
+          "strategy": "cpsat",
+          "constraints": {
+            "travel_days": 2,
+            "trip_start_date": "2026-10-01",
+            "day_weekdays": [
+              3,
+              4
+            ],
+            "daily_start_minutes": [],
+            "daily_end_minutes": [],
+            "total_budget": 0.0,
+            "max_transit_minutes": 120,
+            "max_walk_minutes": null,
+            "must_visit": [],
+            "must_not_visit": [],
+            "user_reservations": [],
+            "interests": [
+              "无障碍",
+              "博物馆"
+            ],
+            "include_restaurant": true,
+            "meals_per_day": 2
+          }
+        },
+        "changed_or_added_fields": [
+          "strategy",
+          "constraints"
+        ],
+        "action_record_after": {
+          "strategy": "greedy"
+        },
+        "action_hydrated_fields_after": []
+      }
+    ],
+    "state_scoped_schemas": {
+      "abort": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "description": "Grounded user-visible evidence detail; the system adds the fixed stop rationale",
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "type": "object"
+      },
+      "accept_candidates": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "accept_itinerary": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "ask_user": {
+        "additionalProperties": false,
+        "properties": {
+          "question": {
+            "description": "One concise user-facing question in the user's language; never mention internal tools, verifier codes, artifacts, policies, or state fields",
+            "minLength": 1,
+            "title": "Question",
+            "type": "string"
+          }
+        },
+        "required": [
+          "question"
+        ],
+        "type": "object"
+      },
+      "capability_check": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "compose_draft": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "finish": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "propose_tradeoff": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "description": "Concise grounded conflict detail in the user's language; the system adds the fixed tradeoff rationale; never expose internal implementation details",
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "type": "object"
+      },
+      "retry_solve": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "description": "Grounded failure detail; the system adds the fixed bounded-retry rationale",
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "type": "object"
+      },
+      "get_weather": {
+        "additionalProperties": false,
+        "properties": {
+          "date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Grounded date in YYYY-MM-DD format",
+            "title": "Date"
+          }
+        },
+        "type": "object"
+      },
+      "search_pois": {
+        "additionalProperties": false,
+        "properties": {
+          "keywords": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 8,
+            "title": "Keywords",
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "retrieve_city_knowledge": {
+        "additionalProperties": false,
+        "properties": {
+          "topic": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Topic"
+          }
+        },
+        "type": "object"
+      },
+      "search_current_info": {
+        "additionalProperties": false,
+        "properties": {
+          "query": {
+            "maxLength": 160,
+            "minLength": 2,
+            "title": "Query",
+            "type": "string"
+          },
+          "info_type": {
+            "default": "general",
+            "enum": [
+              "event",
+              "opening_hours",
+              "restaurant",
+              "seasonal_activity",
+              "closure",
+              "general"
+            ],
+            "title": "Info Type",
+            "type": "string"
+          },
+          "date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Date"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      },
+      "search_transport": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "default": "both",
+            "enum": [
+              "flight",
+              "train",
+              "both"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Date"
+          }
+        },
+        "type": "object"
+      },
+      "finalize_research": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "get_poi_detail": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "get_route_matrix": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "solve_itinerary": {
+        "additionalProperties": false,
+        "properties": {
+          "strategy": {
+            "default": "auto",
+            "enum": [
+              "auto",
+              "cpsat",
+              "greedy"
+            ],
+            "title": "Strategy",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "validate_itinerary": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "react_tasks": [
+      {
+        "task_id": "research_evidence",
+        "depends_on": [],
+        "allowed_actions": [
+          "retrieve_city_knowledge",
+          "search_pois",
+          "get_poi_detail",
+          "get_weather",
+          "search_current_info",
+          "search_transport",
+          "get_route_matrix",
+          "finalize_research",
+          "ask_user",
+          "propose_tradeoff",
+          "abort"
+        ]
+      },
+      {
+        "task_id": "solve_itinerary",
+        "depends_on": [
+          "research_evidence"
+        ],
+        "allowed_actions": [
+          "solve_itinerary"
+        ]
+      },
+      {
+        "task_id": "validate_itinerary",
+        "depends_on": [
+          "solve_itinerary"
+        ],
+        "allowed_actions": [
+          "validate_itinerary"
+        ]
+      },
+      {
+        "task_id": "review_itinerary",
+        "depends_on": [
+          "validate_itinerary"
+        ],
+        "allowed_actions": [
+          "accept_itinerary",
+          "retry_solve",
+          "retrieve_city_knowledge",
+          "search_pois",
+          "get_poi_detail",
+          "get_weather",
+          "search_current_info",
+          "search_transport",
+          "get_route_matrix",
+          "ask_user",
+          "propose_tradeoff",
+          "abort"
+        ]
+      },
+      {
+        "task_id": "compose_draft",
+        "depends_on": [
+          "review_itinerary"
+        ],
+        "allowed_actions": [
+          "compose_draft"
+        ]
+      },
+      {
+        "task_id": "await_confirmation",
+        "depends_on": [
+          "compose_draft"
+        ],
+        "allowed_actions": [
+          "ask_user",
+          "finish"
+        ]
+      }
+    ]
+  }
+}

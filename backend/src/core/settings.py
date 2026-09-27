@@ -191,37 +191,20 @@ class Settings(BaseSettings):
     tool_max_retries: int = 3
     agentic_guard_mode: Literal["off", "shadow", "enforce"] = "enforce"
     agentic_completion_guard_mode: Literal["off", "shadow", "enforce"] = "enforce"
-    agentic_policy_mode: Literal["deterministic", "shadow", "agent"] = "agent"
+    agentic_policy_mode: Literal["agent"] = "agent"
     agentic_policy_backend: Literal["api", "local_checkpoint"] = "api"
     agentic_policy_protocol: Literal["json", "native_tool"] = "json"
-    # Environment/deployment selects ``react`` for the new production path;
-    # the code default preserves historical DAG replay compatibility.
-    agentic_execution_mode: Literal["controller_first", "policy_driven", "react"] = "react"
+    # One architecture; API/local_checkpoint select only the policy inference backend.
+    agentic_execution_mode: Literal["react"] = "react"
     agentic_policy_repair_attempts: int = Field(default=1, ge=0, le=2)
     agentic_policy_model: str = ""
-    agentic_decision_specialist_enabled: bool = False
-    agentic_decision_specialist_model: str = ""
-    agentic_verifier_repair_specialist_enabled: bool = False
-    agentic_verifier_repair_specialist_model: str = ""
-    agentic_policy_routing_enabled: bool = False
-    agentic_student_policy_model: str = ""
-    agentic_teacher_policy_model: str = ""
-    agentic_student_base_url: str = ""
-    agentic_teacher_base_url: str = ""
-    agentic_student_max_tokens: int = Field(default=128, ge=16, le=512)
-    agentic_teacher_max_tokens: int = Field(default=192, ge=16, le=1024)
-    agentic_challenger_shadow_enabled: bool = False
-    agentic_challenger_policy_model: str = ""
-    agentic_challenger_base_url: str = ""
-    agentic_challenger_max_tokens: int = Field(default=128, ge=16, le=512)
     agentic_local_checkpoint: str = ""
     agentic_local_revision: str = ""
     agentic_local_load_in_4bit: bool = True
     agentic_local_max_new_tokens: int = Field(default=192, ge=16, le=2048)
     agentic_local_structured_decoding: Literal["native", "json_schema", "qwen_tool_envelope"] = (
-        "native"
+        "qwen_tool_envelope"
     )
-    agentic_shadow_sample_rate: float = Field(default=1.0, ge=0, le=1)
     agentic_deployment_id: str = "local"
     agentic_tool_call_budget: int = 24
     agentic_poi_detail_limit: int = Field(default=8, ge=1, le=20)

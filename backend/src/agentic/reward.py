@@ -22,7 +22,10 @@ REWARD_SCHEMA_VERSION = "agent-reward.v1"
 
 
 class RewardConfig(BaseModel):
-    config_version: str = "hierarchical-b0.v2"
+    # v3: the efficiency term no longer penalises raw trajectory length. Under
+    # v2 a task that genuinely required a long tool sequence scored below a
+    # single clarifying question, which trained the policy toward truncation.
+    config_version: str = "hierarchical-b0.v3"
     task_weight: float = Field(default=0.40, ge=0, le=1)
     constraint_weight: float = Field(default=0.40, ge=0, le=1)
     format_weight: float = Field(default=0.04, ge=0, le=1)
@@ -181,8 +184,7 @@ class HierarchicalRewardEngine:
         model_contract_failure = any(
             step.action.decision_source != "controller"
             and (
-                not step.action.model_contract_compliant
-                or step.action.controller_override_attempt
+                not step.action.model_contract_compliant or step.action.controller_override_attempt
             )
             for step in parsed.steps
         )
@@ -334,6 +336,18 @@ def _termination_contract_reasons(episode: AgentEpisode) -> list[str]:
             if _canonical(visible.get(key)) != _canonical(capability.get(key)):
                 reasons.append("TERMINATION_CONTRACT_CONTEXT_STATE_MISMATCH")
                 break
+        expected_ids = capability.get("evidence_ids") or []
+        if expected_ids:
+            if expected_ids != (visible.get("evidence_ids") or []):
+                reasons.append("TERMINATION_EVIDENCE_CONTEXT_STATE_MISMATCH")
+            all_artifacts = (episode.final_state or {}).get("artifacts", {}).values()
+            reports = [a for a in all_artifacts if a.get("artifact_type") == "constraint_evidence"]
+            if not reports:
+                reports = [a for a in all_artifacts if a.get("artifact_type") == "validation_report"]
+            current = (reports[-1].get("payload", {}).get("feasibility") or {}) if reports else {}
+            actual_ids = {w.get("evidence_id") for w in current.get("witnesses") or []}
+            if (current.get("status") != "infeasible" or not set(expected_ids) <= actual_ids):
+                reasons.append("TERMINATION_EVIDENCE_NOT_CURRENT")
     return reasons
 
 
@@ -355,10 +369,18 @@ def _termination_arguments_grounded(
     arguments: dict[str, Any],
     capability: dict[str, Any],
 ) -> bool:
-    """Verify that terminal text is copied from the model-visible capability evidence."""
+    """Check structured evidence references, retaining legacy text-only replay.
+
+References ground the decision, not arbitrary prose claims. Wording quality
+still requires separate review; paraphrases need not copy verifier sentences.
+"""
     evidence = _nonempty_strings(capability.get("evidence"))
     reason = str(arguments.get("reason") or "").strip()
-    if not reason or not _matches_any_grounded_phrase(reason, evidence):
+    expected_ids = set(capability.get("evidence_ids") or [])
+    supplied_ids = arguments.get("evidence_ids") or []
+    grounded = (isinstance(supplied_ids, list) and bool(supplied_ids)
+                and all(isinstance(x, str) and x in expected_ids for x in supplied_ids)) if (expected_ids or supplied_ids) else _matches_any_grounded_phrase(reason, evidence)
+    if not reason or not grounded:
         return False
     if action == "abort":
         return True
@@ -395,8 +417,7 @@ def _turn_rewards(episode: AgentEpisode, terminal_kind: str) -> list[TurnReward]
             for item in step.observations
         )
         action_valid = (
-            action in step.context.allowed_actions
-            and step.action.model_contract_compliant
+            action in step.context.allowed_actions and step.action.model_contract_compliant
         )
         format_score = 1.0 if action_valid and (not is_tool or observations_valid) else -1.0
 
@@ -441,6 +462,7 @@ def _turn_rewards(episode: AgentEpisode, terminal_kind: str) -> list[TurnReward]
             grounded = _arguments_grounded(
                 step.action.arguments,
                 step.context.model_dump(mode="json"),
+                action=action,
             )
         grounding_score = -1.0 if protected or not grounded else 1.0
         if protected:
@@ -546,6 +568,10 @@ def _terminal_kind_and_report(episode: AgentEpisode) -> tuple[str, dict[str, Any
         report
         and report.get("hard_pass")
         and has_plan
+        and (
+            episode.termination_reason == "validated_finish"
+            or (episode.steps and episode.steps[-1].action.action == "finish")
+        )
         and episode.termination_reason
         in {
             "awaiting_user",
@@ -576,20 +602,18 @@ def _terminal_kind_and_report(episode: AgentEpisode) -> tuple[str, dict[str, Any
 
 
 def _task_reward(episode: AgentEpisode, terminal_kind: str) -> float:
+    """Rank terminal outcomes, with a strict ordering between them.
+
+    ``clarification`` sits deliberately below ``validated_plan``. Both are
+    correct behaviours, but asking a question resolves less of the user's task
+    than delivering a verified itinerary, and the per-turn components already
+    charge a long trajectory for its extra steps. Without this gap a plan that
+    needed many tools could rank below a single question.
+    """
     if terminal_kind == "validated_plan":
-        final = episode.final_state or {}
-        tasks = (final.get("task_graph") or {}).get("tasks") or []
-        autonomous = [
-            task
-            for task in tasks
-            if task.get("required", True) and "ask_user" not in (task.get("allowed_actions") or [])
-        ]
-        if not autonomous:
-            return 0.5
-        closure = sum(task.get("status") in {"succeeded", "skipped"} for task in autonomous)
-        return _clip(closure / len(autonomous), -1, 1)
-    if terminal_kind == "clarification":
         return 1.0
+    if terminal_kind == "clarification":
+        return 0.9
     if terminal_kind == "safe_termination":
         return 0.8
     return -1.0
@@ -617,21 +641,33 @@ def _efficiency_reward(
     turn_rewards: list[TurnReward],
     config: RewardConfig,
 ) -> float:
+    """Score wasted work, not trajectory length.
+
+    Every step ratio and call ratio is measured against the episode's own step
+    count, so a task that legitimately needs many tool calls is not punished for
+    reaching a validated plan. Only repetition and zero-information steps are
+    penalised, which is the behaviour this term was meant to discourage.
+    """
     if terminal_kind not in {"validated_plan", "clarification", "safe_termination"}:
         return 0.0
-    duplicate_ratio = (
-        sum(item.duplicate_call for item in turn_rewards) / len(turn_rewards) if turn_rewards else 1
-    )
+    step_total = len(episode.steps)
+    if not turn_rewards or not step_total:
+        return 0.0
+    # A single-step episode has no sequence to evaluate for redundancy.
+    if step_total < 2:
+        return 0.0
+    duplicate_ratio = sum(item.duplicate_call for item in turn_rewards) / len(turn_rewards)
     tool_calls = sum(len(step.observations) for step in episode.steps)
-    step_ratio = min(1.0, len(episode.steps) / config.expected_max_steps)
-    call_ratio = min(1.0, tool_calls / config.expected_max_tool_calls)
-    no_gain_ratio = (
-        sum(not item.information_gain for item in turn_rewards) / len(turn_rewards)
-        if turn_rewards
-        else 1
-    )
+    no_gain_ratio = sum(not item.information_gain for item in turn_rewards) / len(turn_rewards)
+    # Calls per step above one means a turn that fired several tools at once.
+    calls_per_step = tool_calls / step_total
     return _clip(
-        1.0 - duplicate_ratio - 0.35 * step_ratio - 0.35 * call_ratio - no_gain_ratio, -1, 1
+        1.0
+        - duplicate_ratio
+        - no_gain_ratio
+        - 0.35 * max(0.0, calls_per_step - 1.0),
+        -1,
+        1,
     )
 
 
@@ -664,7 +700,7 @@ def _protected_arguments() -> set[str]:
     }
 
 
-def _arguments_grounded(arguments: dict[str, Any], context: dict[str, Any]) -> bool:
+def _arguments_grounded(arguments: dict[str, Any], context: dict[str, Any], *, action: str | None = None) -> bool:
     if not arguments:
         return True
     grounded = _canonical(context).casefold()
@@ -672,6 +708,14 @@ def _arguments_grounded(arguments: dict[str, Any], context: dict[str, Any]) -> b
     for name, value in arguments.items():
         if name in _protected_arguments():
             return False
+        # Search text is a proposal to investigate, not an asserted fact. Exact
+        # substring matching rejects useful rewrites and generic keyword expansion.
+        # Dates, IDs and protected inputs remain checked; returned evidence is
+        # separately required before it can justify solving or submission.
+        generated = {"search_pois": {"keywords"}, "search_current_info": {"query"},
+                     "retrieve_city_knowledge": {"topic"}}
+        if name in generated.get(action, set()):
+            continue
         for leaf in _leaves(value):
             normalized = str(leaf).strip().casefold()
             if normalized and normalized not in constants and normalized not in grounded:

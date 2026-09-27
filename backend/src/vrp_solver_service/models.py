@@ -37,6 +37,10 @@ class POIInput(BaseModel):
     closed_dates: list[str] = Field(default_factory=list)
     date_opening_hours: dict[str, tuple[str, str]] = Field(default_factory=dict)
     availability_evidence_urls: list[str] = Field(default_factory=list)
+    average_cost: float | None = None
+    source_poi_id: str | None = None
+    dining_day: int | None = None
+    dining_slot: int | None = None
 
 
 class ReservationInput(BaseModel):
@@ -91,6 +95,7 @@ class ConstraintsInput(BaseModel):
     play_mode: Literal["quick", "standard", "deep"] = "standard"
     include_restaurant: bool = False
     meals_per_day: int = 0
+    require_named_restaurants: bool = False
     lunch_window: tuple[int, int] = (11 * 60 + 30, 13 * 60 + 30)
     dinner_window: tuple[int, int] = (17 * 60 + 30, 20 * 60)
     travelers_type: Literal[
@@ -146,6 +151,8 @@ class ActivityOutput(BaseModel):
     duration_min: int
     ticket_price: float = 0.0
     transport_cost: float = 0.0
+    meal_cost: float = 0.0
+    transit_from_prev: dict[str, Any] = Field(default_factory=dict)
     lat: float = 0.0
     lng: float = 0.0
     tags: list[str] = Field(default_factory=list)

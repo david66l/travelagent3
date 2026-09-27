@@ -23,6 +23,9 @@ class RestaurantHandler:
         """Add meal dummy nodes only when include_restaurant=True and meals_per_day>0."""
         if not constraints.include_restaurant or constraints.meals_per_day <= 0:
             return pois
+        if constraints.require_named_restaurants:
+            from planner.named_dining import expand_dining_nodes
+            return expand_dining_nodes(pois,constraints)
 
         meals_per_day = min(constraints.meals_per_day, 2)
         meal_names = ("午餐", "晚餐")

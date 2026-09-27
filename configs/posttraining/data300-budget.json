@@ -1,0 +1,17 @@
+{
+  "program": "travelagent-first300-20260906",
+  "target_instances": 300,
+  "currency": "CNY",
+  "limit_micros": 100000000,
+  "model": "glm-5.3-flash",
+  "endpoint": "https://open.bigmodel.cn/api/paas/v4",
+  "input_cny_per_million": "0.8",
+  "output_cny_per_million": "2.8",
+  "max_input_tokens": 1048576,
+  "max_output_tokens": 8192,
+  "max_requests": 3000,
+  "rate_evidence": "User-supplied pricing screenshot on 2026-09-06: GLM-5.3-Flash 1M context, promotional input 0.4/output 1.4/cache-hit 0.115 CNY per million; crossed-out regular input 0.8/output 2.8/cache-hit 0.23. Ledger uses regular uncached input/output rates for a conservative upper estimate.",
+  "unknown_usage_policy": "retain_full_context_and_output_reservation",
+  "retry_policy": "every_request_is_charged_in_the_same_shared_ledger",
+  "billing_note": "Ledger amounts are conservative token-based estimates, not the provider invoice. Output completion usage includes reasoning; cache discounts are ignored. No explicit cache-storage API is used."
+}

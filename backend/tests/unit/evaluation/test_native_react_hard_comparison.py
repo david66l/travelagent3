@@ -1,19 +1,10 @@
 from scripts.compare_native_react_hard_arms import build_comparison
 
 
-def _report(model: str, outcomes: list[bool], *, routed: bool = False) -> dict:
+def _report(model: str, outcomes: list[bool]) -> dict:
     case_ids = [f"case-{index}" for index in range(len(outcomes))]
     records = []
     for index, (case_id, passed) in enumerate(zip(case_ids, outcomes, strict=True)):
-        route = None
-        if routed:
-            route = {
-                "requested_target": "student",
-                "executed_target": "student",
-                "family": "search",
-                "reason": "verified state",
-                "fallback_used": False,
-            }
         records.append(
             {
                 "case_id": case_id,
@@ -28,7 +19,6 @@ def _report(model: str, outcomes: list[bool], *, routed: bool = False) -> dict:
                     {
                         "source": "policy",
                         "action": "get_poi_detail",
-                        "route_trace": route,
                     }
                 ],
             }
@@ -59,20 +49,19 @@ def _report(model: str, outcomes: list[bool], *, routed: bool = False) -> dict:
     }
 
 
-def test_paired_comparison_reports_case_migrations_and_route_audit() -> None:
+def test_paired_comparison_reports_case_migrations() -> None:
     report = build_comparison(
         {
             "base": _report("base", [True, False, True, False]),
-            "routed": _report("routed", [True, True, False, True], routed=True),
+            "candidate": _report("candidate", [True, True, False, True]),
         },
         baseline="base",
         samples=100,
         seed=7,
     )
 
-    paired = report["paired_vs_baseline"]["routed"]
+    paired = report["paired_vs_baseline"]["candidate"]
     assert paired["candidate_only_success"] == 2
     assert paired["baseline_only_success"] == 1
     assert paired["absolute_delta_pp"] == 25.0
-    assert report["arms"]["routed"]["route_audit"]["trace_coverage"] == 1.0
-    assert report["arms"]["routed"]["route_audit"]["specialist_scope_valid"] is True
+    assert report["arms"]["candidate"]["policy_calls"] == 4

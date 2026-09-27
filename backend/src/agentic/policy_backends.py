@@ -22,6 +22,24 @@ from agentic.policy_prompts import (
 )
 from agentic.policy_routing import PolicyDecision, _last_inference_metrics
 
+
+def _is_generated_tool_json_error(exc: Exception) -> bool:
+    """Identify a provider 400 caused by malformed model-generated tool JSON.
+
+    vLLM validates its parsed tool-call list before returning an OpenAI-style
+    response.  A truncated tool argument can therefore surface as an HTTP 400
+    even though the request and server are healthy.  Keep genuine provider 400s
+    as runtime errors; only the narrow generated-tool JSON signature is a model
+    protocol failure eligible for one bounded policy repair.
+    """
+
+    if getattr(exc, "status_code", None) != 400:
+        return False
+    message = str(exc)
+    return "Invalid JSON:" in message and (
+        "function-wrap" in message or "tool_call" in message.lower()
+    )
+
 class ApiAgentPolicy:
     """Use the existing OpenAI-compatible client as an Agent Loop policy."""
 
@@ -149,6 +167,14 @@ class NativeToolAgentPolicy:
             decision = PolicyDecision(**raw)
         except (TypeError, ValueError) as exc:
             raise PolicyOutputError(str(exc), code="POLICY_OUTPUT_MALFORMED") from exc
+        except Exception as exc:
+            if not _is_generated_tool_json_error(exc):
+                raise
+            raise PolicyOutputError(
+                str(exc),
+                code="POLICY_OUTPUT_MALFORMED",
+                detail_code="PROVIDER_TOOL_JSON_INVALID",
+            ) from exc
         if decision.action not in context.allowed_actions:
             raise PolicyOutputError(
                 f"policy proposed {decision.action}, allowed: {context.allowed_actions}",

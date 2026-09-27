@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field, model_validator
 
 AGENTIC_STATE_SCHEMA_VERSION = "agentic-state.v1"
 
-CapabilityStatus = Literal["solvable", "needs_user", "missing_tool", "infeasible", "unsafe"]
+CapabilityStatus = Literal["solvable", "undetermined", "needs_user", "missing_tool", "infeasible", "unsafe"]
 TaskStatus = Literal[
     "pending",
     "ready",
@@ -51,6 +51,7 @@ class GoalCapability(BaseModel):
     # hard stop.  New data must set this explicitly for non-solvable goals.
     actionable_alternatives: bool | None = None
     alternatives: list[str] = Field(default_factory=list)
+    evidence_ids: list[str] = Field(default_factory=list)
 
 
 class GoalLedger(BaseModel):

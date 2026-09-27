@@ -19,11 +19,12 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend" / "src"))
 
 from agentic.policy import NativeToolAgentPolicy  # noqa: E402
+from agentic.sft_dataset import EpisodeCandidate  # noqa: E402
 from core.inference_metrics import percentile  # noqa: E402
 from core.llm_client import LLMClient  # noqa: E402
 from core.redis_client import redis_client  # noqa: E402
 from core.settings import settings  # noqa: E402
-from evaluate_full_agent_loop import evaluate_case  # noqa: E402
+from evaluate_full_agent_loop import _write_episode_candidates, evaluate_case  # noqa: E402
 from evaluation.full_agent_loop_recovery import (  # noqa: E402
     SCHEMA_VERSION,
     OneShotFaultExecutor,
@@ -33,13 +34,27 @@ from evaluation.full_agent_loop_recovery import (  # noqa: E402
 )
 
 
+SCORING_CONTRACT_VERSION = "recovery-injection-accounting.v2"
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--episode-output",
+        type=Path,
+        required=True,
+        help="EpisodeCandidate JSONL sidecar with complete recovery observations.",
+    )
     parser.add_argument("--case", action="append", dest="case_ids")
     parser.add_argument("--limit", type=int)
     parser.add_argument("--group-size", type=int, default=4)
     parser.add_argument("--seed", type=int, default=421)
+    parser.add_argument(
+        "--rollout-id",
+        required=True,
+        help="Unique run label included in benchmark user identities.",
+    )
     parser.add_argument("--policy-model", required=True)
     parser.add_argument("--policy-base-url", required=True)
     parser.add_argument("--policy-api-key", default="not-needed")
@@ -63,6 +78,32 @@ def _mean(records: list[dict[str, Any]], key: str) -> float:
     return round(statistics.fmean(values), 3) if values else 0.0
 
 
+def _rate(numerator: int, denominator: int) -> float | None:
+    return round(numerator / denominator, 4) if denominator else None
+
+
+def _stratum_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    injected = [
+        row
+        for row in rows
+        if (row.get("recovery") or {}).get("injection_status") == "injected_once"
+    ]
+    first_try = sum(
+        bool((row.get("recovery") or {}).get("first_try_recovery")) for row in rows
+    )
+    return {
+        "total": len(rows),
+        "passed": sum(bool(row.get("passed")) for row in rows),
+        "pass_rate": _rate(sum(bool(row.get("passed")) for row in rows), len(rows)),
+        "injection_reach_rate": _rate(len(injected), len(rows)),
+        "first_try_recovery_rate": _rate(first_try, len(rows)),
+        "conditional_first_try_recovery_rate": _rate(first_try, len(injected)),
+        "full_chain_pass_rate": _rate(
+            sum(bool(row.get("base_passed")) for row in rows), len(rows)
+        ),
+    }
+
+
 def build_report(
     selected_cases: list[Any],
     records: list[dict[str, Any]],
@@ -74,35 +115,25 @@ def build_report(
         bool((row.get("recovery") or {}).get("first_try_recovery")) for row in records
     )
     full_chain_passed = sum(bool(row.get("base_passed")) for row in records)
+    injected_records = [
+        row
+        for row in records
+        if (row.get("recovery") or {}).get("injection_status") == "injected_once"
+    ]
+    injection_status_counts = Counter(
+        str((row.get("recovery") or {}).get("injection_status") or "missing")
+        for row in records
+    )
     grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in records:
         recovery = row.get("recovery") or {}
         key = f"{recovery.get('scenario')}/{recovery.get('evidence_style')}"
         grouped[key].append(row)
-    strata = {
-        key: {
-            "total": len(rows),
-            "passed": sum(bool(row.get("passed")) for row in rows),
-            "pass_rate": round(
-                sum(bool(row.get("passed")) for row in rows) / len(rows), 4
-            ),
-            "first_try_recovery_rate": round(
-                sum(
-                    bool((row.get("recovery") or {}).get("first_try_recovery"))
-                    for row in rows
-                )
-                / len(rows),
-                4,
-            ),
-            "full_chain_pass_rate": round(
-                sum(bool(row.get("base_passed")) for row in rows) / len(rows), 4
-            ),
-        }
-        for key, rows in sorted(grouped.items())
-    }
+    strata = {key: _stratum_summary(rows) for key, rows in sorted(grouped.items())}
     latencies = [float(row.get("latency_ms") or 0) for row in records]
     return {
         "schema_version": SCHEMA_VERSION,
+        "scoring_contract_version": SCORING_CONTRACT_VERSION,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "benchmark_hash": benchmark_hash(),
         "selected_case_ids": [row.case_id for row in selected_cases],
@@ -113,6 +144,7 @@ def build_report(
         "fault_protocol": "one-shot-search-failure-then-real-tools",
         "seed_protocol": "sha256-case-sample-v1",
         "base_seed": args.seed,
+        "rollout_id": args.rollout_id,
         "group_size": args.group_size,
         "temperature": args.policy_temperature,
         "summary": {
@@ -120,9 +152,19 @@ def build_report(
             "passed": passed,
             "failed": len(records) - passed,
             "pass_rate": round(passed / len(records), 4) if records else 0.0,
+            "end_to_end_strict_pass_rate": _rate(passed, len(records)),
+            "injection_reach_rate": _rate(len(injected_records), len(records)),
+            "injection_status_counts": dict(injection_status_counts),
             "first_try_recovery_rate": round(recovery_passed / len(records), 4)
             if records
             else 0.0,
+            "conditional_first_try_recovery_rate": _rate(
+                recovery_passed, len(injected_records)
+            ),
+            "conditional_full_chain_pass_rate": _rate(
+                sum(bool(row.get("base_passed")) for row in injected_records),
+                len(injected_records),
+            ),
             "full_chain_pass_rate": round(full_chain_passed / len(records), 4)
             if records
             else 0.0,
@@ -157,6 +199,18 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
     if args.resume and args.output.is_file():
         existing = json.loads(args.output.read_text(encoding="utf-8")).get("records", [])
     by_key = {str(row["rollout_key"]): row for row in existing}
+    episode_candidates_by_id: dict[str, EpisodeCandidate] = {}
+    if args.resume and args.episode_output.is_file():
+        for line_number, line in enumerate(
+            args.episode_output.read_text(encoding="utf-8").splitlines(), 1
+        ):
+            if not line.strip():
+                continue
+            try:
+                candidate = EpisodeCandidate(**json.loads(line))
+            except (json.JSONDecodeError, ValueError) as exc:
+                raise ValueError(f"{args.episode_output}:{line_number}: {exc}") from exc
+            episode_candidates_by_id[candidate.scenario_id] = candidate
     client = LLMClient(
         base_url=args.policy_base_url,
         api_key=args.policy_api_key,
@@ -169,6 +223,7 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         max_tokens=256,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.episode_output.parent.mkdir(parents=True, exist_ok=True)
     await redis_client.connect()
     try:
         total = len(cases) * args.group_size
@@ -186,11 +241,25 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
                 )
                 policy.set_rollout_seed(rollout_seed)
                 executor = OneShotFaultExecutor(case.fault)
+                episode_collector: list[EpisodeCandidate] = []
+                effective_rollout_id = f"{args.rollout_id}:{args.seed}:{sample_index}"
+                prefix = f"{case.case_id}:{effective_rollout_id}:"
+                for scenario_id in [
+                    item for item in episode_candidates_by_id if item.startswith(prefix)
+                ]:
+                    episode_candidates_by_id.pop(scenario_id)
                 base_record = await evaluate_case(
                     case.case,
                     policy=policy,
                     executor=executor,
-                    rollout_id=f"{args.seed}:{sample_index}",
+                    rollout_id=effective_rollout_id,
+                    episode_collector=episode_collector,
+                )
+                for candidate in episode_collector:
+                    episode_candidates_by_id[candidate.scenario_id] = candidate
+                _write_episode_candidates(
+                    args.episode_output,
+                    list(episode_candidates_by_id.values()),
                 )
                 record = score_recovery(case, base_record, executor.trace)
                 record.update(
@@ -244,6 +313,10 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         if _rollout_key(item.case_id, index) in by_key
     ]
     report = build_report(cases, records, args=args)
+    _write_episode_candidates(
+        args.episode_output,
+        list(episode_candidates_by_id.values()),
+    )
     args.output.write_text(
         json.dumps(report, ensure_ascii=False, indent=2, default=str) + "\n",
         encoding="utf-8",

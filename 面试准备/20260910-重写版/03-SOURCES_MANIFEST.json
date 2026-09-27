@@ -1,0 +1,384 @@
+{
+  "schema_version": 1,
+  "article_number": 3,
+  "title": "工具、证据与约束求解：从外部信息到可验证行程",
+  "review_date": "2026-09-10",
+  "project_root": "E:/A_Louis/TravelAgent2",
+  "method": "Lightweight static source and call-chain review. No model loading, training, solver runs, application services, database queries, benchmarks or tests were executed.",
+  "artifact": {
+    "path": "E:/A_Louis/TravelAgent2/面试准备/20260910-重写版/03-工具证据与约束求解.md",
+    "sha256": "f61dc9d6cbdfbef956297b950442acf1f76ce4f3e6044923860b80c7f965ffd5",
+    "bytes": 66169,
+    "characters": 31157,
+    "lines": 1163
+  },
+  "source_files": [
+    {
+      "path": "backend/src/agentic/policy_actions.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/agentic/policy_actions.py",
+      "purpose": "13 个动作及模型参数权限",
+      "kind": "source",
+      "line": 99,
+      "symbol_found": true,
+      "sha256": "391d89b2be9499b968a9bdef186cba2370ac8cb8f928730c504ab267c9b2525d",
+      "bytes": 20080
+    },
+    {
+      "path": "backend/src/agentic/loop.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/agentic/loop.py",
+      "purpose": "动作准入、提交、进展与账本窗口",
+      "kind": "source",
+      "line": 480,
+      "symbol_found": true,
+      "sha256": "0235d543388698832bf561160884648e0921998ec1daccd4b73fc831d2455262",
+      "bytes": 56630
+    },
+    {
+      "path": "backend/src/agentic/harness.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/agentic/harness.py",
+      "purpose": "证据前置条件、失效和终止检查",
+      "kind": "source",
+      "line": 120,
+      "symbol_found": true,
+      "sha256": "7110634fd93b6695b3a697fc660c832e09aecc3e7795a4d16bc16e0d7b32df61",
+      "bytes": 14657
+    },
+    {
+      "path": "backend/src/agentic/action_executor.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/agentic/action_executor.py",
+      "purpose": "可信参数填充与事实产物转换",
+      "kind": "source",
+      "line": 89,
+      "symbol_found": true,
+      "sha256": "77473e7a041500d1f069666e4be1999cafdd33937caa3cf3b13d5f70e273ab2f",
+      "bytes": 45417
+    },
+    {
+      "path": "backend/src/agentic/observations.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/agentic/observations.py",
+      "purpose": "工具结果成功与失败契约",
+      "kind": "source",
+      "line": 24,
+      "symbol_found": true,
+      "sha256": "485c22993bb4b87a40c362f2ef388890f21845e8be4b08a21197ad79ed9a370d",
+      "bytes": 3262
+    },
+    {
+      "path": "backend/src/agentic/guard.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/agentic/guard.py",
+      "purpose": "工具校验与运行模式",
+      "kind": "source",
+      "line": 53,
+      "symbol_found": true,
+      "sha256": "80c93def3dca35997b385bf109aa7fc2a9c8aa5e17732ba4cc0295b50ccc1e50",
+      "bytes": 5696
+    },
+    {
+      "path": "backend/src/tools/tool_executor.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/tools/tool_executor.py",
+      "purpose": "实际工具、顺序批处理和数据映射",
+      "kind": "source",
+      "line": 290,
+      "symbol_found": true,
+      "sha256": "b4877940dd70f33f87772473ee41de6278edb7eeb832d14c345b6b46e7ece45d",
+      "bytes": 52040
+    },
+    {
+      "path": "backend/src/agentic/react.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/agentic/react.py",
+      "purpose": "研究需求与证据充分性",
+      "kind": "source",
+      "line": 90,
+      "symbol_found": true,
+      "sha256": "25140227b1bef4cf1460a94a57c8974b812645cdf27d05b377fdb3eeaa2def60",
+      "bytes": 13083
+    },
+    {
+      "path": "backend/src/agentic/current_evidence.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/agentic/current_evidence.py",
+      "purpose": "实体、日期与新鲜来源",
+      "kind": "source",
+      "line": 8,
+      "symbol_found": true,
+      "sha256": "bd1a3023a062a506933ee3bf14e42593894fa2d51861733c4e301fbf352bdab9",
+      "bytes": 2882
+    },
+    {
+      "path": "backend/src/vrp_solver_service/models.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/vrp_solver_service/models.py",
+      "purpose": "输入、单位、默认值与输出",
+      "kind": "source",
+      "line": 65,
+      "symbol_found": true,
+      "sha256": "896545204425974279b2576cd39ff563f9d37cca875db101d8a79f5015b02d09",
+      "bytes": 7947
+    },
+    {
+      "path": "backend/src/vrp_solver_service/solver.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/vrp_solver_service/solver.py",
+      "purpose": "预处理、CP-SAT、贪心与输出",
+      "kind": "source",
+      "line": 42,
+      "symbol_found": true,
+      "sha256": "2c990b7962a2aedca634536e7e5c2fde02d42030568826e030c3b52d15b31e9c",
+      "bytes": 59463
+    },
+    {
+      "path": "backend/src/planner/preprocessing/transport_selector.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/planner/preprocessing/transport_selector.py",
+      "purpose": "距离估算与可选地图覆盖",
+      "kind": "source",
+      "line": 14,
+      "symbol_found": true,
+      "sha256": "1847187c75a08b9738f14e92e1d67a7d1d425c57aaf5e66d93953e48bd09c6bb",
+      "bytes": 4498
+    },
+    {
+      "path": "backend/src/planner/preprocessing/play_time_manager.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/planner/preprocessing/play_time_manager.py",
+      "purpose": "停留时长和营业窗口启发式",
+      "kind": "source",
+      "line": 21,
+      "symbol_found": true,
+      "sha256": "a543f9cb7dd2b82f685550f50ddc7a4307ce5b47873e5c4105c42ac68b3e480f",
+      "bytes": 10429
+    },
+    {
+      "path": "backend/src/planner/preprocessing/reservation_handler.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/planner/preprocessing/reservation_handler.py",
+      "purpose": "预约实体检查与提醒",
+      "kind": "source",
+      "line": 16,
+      "symbol_found": true,
+      "sha256": "8cb1078842d506ce365ca1c3e8590dabcd93fcb2c0132a98da13315361e3882f",
+      "bytes": 2277
+    },
+    {
+      "path": "backend/src/planner/preprocessing/restaurant_handler.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/planner/preprocessing/restaurant_handler.py",
+      "purpose": "用餐占位与具体餐厅分支",
+      "kind": "source",
+      "line": 13,
+      "symbol_found": true,
+      "sha256": "59f8b3e15e02112094616548fa5b683414ed9172317cd8b5a3cf6b9ccf4cfaff",
+      "bytes": 2610
+    },
+    {
+      "path": "backend/src/planner/preprocessing/fatigue_model.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/planner/preprocessing/fatigue_model.py",
+      "purpose": "跨日疲劳代理",
+      "kind": "source",
+      "line": 10,
+      "symbol_found": true,
+      "sha256": "073f5a15b47b3b4417853defc2f2f18581edfbd9de490a9555ca0e6698df862c",
+      "bytes": 2009
+    },
+    {
+      "path": "backend/src/planner/preprocessing/cp_sat_tuning.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/planner/preprocessing/cp_sat_tuning.py",
+      "purpose": "时间分档与单 worker 配置",
+      "kind": "source",
+      "line": 10,
+      "symbol_found": true,
+      "sha256": "380cff82efd9644bd651d28853e520f976331c71111c8dc98d9c2a633b00c69f",
+      "bytes": 1930
+    },
+    {
+      "path": "backend/src/vrp_solver_service/callback.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/vrp_solver_service/callback.py",
+      "purpose": "新解回调与早停",
+      "kind": "source",
+      "line": 10,
+      "symbol_found": true,
+      "sha256": "5938c016c0969332cc1125bad385929319b7ec37bd9699fbf2dd0f226d562d3e",
+      "bytes": 2197
+    },
+    {
+      "path": "backend/src/planner/named_dining.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/planner/named_dining.py",
+      "purpose": "餐厅来源映射与矩阵扩展",
+      "kind": "source",
+      "line": 5,
+      "symbol_found": true,
+      "sha256": "b0ca7f97d6135bbf6297c7b59c77e5104e9bc790c6a62e65f3972e45b949f56c",
+      "bytes": 1530
+    },
+    {
+      "path": "backend/src/evaluation/validator.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/evaluation/validator.py",
+      "purpose": "当前业务验证与指标",
+      "kind": "source",
+      "line": 119,
+      "symbol_found": true,
+      "sha256": "4ab3413b60bc742717f2937879bd68fcc5862efa2943abb6402a5b30b52b02dc",
+      "bytes": 23324
+    },
+    {
+      "path": "backend/src/evaluation/named_dining.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/evaluation/named_dining.py",
+      "purpose": "餐厅与逐边路线验证",
+      "kind": "source",
+      "line": 5,
+      "symbol_found": true,
+      "sha256": "820ea3d9e2a37e0f4ce61c016e90cb5df5cc9beebd405228cefae10627dfc55d",
+      "bytes": 3156
+    },
+    {
+      "path": "backend/src/evaluation/feasibility.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/evaluation/feasibility.py",
+      "purpose": "保守不可行 witness",
+      "kind": "source",
+      "line": 33,
+      "symbol_found": true,
+      "sha256": "1b8bcd55cb2992f2591fb91ad824008237d119b14d8806600d38c03c98b1ebea",
+      "bytes": 4730
+    },
+    {
+      "path": "backend/src/contracts/constraint_flexibility.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/contracts/constraint_flexibility.py",
+      "purpose": "用户约束可变性与授权",
+      "kind": "source",
+      "line": 20,
+      "symbol_found": true,
+      "sha256": "adfe4fed0b594278a32c54dc49fad65bab38685b65bce5177af1c9fb305af75a",
+      "bytes": 2375
+    },
+    {
+      "path": "backend/src/core/settings.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/core/settings.py",
+      "purpose": "默认保护、详情数量与工具超时",
+      "kind": "source",
+      "line": 192,
+      "symbol_found": true,
+      "sha256": "da75cee0d364482c050e472199debcfd514d0085f68a68575d06c871fbcc1438",
+      "bytes": 13975
+    },
+    {
+      "path": "backend/tests/unit/agentic/test_harness_loop.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/tests/unit/agentic/test_harness_loop.py",
+      "purpose": "已有测试入口；本次未运行",
+      "kind": "test_inventory",
+      "line": 55,
+      "symbol_found": true,
+      "sha256": "3a5c7e35d03babcd7fdc24c162ecbaac4cd107c8ddfcbc4ad594a373026e97be",
+      "bytes": 29217
+    },
+    {
+      "path": "backend/tests/unit/agentic/test_evidence_progress_retry.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/tests/unit/agentic/test_evidence_progress_retry.py",
+      "purpose": "已有测试入口；本次未运行",
+      "kind": "test_inventory",
+      "line": 19,
+      "symbol_found": true,
+      "sha256": "bac54433d83e1872046fd38dcb20c0614cad9aa8a0fce5d5605d5c817dba7364",
+      "bytes": 8226
+    },
+    {
+      "path": "backend/tests/unit/agentic/test_entity_evidence.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/tests/unit/agentic/test_entity_evidence.py",
+      "purpose": "已有测试入口；本次未运行",
+      "kind": "test_inventory",
+      "line": 25,
+      "symbol_found": true,
+      "sha256": "b9f2bc6305d1a74622789c44af6f0a7025e36e2da10efc2a6d253d37cf44170d",
+      "bytes": 3586
+    },
+    {
+      "path": "backend/tests/unit/tools/test_tool_executor.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/tests/unit/tools/test_tool_executor.py",
+      "purpose": "已有测试入口；本次未运行",
+      "kind": "test_inventory",
+      "line": 23,
+      "symbol_found": true,
+      "sha256": "ee5a247923085712de906dba9babb53b71ad1d3ec701bf607e9cc849a17bdd46",
+      "bytes": 25245
+    },
+    {
+      "path": "backend/tests/unit/vrp_solver_service/test_solver.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/tests/unit/vrp_solver_service/test_solver.py",
+      "purpose": "已有测试入口；本次未运行",
+      "kind": "test_inventory",
+      "line": 40,
+      "symbol_found": true,
+      "sha256": "7784927858869cd3ed69b8fdd3d678019c299b95d923dda3473fad944ee6ef44",
+      "bytes": 5601
+    },
+    {
+      "path": "backend/tests/unit/vrp_solver_service/test_meal_spacing.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/tests/unit/vrp_solver_service/test_meal_spacing.py",
+      "purpose": "已有测试入口；本次未运行",
+      "kind": "test_inventory",
+      "line": 9,
+      "symbol_found": true,
+      "sha256": "577ba56fa4911c9603beafe2b4201df8a4cd663e83158321971067f3c049f4f1",
+      "bytes": 1814
+    },
+    {
+      "path": "backend/tests/unit/evaluation/test_named_dining.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/tests/unit/evaluation/test_named_dining.py",
+      "purpose": "已有测试入口；本次未运行",
+      "kind": "test_inventory",
+      "line": 24,
+      "symbol_found": true,
+      "sha256": "538641854b02355c04092379ef43d4abe0ed2124b0768039ce4bb63b0d0ef491",
+      "bytes": 2965
+    },
+    {
+      "path": "backend/tests/unit/evaluation/test_required_fact_feasibility.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/tests/unit/evaluation/test_required_fact_feasibility.py",
+      "purpose": "已有测试入口；本次未运行",
+      "kind": "test_inventory",
+      "line": 19,
+      "symbol_found": true,
+      "sha256": "3c48e11b6c773f0298348405cff63b5817150f1ab1a3720fd67f8256f1ada86d",
+      "bytes": 3383
+    },
+    {
+      "path": "backend/tests/unit/evaluation/test_validator.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/tests/unit/evaluation/test_validator.py",
+      "purpose": "已有测试入口；本次未运行",
+      "kind": "test_inventory",
+      "line": 36,
+      "symbol_found": true,
+      "sha256": "6c9a9f4cbb0bb1cdb0fa25b5d94a4e3a793d9f4077eba47eecd085857d58bfc9",
+      "bytes": 5881
+    },
+    {
+      "path": "backend/tests/unit/evaluation/test_research_fixture.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/tests/unit/evaluation/test_research_fixture.py",
+      "purpose": "已有测试入口；本次未运行",
+      "kind": "test_inventory",
+      "line": 15,
+      "symbol_found": true,
+      "sha256": "f00410bbb4a2ee297286084dee35a0ae26180a6bd72cd85ded8570ce286fee30",
+      "bytes": 4638
+    }
+  ],
+  "verification": {
+    "source_snapshot": "Local file SHA-256; not a claim about deployed cloud revision",
+    "test_files": "Inventory plus selected test source reading; not executed",
+    "examples": "Illustrative and not actual run outputs",
+    "runtime_metrics": "No new latency, quality, accuracy, cost or deployment measurements"
+  },
+  "key_boundaries": [
+    "Model chooses actions and semantic queries; harness validates prerequisites and trusted inputs.",
+    "Default Agent route-matrix path uses distance estimates unless external durations are supplied.",
+    "Named-dining solver and validator support does not prove production detail-handler compatibility.",
+    "Static budget, transit, field-mapping and validator coverage discrepancies are documented without claiming reproduced runtime failure.",
+    "Solver status, itinerary validation, evidence sufficiency and user confirmation are separate."
+  ],
+  "cloud": {
+    "reprobed_this_article": false,
+    "uploaded": false,
+    "note": "Prior article recorded unavailable SSH connection; no cloud operations performed for this article."
+  },
+  "related_documents": [
+    "README.md",
+    "01-项目全貌与Long-Horizon-Agent架构.md",
+    "02-记忆上下文与检索.md"
+  ],
+  "related_correction": {
+    "document": "02-记忆上下文与检索.md",
+    "detail": "Corrected retained decision-history scope: maximum 32 records, last 8 for repeat detection, last 6 visible to policy. Updated article 2 artifact hash while preserving its source snapshot."
+  }
+}

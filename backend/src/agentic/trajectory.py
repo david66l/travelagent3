@@ -15,7 +15,7 @@ from agentic.observations import ObservationEnvelope
 from agentic.state import AgentLedgerState
 
 
-EPISODE_SCHEMA_VERSION = "agent-episode.v3"
+EPISODE_SCHEMA_VERSION = "agent-episode.v4"
 _PHONE = re.compile(r"(?<![A-Za-z0-9])(?:\+?86[- ]?)?1[3-9]\d{9}(?![A-Za-z0-9])")
 _EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 _ID_CARD = re.compile(r"(?<![A-Za-z0-9])\d{17}[\dXx](?![A-Za-z0-9])")
@@ -71,9 +71,16 @@ class AgentEpisode(BaseModel):
         return self
 
 
-def episode_content_hash(episode: AgentEpisode) -> str:
+def episode_content_hash(episode: AgentEpisode, *, legacy_policy_context: bool = False) -> str:
     """Return the canonical integrity hash used by finalized episodes."""
     payload = episode.model_dump(mode="json", exclude={"content_hash"})
+    if legacy_policy_context:
+        # Earlier policy contexts did not serialize these optional fields.
+        # Only the verifier requests this historical representation, after
+        # checking that no non-default evidence would be discarded.
+        for step in payload.get("steps", []):
+            step["context"].pop("remaining_budget", None)
+            step["context"].pop("observation_time", None)
     if episode.schema_version == "agent-episode.v1":
         # ``inference_metrics`` was introduced with v2. Pydantic fills the new
         # optional field with ``None`` when an old v1 record is loaded, but that
@@ -97,6 +104,10 @@ def episode_content_hash(episode: AgentEpisode) -> str:
                     "controller_hydrated_fields",
                 }:
                     action.pop(field, None)
+    if episode.schema_version in {"agent-episode.v1", "agent-episode.v2", "agent-episode.v3"}:
+        for step in payload.get("steps", []):
+            for field in ("executed_arguments", "argument_sources"):
+                step.get("action", {}).pop(field, None)
     return _canonical_hash(payload)
 
 
@@ -238,6 +249,22 @@ class EpisodeReplayVerifier:
                 errors.append(f"ACTION_NOT_ALLOWED:{step.step_index}")
         if parsed.content_hash is not None:
             actual = episode_content_hash(parsed)
+            if (
+                actual != parsed.content_hash
+                and parsed.schema_version
+                in {"agent-episode.v1", "agent-episode.v2", "agent-episode.v3", "agent-episode.v4"}
+                and all(
+                    not step.context.remaining_budget and step.context.observation_time is None
+                    for step in parsed.steps
+                )
+            ):
+                actual = episode_content_hash(parsed, legacy_policy_context=True)
             if actual != parsed.content_hash:
                 errors.append("CONTENT_HASH_MISMATCH")
+        if any(event.event_type == 'agent_accounting_contract' for event in parsed.events):
+            from agentic.episode_accounting import CONTRACT, verify_episode_accounting
+            if any(event.payload.get('schema_version') != CONTRACT for event in parsed.events
+                   if event.event_type == 'agent_accounting_contract'):
+                errors.append('EPISODE_ACCOUNTING_CONTRACT_INVALID')
+            errors.extend(verify_episode_accounting(parsed))
         return errors

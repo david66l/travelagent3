@@ -1,0 +1,479 @@
+{
+  "schema_version": 1,
+  "article_number": 4,
+  "title": "后端可靠性与部署：让长任务可受理、可恢复、可观测",
+  "review_date": "2026-09-10",
+  "project_root": "E:/A_Louis/TravelAgent2",
+  "method": "Lightweight static source, call-chain, deployment configuration and test-definition review. No model loading, training, services, database queries, benchmarks, tests, cloud connections or deployments were executed.",
+  "artifact": {
+    "path": "E:/A_Louis/TravelAgent2/面试准备/20260910-重写版/04-后端可靠性与部署.md",
+    "sha256": "28b105cc0a8e2f885b74f5c673174a636681f28557bd969152affdb9c3231ccf",
+    "bytes": 81831,
+    "characters": 38651,
+    "lines": 1249
+  },
+  "source_files": [
+    {
+      "path": "backend/src/api/v1/chat.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/api/v1/chat.py",
+      "purpose": "幂等、归属、事务、SSE 和控制动作怎样连起来",
+      "kind": "source",
+      "sha256": "dc8fbe77e035b6806b3ba9931934eaf89914fedd6be4deb72f52a565f5b006cb",
+      "bytes": 16960
+    },
+    {
+      "path": "backend/src/api/chat_runtime.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/api/chat_runtime.py",
+      "purpose": "创建派发、连接队列、状态回放与通道监督",
+      "kind": "source",
+      "sha256": "db5911905bb740346638efe5b5857641391bcb1431fee74197128e90262eb397",
+      "bytes": 38541
+    },
+    {
+      "path": "backend/src/models/planning_job.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/models/planning_job.py",
+      "purpose": "唯一约束、租约、状态、事件 ID",
+      "kind": "source",
+      "sha256": "7cf7b7d7282b92dbd1507fd94f2960cb40486a45879d959ea8721c8b7bcf7361",
+      "bytes": 5165
+    },
+    {
+      "path": "backend/src/repositories/planning_job.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/repositories/planning_job.py",
+      "purpose": "原子认领、心跳、阶段写入、取消与回放查询",
+      "kind": "source",
+      "sha256": "aea2c96109c3a7a93e1582de7c683967c8998d31f6aa0cf93aeb7376fa661f1c",
+      "bytes": 18776
+    },
+    {
+      "path": "backend/src/worker/planning_worker.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/worker/planning_worker.py",
+      "purpose": "会话锁、后台监督、执行与终态投影",
+      "kind": "source",
+      "sha256": "0062aa5e774208ebb3f22266b20e24a27b8e8e55714f27322a611ac3f20fd99e",
+      "bytes": 27427
+    },
+    {
+      "path": "backend/src/graph/runner.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/graph/runner.py",
+      "purpose": "Checkpoint 恢复和重复轮次处理",
+      "kind": "source",
+      "sha256": "125c52d6a1bd742864bbe0e2d90d4ae6abefd53f0b21e9763c5c7f08b874efc7",
+      "bytes": 36560
+    },
+    {
+      "path": "backend/src/worker/planning_tasks.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/worker/planning_tasks.py",
+      "purpose": "补发、重试、死信、取消截止与图实例生命周期",
+      "kind": "source",
+      "sha256": "9aaa3b18b6540efd10bc094d013a03bd02f2c622dd70182a61ea656495afbd27",
+      "bytes": 7151
+    },
+    {
+      "path": "backend/src/api/main.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/api/main.py",
+      "purpose": "服务启动、Checkpointer、清理与可选追踪",
+      "kind": "source",
+      "sha256": "cb90ecd86d4cfe025d454e64ba1d4814c53f06b085ff6fc99e253dcbd9501fc4",
+      "bytes": 4785
+    },
+    {
+      "path": "backend/src/core/task_retry.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/core/task_retry.py",
+      "purpose": "分类、次数和 jitter",
+      "kind": "source",
+      "sha256": "4222c0b845ee2ed51ccd6897b4e44641b9edabf9fe67126b233df95ba99f7bdf",
+      "bytes": 3182
+    },
+    {
+      "path": "backend/src/core/dead_letter.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/core/dead_letter.py",
+      "purpose": "诊断保存与归档边界",
+      "kind": "source",
+      "sha256": "47b664b1d61b5127980fd7c557ba8fcda3c5fcbb54e81c6a516c65aaa546ecb9",
+      "bytes": 3239
+    },
+    {
+      "path": "frontend/src/hooks/useSSE.ts",
+      "absolute_path": "E:/A_Louis/TravelAgent2/frontend/src/hooks/useSSE.ts",
+      "purpose": "重连、EOF、错误分类和流解析",
+      "kind": "source",
+      "sha256": "951c6e78d6ff263bb2f1dc174abbb82c10e7c462c507be171445c459e7683fdf",
+      "bytes": 8432
+    },
+    {
+      "path": "frontend/src/lib/chatEvents.ts",
+      "absolute_path": "E:/A_Louis/TravelAgent2/frontend/src/lib/chatEvents.ts",
+      "purpose": "游标维护与 UI 状态更新",
+      "kind": "source",
+      "sha256": "05655e13a190796f8de0087c533bf94c463774fd089b82c76751c39229e30705",
+      "bytes": 18112
+    },
+    {
+      "path": "gateway/cmd/gateway/main.go",
+      "absolute_path": "E:/A_Louis/TravelAgent2/gateway/cmd/gateway/main.go",
+      "purpose": "中间件、CORS、代理和关闭",
+      "kind": "source",
+      "sha256": "f486af435222fb4ef0126569348aba3f5c6111de11e82b1caa8f7de7d9e97862",
+      "bytes": 5520
+    },
+    {
+      "path": "gateway/internal/middleware/auth.go",
+      "absolute_path": "E:/A_Louis/TravelAgent2/gateway/internal/middleware/auth.go",
+      "purpose": "正文中的实现与调用链证据",
+      "kind": "source",
+      "sha256": "ae40384e3685890e65a746d9f4016df3b660e48084c67d7164ae550cd3443eab",
+      "bytes": 3033
+    },
+    {
+      "path": "backend/src/api/deps.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/api/deps.py",
+      "purpose": "正文中的实现与调用链证据",
+      "kind": "source",
+      "sha256": "c067cb91db8c84278836d5bfd761c82d69a7a6e03b0f618ea496fac038e79a4f",
+      "bytes": 7745
+    },
+    {
+      "path": "gateway/internal/breaker/breaker.go",
+      "absolute_path": "E:/A_Louis/TravelAgent2/gateway/internal/breaker/breaker.go",
+      "purpose": "状态、阈值与半开策略",
+      "kind": "source",
+      "sha256": "aec5b31f88effe62ff8a679def53d7490ecce0e1c505d9a2109b66cc54b9eae5",
+      "bytes": 3843
+    },
+    {
+      "path": "backend/src/core/metrics.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/core/metrics.py",
+      "purpose": "业务口径与导出方式",
+      "kind": "source",
+      "sha256": "9eef6a42469bb9d601d81793d6db5fcbbecb8d7bc1a800c7ba17b81e4e2c1983",
+      "bytes": 8988
+    },
+    {
+      "path": "backend/src/middleware/metrics_middleware.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/middleware/metrics_middleware.py",
+      "purpose": "HTTP 时延计时范围",
+      "kind": "source",
+      "sha256": "85d8cfcfb9a7f8de298d07dd482fe1f4315f39bd3015f3e09edd2e9266c1d954",
+      "bytes": 1075
+    },
+    {
+      "path": "backend/src/core/tracing.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/core/tracing.py",
+      "purpose": "可选 OpenTelemetry 初始化",
+      "kind": "source",
+      "sha256": "e09f2e52077bab41a0190c021e6c53274cf7876a6fdd5453face64304825eb3c",
+      "bytes": 1396
+    },
+    {
+      "path": "backend/src/api/health.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/api/health.py",
+      "purpose": "存活和就绪的覆盖范围",
+      "kind": "source",
+      "sha256": "70b71eb6e60becc098f91f10eadfed8e689bce498fff9f1ba1a39bc6e06170d9",
+      "bytes": 2361
+    },
+    {
+      "path": "k8s/backend-deployment.yaml",
+      "absolute_path": "E:/A_Louis/TravelAgent2/k8s/backend-deployment.yaml",
+      "purpose": "探针、资源、退出与非 root",
+      "kind": "configuration",
+      "sha256": "7ffc374f53b2cb37884eedcdd0b0614ee42bf736b058abfad8a39211f2e4ffb4",
+      "bytes": 3343
+    },
+    {
+      "path": "k8s/backup-cronjob.yaml",
+      "absolute_path": "E:/A_Louis/TravelAgent2/k8s/backup-cronjob.yaml",
+      "purpose": "发布顺序与恢复证据",
+      "kind": "configuration",
+      "sha256": "3883667cc416d39a1d9822b9f64b5cafd4430be8db7d2c6f73881813e645ce89",
+      "bytes": 2243
+    },
+    {
+      "path": "k8s/migration-job.yaml",
+      "absolute_path": "E:/A_Louis/TravelAgent2/k8s/migration-job.yaml",
+      "purpose": "发布顺序与恢复证据",
+      "kind": "configuration",
+      "sha256": "f35d53b2d6f69320e9c8820bde919a2d1d6c6f0e1c05c46a8ba577b91ffe1338",
+      "bytes": 1858
+    },
+    {
+      "path": "backend/src/core/celery_app.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/core/celery_app.py",
+      "purpose": "路由、Beat 和消息配置",
+      "kind": "source",
+      "sha256": "1bd55b9337e18303e90ae6945dc7f72128f5e34776a83ead0149ca66e7a688d6",
+      "bytes": 3458
+    },
+    {
+      "path": "backend/src/api/v1/planning_jobs.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/api/v1/planning_jobs.py",
+      "purpose": "不同入口的权限和取消语义",
+      "kind": "source",
+      "sha256": "75f2e13127df1f6174771502f9f28aa588a9b165f810259da7536cfddc1ffa1c",
+      "bytes": 3276
+    },
+    {
+      "path": "backend/src/api/v1/agent_chat.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/api/v1/agent_chat.py",
+      "purpose": "进程内后台任务与持久 Job 路径的区别",
+      "kind": "source",
+      "sha256": "e728728d880bd458ed199a94911e090dd7c641a86f5b08ba71064fc157168079",
+      "bytes": 9097
+    },
+    {
+      "path": "frontend/src/lib/api.ts",
+      "absolute_path": "E:/A_Louis/TravelAgent2/frontend/src/lib/api.ts",
+      "purpose": "URL 拼接、请求 key 与流参数",
+      "kind": "source",
+      "sha256": "acab94a9b50dbd23c9d93c55e97756bfadea1c6d93f48a120f89ca268bcc5241",
+      "bytes": 11909
+    },
+    {
+      "path": "frontend/src/hooks/useChat.ts",
+      "absolute_path": "E:/A_Louis/TravelAgent2/frontend/src/hooks/useChat.ts",
+      "purpose": "提交、会话切换和 Job 关联",
+      "kind": "source",
+      "sha256": "4486a2aea921608e97d34cd85ae868cc58ceab2faa52753211e3fbec4eb622fc",
+      "bytes": 7594
+    },
+    {
+      "path": "gateway/internal/limit/limiter.go",
+      "absolute_path": "E:/A_Louis/TravelAgent2/gateway/internal/limit/limiter.go",
+      "purpose": "Lua 滑动窗口与连接计数",
+      "kind": "source",
+      "sha256": "ad5456c08634f17da6753af911b2df71fea6ca5c42fdd8a2c253448e13208e6c",
+      "bytes": 3086
+    },
+    {
+      "path": "gateway/internal/middleware/rate_limit.go",
+      "absolute_path": "E:/A_Louis/TravelAgent2/gateway/internal/middleware/rate_limit.go",
+      "purpose": "错误时放行和连接释放",
+      "kind": "source",
+      "sha256": "d370ee505e96dd445cf677cbb0e721ab31c9e8e9ee513516f147ab19c7ec89a5",
+      "bytes": 2768
+    },
+    {
+      "path": "backend/src/monitoring/rate_limit_controller.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/monitoring/rate_limit_controller.py",
+      "purpose": "固定窗口和预估 Token 分支",
+      "kind": "source",
+      "sha256": "3d0e4ef291015104733c838d72296ad58929f8296262926d4da72e528a5dbc8e",
+      "bytes": 7568
+    },
+    {
+      "path": "backend/src/core/database.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/core/database.py",
+      "purpose": "每进程连接池与事务生命周期",
+      "kind": "source",
+      "sha256": "8e9966e5ef0a330416b0440f06074b2daa1f91a0d7f9fecc4b6eef8151f8299b",
+      "bytes": 2294
+    },
+    {
+      "path": "docker-compose.yml",
+      "absolute_path": "E:/A_Louis/TravelAgent2/docker-compose.yml",
+      "purpose": "队列消费者、镜像与环境差异",
+      "kind": "configuration",
+      "sha256": "058f0e12df31e9e925d42ac82bbd1a15631ac0c3506f09a07ead436d8f3e27c2",
+      "bytes": 5736
+    },
+    {
+      "path": "docker-compose.prod.yml",
+      "absolute_path": "E:/A_Louis/TravelAgent2/docker-compose.prod.yml",
+      "purpose": "队列消费者、镜像与环境差异",
+      "kind": "configuration",
+      "sha256": "c53b15c4a459790b3cd16d8f61fe7298c555d6aae55a7a985e55948280ea8f5a",
+      "bytes": 12014
+    },
+    {
+      "path": "backend/Dockerfile",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/Dockerfile",
+      "purpose": "构建依赖和实际执行程序",
+      "kind": "configuration",
+      "sha256": "511b80aef5c887799147a5a32c083bc59527433fb94b22cf353001cb0001864d",
+      "bytes": 2594
+    },
+    {
+      "path": "gateway/Dockerfile",
+      "absolute_path": "E:/A_Louis/TravelAgent2/gateway/Dockerfile",
+      "purpose": "构建依赖和实际执行程序",
+      "kind": "configuration",
+      "sha256": "ce2a867f45427ce099b7f4d85b68cab45f2e6010596cbf9b37db8f24b7cfcfb2",
+      "bytes": 1047
+    },
+    {
+      "path": "k8s/celery-worker-deployment.yaml",
+      "absolute_path": "E:/A_Louis/TravelAgent2/k8s/celery-worker-deployment.yaml",
+      "purpose": "消费者、调度者与进程健康",
+      "kind": "configuration",
+      "sha256": "f6d01119132e9e86dd8e557f5c1ebfff291845f3cd9d0f4e1c498601953507a1",
+      "bytes": 9879
+    },
+    {
+      "path": "k8s/celery-beat-deployment.yaml",
+      "absolute_path": "E:/A_Louis/TravelAgent2/k8s/celery-beat-deployment.yaml",
+      "purpose": "消费者、调度者与进程健康",
+      "kind": "configuration",
+      "sha256": "a90a26608df61683f3ab5d5377c056eb0eb397f589561bd32127067eb6adee36",
+      "bytes": 2024
+    },
+    {
+      "path": "k8s/hpa.yaml",
+      "absolute_path": "E:/A_Louis/TravelAgent2/k8s/hpa.yaml",
+      "purpose": "实际扩容指标和配置接口",
+      "kind": "configuration",
+      "sha256": "f2fa0bd16fec776498f696abcf3235db6381d41e5a11d13164427fb4b9e76d67",
+      "bytes": 4999
+    },
+    {
+      "path": "k8s/configmap.yaml",
+      "absolute_path": "E:/A_Louis/TravelAgent2/k8s/configmap.yaml",
+      "purpose": "实际扩容指标和配置接口",
+      "kind": "configuration",
+      "sha256": "faebd50e7d47b825fc6ae2ac91428913b821f5fa2971554ab0348f6e8887410d",
+      "bytes": 5243
+    },
+    {
+      "path": "k8s/redis-statefulset.yaml",
+      "absolute_path": "E:/A_Louis/TravelAgent2/k8s/redis-statefulset.yaml",
+      "purpose": "集群声明与客户端配套",
+      "kind": "configuration",
+      "sha256": "af64cf77e86bc6e659a59564deecce0596e9a96a85d78e62b4a0475f84874b01",
+      "bytes": 4896
+    },
+    {
+      "path": "backend/src/core/redis_client.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/core/redis_client.py",
+      "purpose": "普通 Redis 客户端和连接生命周期",
+      "kind": "source",
+      "sha256": "b4bcab681a405ee0a4a23667c5a4ce574691e49e766487240570162146298e09",
+      "bytes": 8325
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "absolute_path": "E:/A_Louis/TravelAgent2/.github/workflows/ci.yml",
+      "purpose": "已定义门槛与实际运行结果的区别",
+      "kind": "configuration",
+      "sha256": "3235adb7647a12dab90babd716a44ed82aa0c9e6c2992e2c1d5f95cfe279de94",
+      "bytes": 13365
+    },
+    {
+      "path": ".github/workflows/deploy.yml",
+      "absolute_path": "E:/A_Louis/TravelAgent2/.github/workflows/deploy.yml",
+      "purpose": "已定义门槛与实际运行结果的区别",
+      "kind": "configuration",
+      "sha256": "0972484711d843689b83813521b593fba4f9b254a8c9ed90908052ca26270bb7",
+      "bytes": 7797
+    },
+    {
+      "path": "backend/tests/unit/api/test_chat_job_dispatch.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/tests/unit/api/test_chat_job_dispatch.py",
+      "purpose": "commit 与 enqueue 的顺序",
+      "kind": "test_definition",
+      "sha256": "6a36670f4951b298adce7c4153d1fd695809e86b497bbbc5fa3b851a59ef7746",
+      "bytes": 1943
+    },
+    {
+      "path": "backend/tests/unit/worker/test_planning_worker.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/tests/unit/worker/test_planning_worker.py",
+      "purpose": "已有测试关注哪些窗口",
+      "kind": "test_definition",
+      "sha256": "53db4516f11679947785a43115b8a50eb69cc59507d82c4b4c3fa87154d71ef0",
+      "bytes": 14084
+    },
+    {
+      "path": "backend/tests/unit/worker/test_planning_tasks.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/tests/unit/worker/test_planning_tasks.py",
+      "purpose": "已有测试关注哪些窗口",
+      "kind": "test_definition",
+      "sha256": "2c27d31a2861b3304a4ae159a855fd88e24e82515fa120b642c76b8fcdfcb3cd",
+      "bytes": 5159
+    },
+    {
+      "path": "backend/tests/unit/api/v1/test_chat_sse.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/tests/unit/api/v1/test_chat_sse.py",
+      "purpose": "回放、流接口与故障覆盖需要怎样补足",
+      "kind": "test_definition",
+      "sha256": "79ec494dd6db9d6a06b56b3621e7b6a32d4bcaee9ab672b0a0a4087421f0d803",
+      "bytes": 5473
+    },
+    {
+      "path": "backend/src/api/v1/__init__.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/api/v1/__init__.py",
+      "purpose": "主入口与保留 Agent Router 注册",
+      "kind": "source",
+      "sha256": "8dc11810cb24647cd24abf72e1b81aa31d25ddf3a3087e56639979011754eae7",
+      "bytes": 1513
+    },
+    {
+      "path": "backend/src/services/planning_job_service.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/services/planning_job_service.py",
+      "purpose": "独立任务服务、归属与取消状态",
+      "kind": "source",
+      "sha256": "cacb71808afc85b3ffaa31797067dcf63336960d35e9c5afc5a95abea895daf3",
+      "bytes": 2680
+    },
+    {
+      "path": "backend/src/core/settings.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/core/settings.py",
+      "purpose": "重试、队列、连接与模型配置默认值",
+      "kind": "source",
+      "sha256": "da75cee0d364482c050e472199debcfd514d0085f68a68575d06c871fbcc1438",
+      "bytes": 13975
+    },
+    {
+      "path": "backend/src/api/v1/metrics.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/api/v1/metrics.py",
+      "purpose": "指标端点",
+      "kind": "source",
+      "sha256": "a32c0c412798daf192513b2dfe6b6e2a2870231ec8c019d6eaba9abf1bd737ef",
+      "bytes": 432
+    },
+    {
+      "path": "gateway/internal/proxy/proxy.go",
+      "absolute_path": "E:/A_Louis/TravelAgent2/gateway/internal/proxy/proxy.go",
+      "purpose": "默认 Go 反向代理",
+      "kind": "source",
+      "sha256": "167eae4a091641430916656f06d34cc5766e46193ba72654d0eb6dc7c621f234",
+      "bytes": 1166
+    },
+    {
+      "path": "gateway/nginx.conf",
+      "absolute_path": "E:/A_Louis/TravelAgent2/gateway/nginx.conf",
+      "purpose": "另一份入口配置与代理缓冲声明",
+      "kind": "configuration",
+      "sha256": "941cf6afa8d7d44519511915f92094a11caaa81374f9fe859f2346caeb9a737a",
+      "bytes": 2056
+    },
+    {
+      "path": "backend/migrations/versions/f3a4b5c6d7e8_enable_pgvector.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/migrations/versions/f3a4b5c6d7e8_enable_pgvector.py",
+      "purpose": "迁移依赖 vector 扩展",
+      "kind": "source",
+      "sha256": "927a969bfe2a363c1f47bc4656787da0064d2ff94e83607616c237ac765caa03",
+      "bytes": 1135
+    }
+  ],
+  "evidence_boundaries": [
+    "Implementation claims describe the reviewed local source; configuration defaults are not asserted as current cloud runtime values.",
+    "Static failure scenarios are not reproduced incidents. Fault injection, capacity tests and restore drills are proposed only.",
+    "Tests were inspected at definition or inventory level; no claim is made that tests or CI currently pass.",
+    "No new performance, availability, model quality or post-training results are asserted.",
+    "Source hashes identify current files, not the historical deployment used by earlier reports.",
+    "Prior three articles are preserved. Only article 4, its manifest and the series README are changed this turn."
+  ],
+  "static_risk_sections": [
+    "6.2",
+    "7.4",
+    "8.3",
+    "9.3",
+    "9.4",
+    "11.2",
+    "11.3",
+    "12",
+    "13",
+    "14.4",
+    "20"
+  ],
+  "next_article": "05 数据工程与 SFT"
+}

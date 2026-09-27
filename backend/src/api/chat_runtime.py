@@ -501,7 +501,6 @@ async def _stream_graph_to_manager(
                     "output_pdf_url": payload.get("output_pdf_url"),
                     "output_excel_url": payload.get("output_excel_url"),
                     "output_map_url": payload.get("output_map_url"),
-                    "agent_policy_routing": payload.get("agent_policy_routing"),
                 },
             )
             await manager.send_json(
@@ -510,6 +509,7 @@ async def _stream_graph_to_manager(
                     "type": "done",
                     "stage": payload.get("stage", "completed"),
                     "job_id": None,
+                    "conversation_id": session_id,
                     "output_pdf_url": payload.get("output_pdf_url"),
                     "output_excel_url": payload.get("output_excel_url"),
                     "output_map_url": payload.get("output_map_url"),
@@ -521,8 +521,6 @@ async def _stream_graph_to_manager(
                 state["itinerary"] = payload["itinerary"]
             if payload.get("profile"):
                 state["profile"] = payload["profile"]
-            if payload.get("agent_policy_routing"):
-                state["agent_policy_routing"] = payload["agent_policy_routing"]
             state.setdefault("recent_messages", []).append(
                 {
                     "role": "assistant",
@@ -554,13 +552,12 @@ async def _stream_graph_to_manager(
                     "type": "awaiting_confirm",
                     "itinerary": payload.get("itinerary") if isinstance(payload, dict) else None,
                     "warnings": payload.get("warnings", []) if isinstance(payload, dict) else [],
-                    "agent_policy_routing": payload.get("agent_policy_routing")
+                    # Required by the client to confirm/modify/reject the draft.
+                    "pending_approval": payload.get("pending_approval")
                     if isinstance(payload, dict)
                     else None,
                 },
             )
-            if isinstance(payload, dict) and payload.get("agent_policy_routing"):
-                state["agent_policy_routing"] = payload["agent_policy_routing"]
             await manager.save_gathering_state(session_id, state)
             await _persist_assistant_message(
                 conversation_id,
@@ -589,8 +586,6 @@ async def _stream_graph_to_manager(
             # Output node finished enrich + polish; surface prose + artifacts.
             if isinstance(payload, dict) and payload.get("content"):
                 latest_assistant_content = str(payload["content"])
-            if isinstance(payload, dict) and payload.get("agent_policy_routing"):
-                state["agent_policy_routing"] = payload["agent_policy_routing"]
             await manager.send_json(
                 session_id,
                 {
@@ -728,10 +723,16 @@ def _planning_event_message(
     event: Any,
     payload: dict[str, Any] | None,
     job_id: str,
+    conversation_id: str | None = None,
 ) -> dict[str, Any]:
     """Project a durable worker event onto the public SSE contract."""
     body = payload or {}
-    common = {"event_id": event.id, "job_id": job_id}
+    # `conversation_id` lets a client that watches more than one conversation
+    # route each frame to the right one. It is additive: clients that only ever
+    # watch a single conversation keep working unchanged.
+    common: dict[str, Any] = {"event_id": event.id, "job_id": job_id}
+    if conversation_id:
+        common["conversation_id"] = conversation_id
     event_type = str(event.event_type or "stage")
 
     if event_type == "clarify":
@@ -761,7 +762,10 @@ def _planning_event_message(
             "type": "awaiting_confirm",
             "itinerary": body.get("itinerary"),
             "warnings": body.get("warnings", []),
-            "agent_policy_routing": body.get("agent_policy_routing"),
+            # The confirmation prompt is unusable without this: the client must
+            # echo the issued approval back on confirm/modify/reject, and the
+            # graph rejects the action with APPROVAL_REQUIRED when it is absent.
+            "pending_approval": body.get("pending_approval"),
         }
     if event_type in {"partial", "final"}:
         return {
@@ -806,7 +810,7 @@ async def push_job_status(job_id: str, session_id: str, from_event_id: int = 0) 
                 payload = sanitize_itinerary_payload(payload)
             await manager.send_json(
                 session_id,
-                _planning_event_message(event, payload, job_id),
+                _planning_event_message(event, payload, job_id, session_id),
             )
             if event.stage == "completed" and (event.payload or {}).get("needs_human"):
                 await manager.send_json(
@@ -824,7 +828,10 @@ async def push_job_status(job_id: str, session_id: str, from_event_id: int = 0) 
         while await _drain(db):
             pass
         if await _is_done(db):
-            await manager.send_json(session_id, {"type": "done", "job_id": job_id})
+            await manager.send_json(
+                session_id,
+                {"type": "done", "job_id": job_id, "conversation_id": session_id},
+            )
             return
 
     async def _redis_sub() -> None:
@@ -846,6 +853,15 @@ async def push_job_status(job_id: str, session_id: str, from_event_id: int = 0) 
                         continue
 
                     if channel in (f"token:{job_id}", f"live:{job_id}"):
+                        # Token and live-stage frames are published by the worker
+                        # without a conversation id and without an event id. Tag
+                        # them here, where the id is known, so a client watching
+                        # several conversations can route the frame. They stay
+                        # id-less on purpose: they are transient previews, not
+                        # durable log entries, so they must not advance a cursor.
+                        if isinstance(data, dict):
+                            data.setdefault("conversation_id", session_id)
+                            data.setdefault("job_id", job_id)
                         await manager.send_json(session_id, data)
                         continue
 
@@ -858,6 +874,12 @@ async def push_job_status(job_id: str, session_id: str, from_event_id: int = 0) 
                 await pubsub.unsubscribe(f"job:status:{job_id}")
                 await pubsub.unsubscribe(f"token:{job_id}")
                 await pubsub.unsubscribe(f"live:{job_id}")
+                # unsubscribe alone leaves the connection checked out of the
+                # shared pool; redis-py releases it only in aclose(). Without
+                # this, every SSE stream permanently burns one of the pool's
+                # connections until MaxConnectionsError breaks all state-Redis
+                # operations.
+                await pubsub.aclose()
         except Exception:
             logger.debug("Redis listener for %s exited", job_id, exc_info=True)
 
@@ -901,7 +923,10 @@ async def push_job_status(job_id: str, session_id: str, from_event_id: int = 0) 
         append_message(state, "assistant", "行程已生成")
         await manager.save_state(job_id, session_id, state, trigger_archive=True)
 
-    await manager.send_json(session_id, {"type": "done", "job_id": job_id})
+    await manager.send_json(
+        session_id,
+        {"type": "done", "job_id": job_id, "conversation_id": session_id},
+    )
 
 
 async def restore_session_state(session_id: str) -> None:
@@ -933,7 +958,6 @@ async def restore_session_state(session_id: str) -> None:
             "output_pdf_url": state.get("output_pdf_url"),
             "output_excel_url": state.get("output_excel_url"),
             "output_map_url": state.get("output_map_url"),
-            "agent_policy_routing": state.get("agent_policy_routing"),
             "pending_approval": public_approval(state.get("pending_approval")),
         },
     )

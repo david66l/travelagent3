@@ -94,9 +94,22 @@ def test_recorder_builds_versioned_hash_verified_episode():
     )
     episode = recorder.finalize(result)
 
-    assert episode.schema_version == "agent-episode.v3"
+    assert episode.schema_version == "agent-episode.v4"
     assert "13812345678" not in episode.model_dump_json()
     assert EpisodeReplayVerifier().verify(episode) == []
+
+    # Historical records must remain verifiable after optional policy fields
+    # are introduced. The original bytes/hash remain unchanged on disk.
+    legacy = episode.model_dump(mode="json", exclude={"content_hash"})
+    for step in legacy["steps"]:
+        step["context"].pop("remaining_budget")
+        step["context"].pop("observation_time")
+    legacy["content_hash"] = hashlib.sha256(
+        json.dumps(legacy, ensure_ascii=False, sort_keys=True, default=str).encode()
+    ).hexdigest()
+    assert EpisodeReplayVerifier().verify(legacy) == []
+    legacy["steps"][0]["context"]["remaining_budget"] = {"solver_calls": 999}
+    assert "CONTENT_HASH_MISMATCH" in EpisodeReplayVerifier().verify(legacy)
 
 
 def test_replay_verifier_preserves_v1_hash_without_inference_metrics_field():
@@ -129,6 +142,8 @@ def test_replay_verifier_preserves_v1_hash_without_inference_metrics_field():
     legacy_payload["schema_version"] = "agent-episode.v1"
     for step in legacy_payload["steps"]:
         for field in {
+            "executed_arguments",
+            "argument_sources",
             "inference_metrics",
             "model_arguments",
             "controller_override_attempt",

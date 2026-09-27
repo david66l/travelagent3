@@ -11,6 +11,7 @@ from agentic.state import (
     TaskGraph,
     TaskNode,
 )
+from evaluation.validator import VALIDATOR_VERSION
 
 
 def test_enforce_requires_validator_report():
@@ -39,7 +40,9 @@ def test_enforce_accepts_programmatic_hard_pass():
 
     assert decision.allowed is True
     assert decision.would_block is False
-    assert decision.validator_version == "travel-validator.v1"
+    # Bound to the constant so a validator version bump cannot silently turn
+    # this assertion into a false failure.
+    assert decision.validator_version == VALIDATOR_VERSION
 
 
 def _ledger(*, status: str = "succeeded", plan_version: int = 1) -> AgentLedgerState:

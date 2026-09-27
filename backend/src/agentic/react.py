@@ -1,10 +1,4 @@
-"""Intent-driven ReAct research loop with deterministic planning gates.
-
-The task graph contains only phase boundaries.  Tool order inside
-``research_evidence`` is chosen by the policy from live observations; the
-controller merely verifies that the resulting evidence bundle is sufficient
-before CP-SAT is allowed to run.
-"""
+"""Evidence validation and the single-session lifecycle envelope."""
 
 from __future__ import annotations
 
@@ -36,8 +30,8 @@ RESEARCH_ACTIONS = (
 class ResearchRequirements(BaseModel):
     intent_kind: str = "itinerary"
     required_artifact_types: list[str] = Field(default_factory=list)
-    min_candidate_count: int = 4
-    min_detail_count: int = 3
+    min_candidate_count: int = 1
+    min_detail_count: int = 1
     requires_weather: bool = False
     requires_event: bool = False
     requires_transport: bool = False
@@ -54,7 +48,6 @@ class ResearchSufficiencyReport(BaseModel):
 
 def infer_research_requirements(goal: GoalLedger) -> ResearchRequirements:
     hard = goal.hard_constraints
-    days = max(1, int(hard.get("travel_days") or 1))
     intent_kind = str(hard.get("intent_kind") or "itinerary")
     information_needs = set(hard.get("information_needs") or [])
     requires_event = intent_kind == "event_trip" or "event" in information_needs
@@ -73,7 +66,7 @@ def infer_research_requirements(goal: GoalLedger) -> ResearchRequirements:
         except ValueError:
             pass
 
-    required = ["city_knowledge", "poi_candidate_set", "poi_detail_set", "route_matrix"]
+    required = ["poi_candidate_set", "poi_detail_set", "route_matrix"]
     if requires_weather:
         required.append("weather_snapshot")
     if requires_event:
@@ -85,8 +78,8 @@ def infer_research_requirements(goal: GoalLedger) -> ResearchRequirements:
     return ResearchRequirements(
         intent_kind=intent_kind,
         required_artifact_types=required,
-        min_candidate_count=max(4, min(10, days * 2)),
-        min_detail_count=max(3, min(8, days * 2)),
+        min_candidate_count=1,
+        min_detail_count=1,
         requires_weather=requires_weather,
         requires_event=requires_event,
         requires_transport=requires_transport,
@@ -95,7 +88,7 @@ def infer_research_requirements(goal: GoalLedger) -> ResearchRequirements:
 
 
 class ResearchSufficiencyVerifier:
-    """Programmatically reject premature ``finalize_research`` proposals."""
+    """Validate evidence prerequisites when the model proposes solving or submission."""
 
     def evaluate(self, ledger: AgentLedgerState) -> ResearchSufficiencyReport:
         requirements = infer_research_requirements(ledger.goal)
@@ -104,6 +97,7 @@ class ResearchSufficiencyVerifier:
             for artifact in ledger.artifacts.values()
             if artifact.goal_version == ledger.goal.goal_version
             and artifact.plan_version == ledger.task_graph.plan_version
+            and (artifact.expires_at is None or artifact.expires_at > reference_now())
         ]
         by_type: dict[str, list[ArtifactRecord]] = {}
         for artifact in current:
@@ -123,7 +117,7 @@ class ResearchSufficiencyVerifier:
 
         freshness_hours = {
             "weather_snapshot": 3,
-            "current_info_search": 6,
+
             "event_search_result": 24,
             "transport_search_result": 2,
         }
@@ -172,6 +166,12 @@ class ResearchSufficiencyVerifier:
 
         details = (by_type.get("poi_detail_set") or [None])[-1]
         detail_items = details.payload.get("details", []) if details else []
+        if ledger.goal.hard_constraints.get("require_named_restaurants"):
+            dining = [p for p in detail_items if isinstance(p,dict) and p.get("category")=="restaurant"
+                and p.get("id") and p.get("lat") and p.get("lng") and p.get("average_cost") is not None
+                and p.get("open_time") and p.get("close_time")]
+            coverage["named_restaurant_evidence"] = bool(dining)
+            if not dining:missing.append("MISSING_NAMED_RESTAURANT_EVIDENCE:search_pois_and_get_poi_detail")
         if len(detail_items) < requirements.min_detail_count:
             coverage["detail_count"] = False
             missing.append(
@@ -199,7 +199,7 @@ class ResearchSufficiencyVerifier:
             if not source_backed:
                 missing.append("EVENT_SOURCE_MISSING")
 
-        for artifact_type in ("current_info_search", "transport_search_result"):
+        for artifact_type in ("transport_search_result",):
             matches = by_type.get(artifact_type) or []
             if not matches:
                 continue
@@ -216,34 +216,22 @@ class ResearchSufficiencyVerifier:
                 coverage["transport_constraints_applied"] = applied
                 if not applied:
                     missing.append("TRANSPORT_SCHEDULE_NOT_PLANNABLE")
-            elif str(matches[-1].payload.get("info_type") or "") in {
-                "opening_hours",
-                "closure",
-            }:
-                candidate_names = [
-                    _entity_key(item.get("name"))
-                    for item in candidate_items
-                    if isinstance(item, dict) and item.get("name")
-                ]
-                constraint_bearing = False
-                for item in matches[-1].payload.get("results") or []:
-                    if not isinstance(item, dict) or not item.get("url"):
-                        continue
-                    corpus = f"{item.get('title') or ''} {item.get('snippet') or ''}"
-                    entity_matched = any(
-                        name and name in _entity_key(corpus) for name in candidate_names
-                    )
-                    has_hours = len(re.findall(r"(?<!\d)(?:[01]?\d|2[0-3]):[0-5]\d", corpus)) >= 2
-                    has_closure = any(
-                        token in corpus
-                        for token in ("临时闭馆", "暂停开放", "闭馆", "停业", "关闭")
-                    )
-                    if entity_matched and (has_hours or has_closure):
-                        constraint_bearing = True
-                        break
-                coverage["current_info_constraints_applicable"] = constraint_bearing
-                if not constraint_bearing:
-                    missing.append("CURRENT_INFO_NOT_PLANNABLE")
+        if requirements.requires_current_info:
+            from agentic.current_evidence import fresh_searches, source_results, required_opening_targets, opening_target_covered
+            searches=[a for a in fresh_searches(ledger) if source_results(a)]
+            if not searches:
+                missing.append("STALE_OR_UNSOURCED_CURRENT_INFO")
+            targets=required_opening_targets(ledger,candidate_items)
+            for name,day in targets:
+                matched=[a for a in searches if opening_target_covered(a,name,day)]
+                coverage[f"current_info:{name}:{day}"]=bool(matched)
+                if not matched:
+                    missing.append(f"CURRENT_INFO_ENTITY_UNCOVERED:{name}:{day}")
+                else:evidence_refs.extend(a.artifact_id for a in matched)
+            if not targets and set(ledger.goal.hard_constraints.get("information_needs") or []) & {"opening_hours","closure"}:
+                applicable=any(opening_target_covered(a,p.get("name"),str(ledger.goal.hard_constraints.get("start_date") or ""))
+                    for a in searches for p in candidate_items if isinstance(p,dict) and p.get("name"))
+                if not applicable:missing.append("CURRENT_INFO_NOT_PLANNABLE")
 
         matrix = (by_type.get("route_matrix") or [None])[-1]
         if matrix is not None:
@@ -252,6 +240,9 @@ class ResearchSufficiencyVerifier:
                 (details.payload.get("expected_count") if details else 0) or len(detail_items)
             )
             expected_matrix_size = min(len(plannable_candidates), expected_detail_count) + 1
+            if ledger.goal.hard_constraints.get("require_named_restaurants"):
+                from agentic.action_executor import TravelActionExecutor
+                expected_matrix_size = len(TravelActionExecutor._planning_candidate_items(ledger))+1
             valid_matrix = (
                 len(rows) == expected_matrix_size
                 and expected_matrix_size >= 2
@@ -274,109 +265,23 @@ class ResearchSufficiencyVerifier:
 
 
 class ReactTaskGraphPlanner:
-    """Build phase gates while leaving research/recovery decisions to ReAct."""
+    """Create one open agent session; tool order belongs to the model."""
 
     def plan(self, goal: GoalLedger, *, plan_version: int = 1) -> TaskGraph:
-        requirements = infer_research_requirements(goal)
-        research_actions = (
-            *RESEARCH_ACTIONS,
-            "finalize_research",
-            "ask_user",
-            "propose_tradeoff",
-            "abort",
-        )
-        tasks: list[TaskNode] = []
-        research_dependencies: tuple[str, ...] = ()
-        if goal.missing_information:
-            tasks.append(
-                TaskNode(
-                    task_id="clarify_user_constraints",
-                    goal="Ask only for required information that cannot be discovered by tools",
-                    allowed_actions=("ask_user",),
-                    success_criteria={
-                        "required_fact_keys": [
-                            f"user_input.{field}" for field in goal.missing_information
-                        ]
-                    },
-                    max_attempts=max(2, len(goal.missing_information) + 1),
-                    invalidates_on=("goal_changed",),
-                )
-            )
-            research_dependencies = ("clarify_user_constraints",)
-        tasks.extend(
-            (
-                TaskNode(
-                    task_id="research_evidence",
-                    goal=(
-                        "Dynamically gather source-backed evidence, observe each result, and only "
-                        "finalize when the intent-specific evidence verifier can pass"
-                    ),
-                    depends_on=research_dependencies,
-                    allowed_actions=research_actions,
-                    success_criteria={
-                        "required_artifact_types": ["research_bundle"],
-                        "research_required_artifact_types": (requirements.required_artifact_types),
-                    },
-                    max_attempts=14,
-                    invalidates_on=("goal_changed", "planning_fact_changed"),
-                ),
-                TaskNode(
-                    task_id="solve_itinerary",
-                    goal="Run CP-SAT over the verified evidence bundle and fixed-event constraints",
-                    depends_on=("research_evidence",),
-                    allowed_actions=("solve_itinerary",),
-                    success_criteria={"required_artifact_types": ["solver_result"]},
-                    max_attempts=3,
-                    invalidates_on=("goal_changed", "planning_fact_changed"),
-                ),
-                TaskNode(
-                    task_id="validate_itinerary",
-                    goal="Programmatically validate all hard constraints",
-                    depends_on=("solve_itinerary",),
-                    allowed_actions=("validate_itinerary",),
-                    success_criteria={"required_artifact_types": ["validation_report"]},
-                    max_attempts=3,
-                    invalidates_on=("goal_changed", "solver_result_changed"),
-                ),
-                TaskNode(
-                    task_id="review_itinerary",
-                    goal=(
-                        "Use verifier observations to accept, repair with more evidence, retry CP-SAT, "
-                        "ask the user for a tradeoff, or stop safely"
-                    ),
-                    depends_on=("validate_itinerary",),
-                    allowed_actions=(
-                        "accept_itinerary",
-                        "retry_solve",
-                        *RESEARCH_ACTIONS,
-                        "ask_user",
-                        "propose_tradeoff",
-                        "abort",
-                    ),
-                    success_criteria={"required_artifact_types": ["verified_itinerary_acceptance"]},
-                    max_attempts=8,
-                    invalidates_on=("goal_changed", "validation_result_changed"),
-                ),
-                TaskNode(
-                    task_id="compose_draft",
-                    goal="Compose a user-facing draft without changing verified fields",
-                    depends_on=("review_itinerary",),
-                    allowed_actions=("compose_draft",),
-                    success_criteria={"required_artifact_types": ["itinerary_draft"]},
-                ),
-                TaskNode(
-                    task_id="await_confirmation",
-                    goal="Present the verified draft and wait for acceptance or revision feedback",
-                    depends_on=("compose_draft",),
-                    allowed_actions=("ask_user", "finish"),
-                    success_criteria={"required_fact_keys": ["user_confirmation"]},
-                ),
-            )
-        )
+        from agentic.policy_actions import POLICY_ACTION_MODELS
+
         return TaskGraph(
             goal_version=goal.goal_version,
             plan_version=plan_version,
-            tasks=tuple(tasks),
+            tasks=(
+                TaskNode(
+                    task_id="travel_agent",
+                    goal=goal.original_request,
+                    allowed_actions=tuple(POLICY_ACTION_MODELS),
+                    success_criteria={"require_hard_pass": True},
+                    max_attempts=24,
+                ),
+            ),
         )
 
 

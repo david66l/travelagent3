@@ -1,4 +1,5 @@
 from pathlib import Path
+import pytest
 
 from scripts.build_stage27_ai_pilot_report import build
 
@@ -6,6 +7,10 @@ from scripts.build_stage27_ai_pilot_report import build
 REPO_ROOT = Path(__file__).resolve().parents[4]
 
 
+@pytest.mark.skipif(
+    not (REPO_ROOT / "ml/agentic/reports/stage27-ai-pilot-base-smoke-v1/report.json").exists(),
+    reason="Historical experiment assets are not installed",
+)
 def test_stage27_pilot_report_preserves_claim_boundary_and_pairing():
     report = build(
         REPO_ROOT / "ml/agentic/reports",

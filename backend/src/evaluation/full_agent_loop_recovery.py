@@ -73,35 +73,47 @@ class OneShotFaultExecutor:
         }
         self.trace.append(row)
         if not self.injected and action.action == self.fault.action:
-            self.injected = True
-            row.update(
-                {
-                    "injected": True,
-                    "status": "failed",
-                    "error_code": self.fault.error_code,
-                }
-            )
-            observation = ObservationEnvelope.failure(
-                tool=action.action,
-                code=self.fault.error_code,
-                message=self.fault.message,
-                retryable=True,
-                tool_call_id=action.action_id,
-                latency_ms=5,
-                details={
-                    "fault_injection": True,
-                    "scenario": self.fault.scenario,
-                    "evidence_style": self.fault.evidence_style,
-                },
-            )
-            return ActionOutcome(
-                status="failed",
-                observations=[observation],
-                error_code=self.fault.error_code,
-                error_message=self.fault.message,
-                retryable=True,
-                tool_calls_used=1,
-            )
+            try:
+                self.injected = True
+                row.update(
+                    {
+                        "injected": True,
+                        "status": "failed",
+                        "error_code": self.fault.error_code,
+                    }
+                )
+                observation = ObservationEnvelope.failure(
+                    tool=action.action,
+                    code=self.fault.error_code,
+                    message=self.fault.message,
+                    retryable=True,
+                    tool_call_id=action.action_id,
+                    latency_ms=5,
+                    details={
+                        "fault_injection": True,
+                        "scenario": self.fault.scenario,
+                        "evidence_style": self.fault.evidence_style,
+                    },
+                )
+                return ActionOutcome(
+                    status="failed",
+                    observations=[observation],
+                    error_code=self.fault.error_code,
+                    error_message=self.fault.message,
+                    retryable=True,
+                    tool_calls_used=1,
+                )
+            except Exception as exc:
+                row.update(
+                    {
+                        "injected": False,
+                        "status": "injector_error",
+                        "error_code": "INJECTOR_ERROR",
+                        "error_type": type(exc).__name__,
+                        "error_message": str(exc)[:1000],
+                    }
+                )
+                raise
 
         outcome = await self.delegate.execute(task=task, action=action, ledger=ledger)
         row.update(
@@ -120,14 +132,35 @@ def score_recovery(
 ) -> dict[str, Any]:
     """Score first-try recovery separately from eventual full-chain completion."""
     failures: list[str] = []
-    injected_index = next(
-        (index for index, row in enumerate(trace) if row.get("injected")),
-        None,
+    injected_indexes = [index for index, row in enumerate(trace) if row.get("injected")]
+    injected_index = injected_indexes[0] if len(injected_indexes) == 1 else None
+    injector_errors = [row for row in trace if row.get("status") == "injector_error"]
+    model_policy_failed = any(
+        bool(value) for value in (base_record.get("model_policy_failures") or {}).values()
     )
+    runtime_failed = any(
+        bool(value) for value in (base_record.get("runtime_errors") or {}).values()
+    )
+    if injector_errors or len(injected_indexes) > 1:
+        injection_status = "injector_error"
+    elif injected_index is not None:
+        injection_status = "injected_once"
+    elif model_policy_failed:
+        injection_status = "not_reached_due_to_policy_failure"
+    elif runtime_failed:
+        injection_status = "not_reached_due_to_runtime_error"
+    else:
+        injection_status = "not_reached_unknown"
     recovery: dict[str, Any] | None = None
     injected: dict[str, Any] | None = None
-    if injected_index is None:
-        failures.append("FAULT_NOT_INJECTED")
+    if injection_status == "injector_error":
+        failures.append("INJECTOR_ERROR")
+    elif injection_status == "not_reached_due_to_policy_failure":
+        failures.append("FAULT_NOT_REACHED_POLICY_FAILURE")
+    elif injection_status == "not_reached_due_to_runtime_error":
+        failures.append("FAULT_NOT_REACHED_RUNTIME_ERROR")
+    elif injection_status == "not_reached_unknown":
+        failures.append("FAULT_NOT_REACHED_UNKNOWN")
     else:
         injected = trace[injected_index]
         recovery = next(
@@ -204,7 +237,8 @@ def score_recovery(
             "scenario": benchmark_case.fault.scenario,
             "evidence_style": benchmark_case.fault.evidence_style,
             "error_code": benchmark_case.fault.error_code,
-            "fault_injected": injected_index is not None,
+            "injection_status": injection_status,
+            "fault_injected": injection_status == "injected_once",
             "initial_keywords": initial_keywords,
             "recovery_keywords": recovery_keywords,
             "direct_recovery": direct_recovery,

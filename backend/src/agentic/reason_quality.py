@@ -28,6 +28,10 @@ _PRIVATE_MARKERS = (
     "accept_itinerary",
     "abort",
     "verifier-repair-",
+    "验证器",
+    "控制器",
+    "策略状态",
+    "内部动作",
 )
 _ACTION_RATIONALE_CUES = {
     "retry_solve": (
@@ -111,6 +115,41 @@ _CANONICAL_RATIONALE_BY_ACTION: dict[str, str] = {
     "abort": "相关约束均已锁定且没有安全可行的调整空间，因此必须停止规划",
 }
 
+REPAIR_REASON_ASSEMBLY_VERSION = "repair-reason-assembly.v1"
+
+# These patterns intentionally recognize only explicit action conclusions.
+# Evidence-only text is allowed: the model selects the action and supplies the
+# grounded detail, while the system owns the fixed action-to-rationale wording.
+# A conservative detector avoids turning ordinary words such as "冲突" or
+# "无解" into a guessed semantic label.
+_EXPLICIT_ACTION_ASSERTIONS: dict[str, tuple[re.Pattern[str], ...]] = {
+    "retry_solve": (
+        re.compile(
+            r"(?:仍|尚|还)?(?:可|可以|能够).{0,12}"
+            r"(?:修复|重排|重算|重试|重新规划|重新求解)"
+        ),
+        re.compile(
+            r"(?:无需|不需要).{0,12}(?:放宽|改变).{0,16}"
+            r"(?:重排|重算|重试|规划)"
+        ),
+        re.compile(r"\bcan\s+(?:retry|recompute|reschedule)\b", re.IGNORECASE),
+    ),
+    "propose_tradeoff": (
+        re.compile(
+            r"(?:需要|请|必须由|应由).{0,16}(?:您|用户).{0,16}"
+            r"(?:选择|确认|取舍)"
+        ),
+        re.compile(r"(?:需要|必须).{0,12}(?:放宽|调整).{0,16}(?:要求|约束|方案)"),
+        re.compile(r"\b(?:user|you)\s+(?:must|need(?:s)?\s+to)\s+choose\b", re.IGNORECASE),
+    ),
+    "abort": (
+        re.compile(r"(?:必须|只能|应当|需要).{0,8}(?:停止|终止|结束)"),
+        re.compile(r"(?:无法|不能).{0,4}继续"),
+        re.compile(r"(?:不存在|没有).{0,12}(?:安全|合规|可行).{0,8}(?:方案|路径|解)"),
+        re.compile(r"\b(?:must\s+stop|cannot\s+continue)\b", re.IGNORECASE),
+    ),
+}
+
 for _action, _canonical in _CANONICAL_RATIONALE_BY_ACTION.items():
     if _canonical not in _RATIONALE_PREFIXES[_action]:
         raise RuntimeError(
@@ -171,6 +210,66 @@ def build_grounded_repair_reason(evidence: str, target_action: str) -> str:
     return f"{canonical_repair_rationale(target_action)}：{evidence}。"
 
 
+def repair_reason_semantic_conflict(reason: Any, target_action: str) -> bool:
+    """Detect an explicit action conclusion that contradicts ``target_action``.
+
+    The detector is deliberately conservative.  It rejects a leading audited
+    rationale for another action and clear action assertions, but does not try
+    to infer intent from arbitrary evidence text.  Grounding and specificity
+    remain separate deterministic checks.
+    """
+
+    repair_reason_rationale_prefixes(target_action)  # validate the target
+    rendered = str(reason or "").strip()
+    normalized = normalize_reason_text(rendered)
+    for action, prefixes in _RATIONALE_PREFIXES.items():
+        if action == target_action:
+            continue
+        if any(normalized.startswith(normalize_reason_text(prefix)) for prefix in prefixes):
+            return True
+
+    asserted_actions = {
+        action
+        for action, patterns in _EXPLICIT_ACTION_ASSERTIONS.items()
+        if any(pattern.search(rendered) for pattern in patterns)
+    }
+    return bool(asserted_actions) and target_action not in asserted_actions
+
+
+def _strip_matching_rationale_prefix(reason: str, target_action: str) -> str:
+    for prefix in sorted(
+        repair_reason_rationale_prefixes(target_action), key=len, reverse=True
+    ):
+        if reason.startswith(prefix):
+            return reason[len(prefix) :].lstrip(" \t:：,，;；。.!！?？")
+    return reason
+
+
+def assemble_repair_reason(reason: Any, target_action: str) -> str:
+    """Render one user-visible repair reason at the production boundary.
+
+    The raw model text remains available in ``PolicyAction.model_arguments``.
+    This function only replaces a matching leading rationale with the single
+    system-owned connector; it never changes the selected action or evidence
+    detail.  Explicit cross-action conclusions and private implementation
+    wording fail closed before rendering.
+    """
+
+    rendered = str(reason or "").strip()
+    if not rendered:
+        raise ValueError("REPAIR_REASON_DETAIL_EMPTY")
+    lowered = rendered.casefold()
+    if any(marker in lowered for marker in _PRIVATE_MARKERS):
+        raise ValueError("REPAIR_REASON_PRIVATE_CONTENT")
+    if repair_reason_semantic_conflict(rendered, target_action):
+        raise ValueError("REPAIR_REASON_ACTION_CONFLICT")
+    detail = _strip_matching_rationale_prefix(rendered, target_action).strip()
+    detail = detail.rstrip("。.!！?？")
+    if not detail:
+        raise ValueError("REPAIR_REASON_DETAIL_EMPTY")
+    return f"{canonical_repair_rationale(target_action)}：{detail}。"
+
+
 def verifier_reason_quality_checks(
     *,
     reason: Any,
@@ -220,3 +319,30 @@ def verifier_reason_quality_checks(
         "reason_public_language": public_language,
         "reason_action_rationale_match": rationale_match,
     }
+
+
+def verifier_reason_semantic_checks(
+    *,
+    reason: Any,
+    target_action: str,
+    grounding_phrases: list[str],
+    evidence: str,
+) -> dict[str, bool]:
+    """Score model-owned evidence semantics without the system connector.
+
+    This is the guard against connector-only false success: the model still
+    has to ground its detail, preserve concrete anchors, use public language,
+    and avoid explicitly arguing for a different action.
+    """
+
+    checks = verifier_reason_quality_checks(
+        reason=reason,
+        target_action=target_action,
+        grounding_phrases=grounding_phrases,
+        evidence=evidence,
+    )
+    checks.pop("reason_action_rationale_match")
+    checks["reason_action_semantic_consistent"] = not repair_reason_semantic_conflict(
+        reason, target_action
+    )
+    return checks

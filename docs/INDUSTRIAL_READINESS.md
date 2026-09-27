@@ -1,5 +1,9 @@
 # TravelAgent2 工业化验收说明
 
+> 最新范围声明（2026-09-05）：v9 当前仅完成小批后训练与 agentic/evaluation 回归，不继承下文旧架构的生产候选结论。新架构需要重新完成独立模型评测、真实工具、多轮交互、云端容量、持续运行与回滚验收。正式建设目标和待完成项见 [规模验收方案](POSTTRAINING_SCALE_ACCEPTANCE_20260905.md)，数据复用及许可边界见 [公开数据审查](PUBLIC_DATA_REUSE_REVIEW_20260905.md)。
+
+> 架构更新（2026-09-05）：当前执行架构以 [Agent Loop + Harness](AGENT_HARNESS_ARCHITECTURE.md) 为准。本文此前的生产证明和实验结果属于原版本，不代表新架构已部署或重新验收。
+
 更新时间：2026-08-30
 
 ## 结论

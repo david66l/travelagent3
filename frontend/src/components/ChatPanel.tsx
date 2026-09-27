@@ -111,14 +111,19 @@ export function ChatPanel({ sendMessage, sendAction }: ChatPanelProps) {
     try {
       const status = await sendMessage(content);
       if (status === "failed") {
+        // Put the draft back: retrying with the *identical* content is what lets
+        // the retry present the same Idempotency-Key, so a turn the server may
+        // already have accepted is replayed instead of executed twice.
+        setInput((current) => current || content);
         store.addMessage({
           role: "assistant",
-          content: "连接已断开，请刷新页面重试。",
+          content: "发送失败，请重试；重发相同内容不会重复执行。",
           timestamp: Date.now(),
         });
         store.setLoading(false);
       }
     } catch {
+      setInput((current) => current || content);
       store.addMessage({
         role: "assistant",
         content: "发送失败，请检查网络后重试。",

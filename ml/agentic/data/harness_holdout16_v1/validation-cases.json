@@ -1,0 +1,836 @@
+[
+  {
+    "id": "validation-01-01",
+    "family": "holdout",
+    "variant": 0,
+    "request": "2026-11-05在杭州玩一天，总预算1000元，必须去杭州澄明1号科技馆和杭州竹影1号植物园。请分别核实两个地方的当天开放时间和天气。 请预留午晚餐时段，本次不要求指定餐厅。",
+    "slots": {
+      "destination": "杭州",
+      "travel_days": 1,
+      "start_date": "2026-11-05",
+      "end_date": "2026-11-05",
+      "budget_range": 1000,
+      "must_visit": [
+        "杭州澄明1号科技馆",
+        "杭州竹影1号植物园"
+      ],
+      "interests": [
+        "科技",
+        "植物"
+      ],
+      "information_needs": [
+        "opening_hours",
+        "weather"
+      ],
+      "current_info_queries": [
+        "杭州澄明1号科技馆 2026-11-05 开放时间",
+        "杭州竹影1号植物园 2026-11-05 开放时间"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "validation-01-01-p0",
+        "name": "杭州澄明1号科技馆",
+        "category": "attraction",
+        "lat": 30.27,
+        "lng": 120.15,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "科技"
+        ],
+        "score": 0.95,
+        "source_url": "https://holdout.example.invalid/validation-01-01/p0",
+        "fixture_record": true
+      },
+      {
+        "id": "validation-01-01-p1",
+        "name": "杭州竹影1号植物园",
+        "category": "attraction",
+        "lat": 30.272,
+        "lng": 120.152,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "植物"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://holdout.example.invalid/validation-01-01/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "validation-01-01-p2",
+        "name": "杭州星河1号美术馆",
+        "category": "attraction",
+        "lat": 30.274,
+        "lng": 120.15400000000001,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "美术"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://holdout.example.invalid/validation-01-01/p2",
+        "fixture_record": true
+      },
+      {
+        "id": "validation-01-01-p3",
+        "name": "杭州临风1号广场",
+        "category": "attraction",
+        "lat": 30.276,
+        "lng": 120.156,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://holdout.example.invalid/validation-01-01/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "plan",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-holdout16.v1",
+    "split": "validation",
+    "scene_template": "two_hours_plus_weather",
+    "source_group": "validation-composition-1",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": []
+  },
+  {
+    "id": "validation-01-02",
+    "family": "holdout",
+    "variant": 0,
+    "request": "2026-11-06在成都玩一天，总预算1000元，必须去成都澄明1号科技馆和成都竹影1号植物园。请分别核实两个地方的当天开放时间和天气。 请预留午晚餐时段，本次不要求指定餐厅。",
+    "slots": {
+      "destination": "成都",
+      "travel_days": 1,
+      "start_date": "2026-11-06",
+      "end_date": "2026-11-06",
+      "budget_range": 1000,
+      "must_visit": [
+        "成都澄明1号科技馆",
+        "成都竹影1号植物园"
+      ],
+      "interests": [
+        "科技",
+        "植物"
+      ],
+      "information_needs": [
+        "opening_hours",
+        "weather"
+      ],
+      "current_info_queries": [
+        "成都澄明1号科技馆 2026-11-06 开放时间",
+        "成都竹影1号植物园 2026-11-06 开放时间"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "validation-01-02-p0",
+        "name": "成都澄明1号科技馆",
+        "category": "attraction",
+        "lat": 30.67,
+        "lng": 104.06,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "科技"
+        ],
+        "score": 0.95,
+        "source_url": "https://holdout.example.invalid/validation-01-02/p0",
+        "fixture_record": true
+      },
+      {
+        "id": "validation-01-02-p1",
+        "name": "成都竹影1号植物园",
+        "category": "attraction",
+        "lat": 30.672,
+        "lng": 104.062,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "植物"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://holdout.example.invalid/validation-01-02/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "validation-01-02-p2",
+        "name": "成都星河1号美术馆",
+        "category": "attraction",
+        "lat": 30.674000000000003,
+        "lng": 104.06400000000001,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "美术"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://holdout.example.invalid/validation-01-02/p2",
+        "fixture_record": true
+      },
+      {
+        "id": "validation-01-02-p3",
+        "name": "成都临风1号广场",
+        "category": "attraction",
+        "lat": 30.676000000000002,
+        "lng": 104.066,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://holdout.example.invalid/validation-01-02/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "plan",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-holdout16.v1",
+    "split": "validation",
+    "scene_template": "two_hours_plus_weather",
+    "source_group": "validation-composition-1",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": []
+  },
+  {
+    "id": "validation-02-01",
+    "family": "recovery",
+    "variant": 1,
+    "request": "2026-11-09在杭州玩一天，总预算1000元，必须去杭州澄明2号科技馆和杭州竹影2号植物园。也对杭州星河2号美术馆感兴趣，如果闭馆可以省略。 请预留午晚餐时段，本次不要求指定餐厅。",
+    "slots": {
+      "destination": "杭州",
+      "travel_days": 1,
+      "start_date": "2026-11-09",
+      "end_date": "2026-11-09",
+      "budget_range": 1000,
+      "must_visit": [
+        "杭州澄明2号科技馆",
+        "杭州竹影2号植物园"
+      ],
+      "interests": [
+        "科技",
+        "植物"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "validation-02-01-p0",
+        "name": "杭州澄明2号科技馆",
+        "category": "attraction",
+        "lat": 30.27,
+        "lng": 120.15,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "科技"
+        ],
+        "score": 0.95,
+        "source_url": "https://holdout.example.invalid/validation-02-01/p0",
+        "fixture_record": true
+      },
+      {
+        "id": "validation-02-01-p1",
+        "name": "杭州竹影2号植物园",
+        "category": "attraction",
+        "lat": 30.272,
+        "lng": 120.152,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "植物"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://holdout.example.invalid/validation-02-01/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "validation-02-01-p2",
+        "name": "杭州星河2号美术馆",
+        "category": "attraction",
+        "lat": 30.274,
+        "lng": 120.15400000000001,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "美术"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://holdout.example.invalid/validation-02-01/p2",
+        "fixture_record": true,
+        "closed_dates": [
+          "2026-11-09"
+        ]
+      },
+      {
+        "id": "validation-02-01-p3",
+        "name": "杭州临风2号广场",
+        "category": "attraction",
+        "lat": 30.276,
+        "lng": 120.156,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://holdout.example.invalid/validation-02-01/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "plan",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-holdout16.v1",
+    "split": "validation",
+    "scene_template": "optional_closed_plus_detail_fault",
+    "source_group": "validation-composition-2",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": []
+  },
+  {
+    "id": "validation-02-02",
+    "family": "recovery",
+    "variant": 1,
+    "request": "2026-11-10在成都玩一天，总预算1000元，必须去成都澄明2号科技馆和成都竹影2号植物园。也对成都星河2号美术馆感兴趣，如果闭馆可以省略。 请预留午晚餐时段，本次不要求指定餐厅。",
+    "slots": {
+      "destination": "成都",
+      "travel_days": 1,
+      "start_date": "2026-11-10",
+      "end_date": "2026-11-10",
+      "budget_range": 1000,
+      "must_visit": [
+        "成都澄明2号科技馆",
+        "成都竹影2号植物园"
+      ],
+      "interests": [
+        "科技",
+        "植物"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "validation-02-02-p0",
+        "name": "成都澄明2号科技馆",
+        "category": "attraction",
+        "lat": 30.67,
+        "lng": 104.06,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "科技"
+        ],
+        "score": 0.95,
+        "source_url": "https://holdout.example.invalid/validation-02-02/p0",
+        "fixture_record": true
+      },
+      {
+        "id": "validation-02-02-p1",
+        "name": "成都竹影2号植物园",
+        "category": "attraction",
+        "lat": 30.672,
+        "lng": 104.062,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "植物"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://holdout.example.invalid/validation-02-02/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "validation-02-02-p2",
+        "name": "成都星河2号美术馆",
+        "category": "attraction",
+        "lat": 30.674000000000003,
+        "lng": 104.06400000000001,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "美术"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://holdout.example.invalid/validation-02-02/p2",
+        "fixture_record": true,
+        "closed_dates": [
+          "2026-11-10"
+        ]
+      },
+      {
+        "id": "validation-02-02-p3",
+        "name": "成都临风2号广场",
+        "category": "attraction",
+        "lat": 30.676000000000002,
+        "lng": 104.066,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://holdout.example.invalid/validation-02-02/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "plan",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-holdout16.v1",
+    "split": "validation",
+    "scene_template": "optional_closed_plus_detail_fault",
+    "source_group": "validation-composition-2",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": []
+  },
+  {
+    "id": "validation-03-01",
+    "family": "holdout",
+    "variant": 0,
+    "request": "2026-11-13在杭州玩一天，预算严格不超过250元，必须买票进入杭州澄明3号科技馆、杭州竹影3号植物园、杭州星河3号美术馆，三项都不能取消，预算和日期不能调整。 请预留午晚餐时段，本次不要求指定餐厅。",
+    "slots": {
+      "destination": "杭州",
+      "travel_days": 1,
+      "start_date": "2026-11-13",
+      "end_date": "2026-11-13",
+      "budget_range": 250,
+      "must_visit": [
+        "杭州澄明3号科技馆",
+        "杭州竹影3号植物园",
+        "杭州星河3号美术馆"
+      ],
+      "interests": [
+        "科技",
+        "植物"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "validation-03-01-p0",
+        "name": "杭州澄明3号科技馆",
+        "category": "attraction",
+        "lat": 30.27,
+        "lng": 120.15,
+        "ticket_price": 90,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "科技"
+        ],
+        "score": 0.95,
+        "source_url": "https://holdout.example.invalid/validation-03-01/p0",
+        "fixture_record": true
+      },
+      {
+        "id": "validation-03-01-p1",
+        "name": "杭州竹影3号植物园",
+        "category": "attraction",
+        "lat": 30.272,
+        "lng": 120.152,
+        "ticket_price": 90,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "植物"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://holdout.example.invalid/validation-03-01/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "validation-03-01-p2",
+        "name": "杭州星河3号美术馆",
+        "category": "attraction",
+        "lat": 30.274,
+        "lng": 120.15400000000001,
+        "ticket_price": 90,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "美术"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://holdout.example.invalid/validation-03-01/p2",
+        "fixture_record": true
+      },
+      {
+        "id": "validation-03-01-p3",
+        "name": "杭州临风3号广场",
+        "category": "attraction",
+        "lat": 30.276,
+        "lng": 120.156,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://holdout.example.invalid/validation-03-01/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "grounded_stop",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-holdout16.v1",
+    "split": "validation",
+    "scene_template": "three_ticket_joint_floor",
+    "source_group": "validation-composition-3",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": []
+  },
+  {
+    "id": "validation-03-02",
+    "family": "holdout",
+    "variant": 0,
+    "request": "2026-11-14在成都玩一天，预算严格不超过250元，必须买票进入成都澄明3号科技馆、成都竹影3号植物园、成都星河3号美术馆，三项都不能取消，预算和日期不能调整。 请预留午晚餐时段，本次不要求指定餐厅。",
+    "slots": {
+      "destination": "成都",
+      "travel_days": 1,
+      "start_date": "2026-11-14",
+      "end_date": "2026-11-14",
+      "budget_range": 250,
+      "must_visit": [
+        "成都澄明3号科技馆",
+        "成都竹影3号植物园",
+        "成都星河3号美术馆"
+      ],
+      "interests": [
+        "科技",
+        "植物"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "validation-03-02-p0",
+        "name": "成都澄明3号科技馆",
+        "category": "attraction",
+        "lat": 30.67,
+        "lng": 104.06,
+        "ticket_price": 90,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "科技"
+        ],
+        "score": 0.95,
+        "source_url": "https://holdout.example.invalid/validation-03-02/p0",
+        "fixture_record": true
+      },
+      {
+        "id": "validation-03-02-p1",
+        "name": "成都竹影3号植物园",
+        "category": "attraction",
+        "lat": 30.672,
+        "lng": 104.062,
+        "ticket_price": 90,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "植物"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://holdout.example.invalid/validation-03-02/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "validation-03-02-p2",
+        "name": "成都星河3号美术馆",
+        "category": "attraction",
+        "lat": 30.674000000000003,
+        "lng": 104.06400000000001,
+        "ticket_price": 90,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "美术"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://holdout.example.invalid/validation-03-02/p2",
+        "fixture_record": true
+      },
+      {
+        "id": "validation-03-02-p3",
+        "name": "成都临风3号广场",
+        "category": "attraction",
+        "lat": 30.676000000000002,
+        "lng": 104.066,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://holdout.example.invalid/validation-03-02/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "grounded_stop",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-holdout16.v1",
+    "split": "validation",
+    "scene_template": "three_ticket_joint_floor",
+    "source_group": "validation-composition-3",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": []
+  },
+  {
+    "id": "validation-04-01",
+    "family": "holdout",
+    "variant": 0,
+    "request": "2026-11-17想玩一天，预算1000元，喜欢科技和植物，还没确定去哪个城市。请帮我安排。 请预留午晚餐时段，本次不要求指定餐厅。",
+    "slots": {
+      "travel_days": 1,
+      "start_date": "2026-11-17",
+      "end_date": "2026-11-17",
+      "budget_range": 1000,
+      "interests": [
+        "科技",
+        "植物"
+      ]
+    },
+    "missing_slots": [
+      "destination"
+    ],
+    "missing_field": "destination",
+    "pois": [
+      {
+        "id": "validation-04-01-p0",
+        "name": "杭州澄明4号科技馆",
+        "category": "attraction",
+        "lat": 30.27,
+        "lng": 120.15,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "科技"
+        ],
+        "score": 0.95,
+        "source_url": "https://holdout.example.invalid/validation-04-01/p0",
+        "fixture_record": true
+      },
+      {
+        "id": "validation-04-01-p1",
+        "name": "杭州竹影4号植物园",
+        "category": "attraction",
+        "lat": 30.272,
+        "lng": 120.152,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "植物"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://holdout.example.invalid/validation-04-01/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "validation-04-01-p2",
+        "name": "杭州星河4号美术馆",
+        "category": "attraction",
+        "lat": 30.274,
+        "lng": 120.15400000000001,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "美术"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://holdout.example.invalid/validation-04-01/p2",
+        "fixture_record": true
+      },
+      {
+        "id": "validation-04-01-p3",
+        "name": "杭州临风4号广场",
+        "category": "attraction",
+        "lat": 30.276,
+        "lng": 120.156,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://holdout.example.invalid/validation-04-01/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "clarify",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-holdout16.v1",
+    "split": "validation",
+    "scene_template": "missing_destination_with_interests",
+    "source_group": "validation-composition-4",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": []
+  },
+  {
+    "id": "validation-04-02",
+    "family": "holdout",
+    "variant": 0,
+    "request": "2026-11-18想玩一天，预算1000元，喜欢科技和植物，还没确定去哪个城市。请帮我安排。 请预留午晚餐时段，本次不要求指定餐厅。",
+    "slots": {
+      "travel_days": 1,
+      "start_date": "2026-11-18",
+      "end_date": "2026-11-18",
+      "budget_range": 1000,
+      "interests": [
+        "科技",
+        "植物"
+      ]
+    },
+    "missing_slots": [
+      "destination"
+    ],
+    "missing_field": "destination",
+    "pois": [
+      {
+        "id": "validation-04-02-p0",
+        "name": "成都澄明4号科技馆",
+        "category": "attraction",
+        "lat": 30.67,
+        "lng": 104.06,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "科技"
+        ],
+        "score": 0.95,
+        "source_url": "https://holdout.example.invalid/validation-04-02/p0",
+        "fixture_record": true
+      },
+      {
+        "id": "validation-04-02-p1",
+        "name": "成都竹影4号植物园",
+        "category": "attraction",
+        "lat": 30.672,
+        "lng": 104.062,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "植物"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://holdout.example.invalid/validation-04-02/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "validation-04-02-p2",
+        "name": "成都星河4号美术馆",
+        "category": "attraction",
+        "lat": 30.674000000000003,
+        "lng": 104.06400000000001,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "美术"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://holdout.example.invalid/validation-04-02/p2",
+        "fixture_record": true
+      },
+      {
+        "id": "validation-04-02-p3",
+        "name": "成都临风4号广场",
+        "category": "attraction",
+        "lat": 30.676000000000002,
+        "lng": 104.066,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://holdout.example.invalid/validation-04-02/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "clarify",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-holdout16.v1",
+    "split": "validation",
+    "scene_template": "missing_destination_with_interests",
+    "source_group": "validation-composition-4",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": []
+  }
+]

@@ -476,6 +476,7 @@ def preflight_sft_dataset(
     *,
     minimum_train_examples: int = 3000,
     require_dependencies: bool = True,
+    require_test_split: bool = True,
 ) -> SFTPreflightReport:
     manifest_path = dataset_dir / "manifest.json"
     if not manifest_path.exists():
@@ -498,8 +499,10 @@ def preflight_sft_dataset(
         errors.append(f"TRAIN_EXAMPLES_BELOW_MINIMUM:{counts['train']}<{minimum_train_examples}")
     if not counts["validation"]:
         errors.append("VALIDATION_SPLIT_EMPTY")
-    if not counts["test"]:
+    if not counts["test"] and require_test_split:
         errors.append("TEST_SPLIT_EMPTY")
+    elif not counts["test"]:
+        warnings.append("TEST_EVALUATION_IS_EXTERNAL_AND_NOT_LOADED_BY_TRAINER")
     for split, rows in split_rows.items():
         for row in rows:
             example = SFTExample(**row)

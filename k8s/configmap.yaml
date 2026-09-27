@@ -27,7 +27,10 @@ data:
   GATEWAY_PORT: "8080"
   GATEWAY_WORKERS: "4"
   GATEWAY_READ_TIMEOUT: "10s"
-  GATEWAY_WRITE_TIMEOUT: "30s"
+  # Keep 0 for SSE: Go's http.Server WriteTimeout covers the entire streamed
+  # response, so any finite value truncates healthy planning streams mid-plan.
+  # Ingress already caps stream duration (proxy-read-timeout: 3600).
+  GATEWAY_WRITE_TIMEOUT: "0s"
   BACKEND_URL: "http://backend:8000"
   FRONTEND_URL: "http://frontend:3000"
   JWT_ALGORITHM: "HS256"

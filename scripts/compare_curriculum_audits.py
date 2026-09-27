@@ -44,7 +44,22 @@ def compare(
             errors.append(
                 f"FAMILY_SUCCESS_REGRESSION:{family}:{before_rate:.6f}->{after_rate:.6f}"
             )
-    behavior_gate = after.get("behavior_gate") or {}
+    behavior_gate = after.get("behavior_gate")
+    # A zero-tolerance safety gate must distinguish "measured zero" from "not
+    # measured". Treating a missing report as no violations let an unaudited
+    # checkpoint promote, so absence is now a hard failure.
+    if not isinstance(behavior_gate, dict) or not behavior_gate:
+        errors.append("BEHAVIOR_GATE_MISSING")
+        behavior_gate = {}
+    else:
+        for field in (
+            "unknown_argument_error_rate",
+            "protected_argument_error_rate",
+        ):
+            if not isinstance(behavior_gate.get(field), (int, float)) or isinstance(
+                behavior_gate.get(field), bool
+            ):
+                errors.append(f"BEHAVIOR_GATE_METRIC_MISSING:{field}")
     unknown_rate = float(behavior_gate.get("unknown_argument_error_rate") or 0.0)
     protected_rate = float(
         behavior_gate.get("protected_argument_error_rate") or 0.0

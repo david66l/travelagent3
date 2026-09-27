@@ -1,0 +1,3494 @@
+[
+  {
+    "id": "pilot-01-01",
+    "family": "training",
+    "variant": 0,
+    "request": "2026-10-06开始在苏州游玩1天，总预算1000元，必须参观苏州青禾1号工艺展馆和苏州望江1号古建园。两个场馆都要去，先核实它们当天的开放时间。请安排可行行程，并预留午晚餐时段；本次不要求指定餐厅或预订。",
+    "slots": {
+      "destination": "苏州",
+      "travel_days": 1,
+      "start_date": "2026-10-06",
+      "end_date": "2026-10-06",
+      "budget_range": 1000,
+      "must_visit": [
+        "苏州青禾1号工艺展馆",
+        "苏州望江1号古建园"
+      ],
+      "interests": [
+        "工艺",
+        "古建"
+      ],
+      "information_needs": [
+        "opening_hours"
+      ],
+      "current_info_queries": [
+        "苏州青禾1号工艺展馆 2026-10-06 开放时间",
+        "苏州望江1号古建园 2026-10-06 开放时间"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "pilot-01-01-p0",
+        "name": "苏州青禾1号工艺展馆",
+        "category": "attraction",
+        "lat": 31.3,
+        "lng": 120.58,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "工艺"
+        ],
+        "score": 0.95,
+        "source_url": "https://pilot.example.invalid/pilot-01-01/p0",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-01-01-p1",
+        "name": "苏州望江1号古建园",
+        "category": "attraction",
+        "lat": 31.302,
+        "lng": 120.582,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "古建"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://pilot.example.invalid/pilot-01-01/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-01-01-p2",
+        "name": "苏州拾光1号摄影馆",
+        "category": "attraction",
+        "lat": 31.304000000000002,
+        "lng": 120.584,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "摄影"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://pilot.example.invalid/pilot-01-01/p2",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-01-01-p3",
+        "name": "苏州映水1号步道",
+        "category": "attraction",
+        "lat": 31.306,
+        "lng": 120.586,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://pilot.example.invalid/pilot-01-01/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "plan",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-training-pilot24.v1",
+    "split": "train",
+    "scene_template": "two_venues_hours",
+    "source_group": "pilot-composition-1",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": [
+      {
+        "id": "pilot-01-01-r0",
+        "name": "苏州青禾1号家常菜馆",
+        "category": "restaurant",
+        "lat": 31.301000000000002,
+        "lng": 120.581,
+        "ticket_price": 0,
+        "average_cost": 55,
+        "open_time": "10:30",
+        "close_time": "21:00",
+        "address": "苏州示例街21号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "家常菜"
+        ],
+        "source_url": "https://pilot.example.invalid/pilot-01-01/r0",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-01-01-r1",
+        "name": "苏州青禾1号素食餐厅",
+        "category": "restaurant",
+        "lat": 31.302,
+        "lng": 120.582,
+        "ticket_price": 0,
+        "average_cost": 45,
+        "open_time": "11:00",
+        "close_time": "20:30",
+        "address": "苏州示例街22号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "素食"
+        ],
+        "source_url": "https://pilot.example.invalid/pilot-01-01/r1",
+        "fixture_record": true
+      }
+    ]
+  },
+  {
+    "id": "pilot-01-02",
+    "family": "training",
+    "variant": 1,
+    "request": "2026-10-07开始在南京游玩1天，总预算1000元，必须参观南京青禾1号工艺展馆和南京望江1号古建园。两个场馆都要去，先核实它们当天的开放时间。请安排可行行程，并预留午晚餐时段；本次不要求指定餐厅或预订。",
+    "slots": {
+      "destination": "南京",
+      "travel_days": 1,
+      "start_date": "2026-10-07",
+      "end_date": "2026-10-07",
+      "budget_range": 1000,
+      "must_visit": [
+        "南京青禾1号工艺展馆",
+        "南京望江1号古建园"
+      ],
+      "interests": [
+        "工艺",
+        "古建"
+      ],
+      "information_needs": [
+        "opening_hours"
+      ],
+      "current_info_queries": [
+        "南京青禾1号工艺展馆 2026-10-07 开放时间",
+        "南京望江1号古建园 2026-10-07 开放时间"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "pilot-01-02-p0",
+        "name": "南京青禾1号工艺展馆",
+        "category": "attraction",
+        "lat": 32.06,
+        "lng": 118.79,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "工艺"
+        ],
+        "score": 0.95,
+        "source_url": "https://pilot.example.invalid/pilot-01-02/p0",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-01-02-p1",
+        "name": "南京望江1号古建园",
+        "category": "attraction",
+        "lat": 32.062000000000005,
+        "lng": 118.792,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "古建"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://pilot.example.invalid/pilot-01-02/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-01-02-p2",
+        "name": "南京拾光1号摄影馆",
+        "category": "attraction",
+        "lat": 32.064,
+        "lng": 118.79400000000001,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "摄影"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://pilot.example.invalid/pilot-01-02/p2",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-01-02-p3",
+        "name": "南京映水1号步道",
+        "category": "attraction",
+        "lat": 32.066,
+        "lng": 118.796,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://pilot.example.invalid/pilot-01-02/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "plan",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-training-pilot24.v1",
+    "split": "train",
+    "scene_template": "two_venues_hours",
+    "source_group": "pilot-composition-1",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": [
+      {
+        "id": "pilot-01-02-r0",
+        "name": "南京青禾1号家常菜馆",
+        "category": "restaurant",
+        "lat": 32.061,
+        "lng": 118.79100000000001,
+        "ticket_price": 0,
+        "average_cost": 55,
+        "open_time": "10:30",
+        "close_time": "21:00",
+        "address": "南京示例街21号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "家常菜"
+        ],
+        "source_url": "https://pilot.example.invalid/pilot-01-02/r0",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-01-02-r1",
+        "name": "南京青禾1号素食餐厅",
+        "category": "restaurant",
+        "lat": 32.062000000000005,
+        "lng": 118.792,
+        "ticket_price": 0,
+        "average_cost": 45,
+        "open_time": "11:00",
+        "close_time": "20:30",
+        "address": "南京示例街22号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "素食"
+        ],
+        "source_url": "https://pilot.example.invalid/pilot-01-02/r1",
+        "fixture_record": true
+      }
+    ]
+  },
+  {
+    "id": "pilot-01-03",
+    "family": "training",
+    "variant": 2,
+    "request": "2026-10-08开始在长沙游玩1天，总预算1000元，必须参观长沙青禾1号工艺展馆和长沙望江1号古建园。两个场馆都要去，先核实它们当天的开放时间。请安排可行行程，并预留午晚餐时段；本次不要求指定餐厅或预订。",
+    "slots": {
+      "destination": "长沙",
+      "travel_days": 1,
+      "start_date": "2026-10-08",
+      "end_date": "2026-10-08",
+      "budget_range": 1000,
+      "must_visit": [
+        "长沙青禾1号工艺展馆",
+        "长沙望江1号古建园"
+      ],
+      "interests": [
+        "工艺",
+        "古建"
+      ],
+      "information_needs": [
+        "opening_hours"
+      ],
+      "current_info_queries": [
+        "长沙青禾1号工艺展馆 2026-10-08 开放时间",
+        "长沙望江1号古建园 2026-10-08 开放时间"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "pilot-01-03-p0",
+        "name": "长沙青禾1号工艺展馆",
+        "category": "attraction",
+        "lat": 28.22,
+        "lng": 112.94,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "工艺"
+        ],
+        "score": 0.95,
+        "source_url": "https://pilot.example.invalid/pilot-01-03/p0",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-01-03-p1",
+        "name": "长沙望江1号古建园",
+        "category": "attraction",
+        "lat": 28.221999999999998,
+        "lng": 112.942,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "古建"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://pilot.example.invalid/pilot-01-03/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-01-03-p2",
+        "name": "长沙拾光1号摄影馆",
+        "category": "attraction",
+        "lat": 28.224,
+        "lng": 112.944,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "摄影"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://pilot.example.invalid/pilot-01-03/p2",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-01-03-p3",
+        "name": "长沙映水1号步道",
+        "category": "attraction",
+        "lat": 28.226,
+        "lng": 112.946,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://pilot.example.invalid/pilot-01-03/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "plan",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-training-pilot24.v1",
+    "split": "train",
+    "scene_template": "two_venues_hours",
+    "source_group": "pilot-composition-1",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": [
+      {
+        "id": "pilot-01-03-r0",
+        "name": "长沙青禾1号家常菜馆",
+        "category": "restaurant",
+        "lat": 28.221,
+        "lng": 112.941,
+        "ticket_price": 0,
+        "average_cost": 55,
+        "open_time": "10:30",
+        "close_time": "21:00",
+        "address": "长沙示例街21号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "家常菜"
+        ],
+        "source_url": "https://pilot.example.invalid/pilot-01-03/r0",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-01-03-r1",
+        "name": "长沙青禾1号素食餐厅",
+        "category": "restaurant",
+        "lat": 28.221999999999998,
+        "lng": 112.942,
+        "ticket_price": 0,
+        "average_cost": 45,
+        "open_time": "11:00",
+        "close_time": "20:30",
+        "address": "长沙示例街22号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "素食"
+        ],
+        "source_url": "https://pilot.example.invalid/pilot-01-03/r1",
+        "fixture_record": true
+      }
+    ]
+  },
+  {
+    "id": "pilot-01-04",
+    "family": "training",
+    "variant": 3,
+    "request": "2026-10-09开始在西安游玩1天，总预算1000元，必须参观西安青禾1号工艺展馆和西安望江1号古建园。两个场馆都要去，先核实它们当天的开放时间。请安排可行行程，并预留午晚餐时段；本次不要求指定餐厅或预订。",
+    "slots": {
+      "destination": "西安",
+      "travel_days": 1,
+      "start_date": "2026-10-09",
+      "end_date": "2026-10-09",
+      "budget_range": 1000,
+      "must_visit": [
+        "西安青禾1号工艺展馆",
+        "西安望江1号古建园"
+      ],
+      "interests": [
+        "工艺",
+        "古建"
+      ],
+      "information_needs": [
+        "opening_hours"
+      ],
+      "current_info_queries": [
+        "西安青禾1号工艺展馆 2026-10-09 开放时间",
+        "西安望江1号古建园 2026-10-09 开放时间"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "pilot-01-04-p0",
+        "name": "西安青禾1号工艺展馆",
+        "category": "attraction",
+        "lat": 34.27,
+        "lng": 108.95,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "工艺"
+        ],
+        "score": 0.95,
+        "source_url": "https://pilot.example.invalid/pilot-01-04/p0",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-01-04-p1",
+        "name": "西安望江1号古建园",
+        "category": "attraction",
+        "lat": 34.272000000000006,
+        "lng": 108.952,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "古建"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://pilot.example.invalid/pilot-01-04/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-01-04-p2",
+        "name": "西安拾光1号摄影馆",
+        "category": "attraction",
+        "lat": 34.274,
+        "lng": 108.95400000000001,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "摄影"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://pilot.example.invalid/pilot-01-04/p2",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-01-04-p3",
+        "name": "西安映水1号步道",
+        "category": "attraction",
+        "lat": 34.276,
+        "lng": 108.956,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://pilot.example.invalid/pilot-01-04/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "plan",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-training-pilot24.v1",
+    "split": "train",
+    "scene_template": "two_venues_hours",
+    "source_group": "pilot-composition-1",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": [
+      {
+        "id": "pilot-01-04-r0",
+        "name": "西安青禾1号家常菜馆",
+        "category": "restaurant",
+        "lat": 34.271,
+        "lng": 108.95100000000001,
+        "ticket_price": 0,
+        "average_cost": 55,
+        "open_time": "10:30",
+        "close_time": "21:00",
+        "address": "西安示例街21号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "家常菜"
+        ],
+        "source_url": "https://pilot.example.invalid/pilot-01-04/r0",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-01-04-r1",
+        "name": "西安青禾1号素食餐厅",
+        "category": "restaurant",
+        "lat": 34.272000000000006,
+        "lng": 108.952,
+        "ticket_price": 0,
+        "average_cost": 45,
+        "open_time": "11:00",
+        "close_time": "20:30",
+        "address": "西安示例街22号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "素食"
+        ],
+        "source_url": "https://pilot.example.invalid/pilot-01-04/r1",
+        "fixture_record": true
+      }
+    ]
+  },
+  {
+    "id": "pilot-02-01",
+    "family": "training",
+    "variant": 0,
+    "request": "2026-10-09开始在苏州游玩1天，总预算1000元，必须参观苏州青禾2号工艺展馆和苏州望江2号古建园。除必去项目外，我也对苏州拾光2号摄影馆感兴趣；若它当天关闭，可以不安排。请安排可行行程，并预留午晚餐时段；本次不要求指定餐厅或预订。",
+    "slots": {
+      "destination": "苏州",
+      "travel_days": 1,
+      "start_date": "2026-10-09",
+      "end_date": "2026-10-09",
+      "budget_range": 1000,
+      "must_visit": [
+        "苏州青禾2号工艺展馆",
+        "苏州望江2号古建园"
+      ],
+      "interests": [
+        "工艺",
+        "古建"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "pilot-02-01-p0",
+        "name": "苏州青禾2号工艺展馆",
+        "category": "attraction",
+        "lat": 31.3,
+        "lng": 120.58,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "工艺"
+        ],
+        "score": 0.95,
+        "source_url": "https://pilot.example.invalid/pilot-02-01/p0",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-02-01-p1",
+        "name": "苏州望江2号古建园",
+        "category": "attraction",
+        "lat": 31.302,
+        "lng": 120.582,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "古建"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://pilot.example.invalid/pilot-02-01/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-02-01-p2",
+        "name": "苏州拾光2号摄影馆",
+        "category": "attraction",
+        "lat": 31.304000000000002,
+        "lng": 120.584,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "摄影"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://pilot.example.invalid/pilot-02-01/p2",
+        "fixture_record": true,
+        "closed_dates": [
+          "2026-10-09"
+        ]
+      },
+      {
+        "id": "pilot-02-01-p3",
+        "name": "苏州映水2号步道",
+        "category": "attraction",
+        "lat": 31.306,
+        "lng": 120.586,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://pilot.example.invalid/pilot-02-01/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "plan",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-training-pilot24.v1",
+    "split": "train",
+    "scene_template": "optional_closed",
+    "source_group": "pilot-composition-2",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": [
+      {
+        "id": "pilot-02-01-r0",
+        "name": "苏州青禾2号家常菜馆",
+        "category": "restaurant",
+        "lat": 31.301000000000002,
+        "lng": 120.581,
+        "ticket_price": 0,
+        "average_cost": 55,
+        "open_time": "10:30",
+        "close_time": "21:00",
+        "address": "苏州示例街21号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "家常菜"
+        ],
+        "source_url": "https://pilot.example.invalid/pilot-02-01/r0",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-02-01-r1",
+        "name": "苏州青禾2号素食餐厅",
+        "category": "restaurant",
+        "lat": 31.302,
+        "lng": 120.582,
+        "ticket_price": 0,
+        "average_cost": 45,
+        "open_time": "11:00",
+        "close_time": "20:30",
+        "address": "苏州示例街22号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "素食"
+        ],
+        "source_url": "https://pilot.example.invalid/pilot-02-01/r1",
+        "fixture_record": true
+      }
+    ]
+  },
+  {
+    "id": "pilot-02-02",
+    "family": "training",
+    "variant": 1,
+    "request": "2026-10-10开始在南京游玩1天，总预算1000元，必须参观南京青禾2号工艺展馆和南京望江2号古建园。除必去项目外，我也对南京拾光2号摄影馆感兴趣；若它当天关闭，可以不安排。请安排可行行程，并预留午晚餐时段；本次不要求指定餐厅或预订。",
+    "slots": {
+      "destination": "南京",
+      "travel_days": 1,
+      "start_date": "2026-10-10",
+      "end_date": "2026-10-10",
+      "budget_range": 1000,
+      "must_visit": [
+        "南京青禾2号工艺展馆",
+        "南京望江2号古建园"
+      ],
+      "interests": [
+        "工艺",
+        "古建"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "pilot-02-02-p0",
+        "name": "南京青禾2号工艺展馆",
+        "category": "attraction",
+        "lat": 32.06,
+        "lng": 118.79,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "工艺"
+        ],
+        "score": 0.95,
+        "source_url": "https://pilot.example.invalid/pilot-02-02/p0",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-02-02-p1",
+        "name": "南京望江2号古建园",
+        "category": "attraction",
+        "lat": 32.062000000000005,
+        "lng": 118.792,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "古建"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://pilot.example.invalid/pilot-02-02/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-02-02-p2",
+        "name": "南京拾光2号摄影馆",
+        "category": "attraction",
+        "lat": 32.064,
+        "lng": 118.79400000000001,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "摄影"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://pilot.example.invalid/pilot-02-02/p2",
+        "fixture_record": true,
+        "closed_dates": [
+          "2026-10-10"
+        ]
+      },
+      {
+        "id": "pilot-02-02-p3",
+        "name": "南京映水2号步道",
+        "category": "attraction",
+        "lat": 32.066,
+        "lng": 118.796,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://pilot.example.invalid/pilot-02-02/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "plan",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-training-pilot24.v1",
+    "split": "train",
+    "scene_template": "optional_closed",
+    "source_group": "pilot-composition-2",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": [
+      {
+        "id": "pilot-02-02-r0",
+        "name": "南京青禾2号家常菜馆",
+        "category": "restaurant",
+        "lat": 32.061,
+        "lng": 118.79100000000001,
+        "ticket_price": 0,
+        "average_cost": 55,
+        "open_time": "10:30",
+        "close_time": "21:00",
+        "address": "南京示例街21号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "家常菜"
+        ],
+        "source_url": "https://pilot.example.invalid/pilot-02-02/r0",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-02-02-r1",
+        "name": "南京青禾2号素食餐厅",
+        "category": "restaurant",
+        "lat": 32.062000000000005,
+        "lng": 118.792,
+        "ticket_price": 0,
+        "average_cost": 45,
+        "open_time": "11:00",
+        "close_time": "20:30",
+        "address": "南京示例街22号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "素食"
+        ],
+        "source_url": "https://pilot.example.invalid/pilot-02-02/r1",
+        "fixture_record": true
+      }
+    ]
+  },
+  {
+    "id": "pilot-02-03",
+    "family": "training",
+    "variant": 2,
+    "request": "2026-10-11开始在长沙游玩1天，总预算1000元，必须参观长沙青禾2号工艺展馆和长沙望江2号古建园。除必去项目外，我也对长沙拾光2号摄影馆感兴趣；若它当天关闭，可以不安排。请安排可行行程，并预留午晚餐时段；本次不要求指定餐厅或预订。",
+    "slots": {
+      "destination": "长沙",
+      "travel_days": 1,
+      "start_date": "2026-10-11",
+      "end_date": "2026-10-11",
+      "budget_range": 1000,
+      "must_visit": [
+        "长沙青禾2号工艺展馆",
+        "长沙望江2号古建园"
+      ],
+      "interests": [
+        "工艺",
+        "古建"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "pilot-02-03-p0",
+        "name": "长沙青禾2号工艺展馆",
+        "category": "attraction",
+        "lat": 28.22,
+        "lng": 112.94,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "工艺"
+        ],
+        "score": 0.95,
+        "source_url": "https://pilot.example.invalid/pilot-02-03/p0",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-02-03-p1",
+        "name": "长沙望江2号古建园",
+        "category": "attraction",
+        "lat": 28.221999999999998,
+        "lng": 112.942,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "古建"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://pilot.example.invalid/pilot-02-03/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-02-03-p2",
+        "name": "长沙拾光2号摄影馆",
+        "category": "attraction",
+        "lat": 28.224,
+        "lng": 112.944,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "摄影"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://pilot.example.invalid/pilot-02-03/p2",
+        "fixture_record": true,
+        "closed_dates": [
+          "2026-10-11"
+        ]
+      },
+      {
+        "id": "pilot-02-03-p3",
+        "name": "长沙映水2号步道",
+        "category": "attraction",
+        "lat": 28.226,
+        "lng": 112.946,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://pilot.example.invalid/pilot-02-03/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "plan",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-training-pilot24.v1",
+    "split": "train",
+    "scene_template": "optional_closed",
+    "source_group": "pilot-composition-2",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": [
+      {
+        "id": "pilot-02-03-r0",
+        "name": "长沙青禾2号家常菜馆",
+        "category": "restaurant",
+        "lat": 28.221,
+        "lng": 112.941,
+        "ticket_price": 0,
+        "average_cost": 55,
+        "open_time": "10:30",
+        "close_time": "21:00",
+        "address": "长沙示例街21号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "家常菜"
+        ],
+        "source_url": "https://pilot.example.invalid/pilot-02-03/r0",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-02-03-r1",
+        "name": "长沙青禾2号素食餐厅",
+        "category": "restaurant",
+        "lat": 28.221999999999998,
+        "lng": 112.942,
+        "ticket_price": 0,
+        "average_cost": 45,
+        "open_time": "11:00",
+        "close_time": "20:30",
+        "address": "长沙示例街22号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "素食"
+        ],
+        "source_url": "https://pilot.example.invalid/pilot-02-03/r1",
+        "fixture_record": true
+      }
+    ]
+  },
+  {
+    "id": "pilot-02-04",
+    "family": "training",
+    "variant": 3,
+    "request": "2026-10-12开始在西安游玩1天，总预算1000元，必须参观西安青禾2号工艺展馆和西安望江2号古建园。除必去项目外，我也对西安拾光2号摄影馆感兴趣；若它当天关闭，可以不安排。请安排可行行程，并预留午晚餐时段；本次不要求指定餐厅或预订。",
+    "slots": {
+      "destination": "西安",
+      "travel_days": 1,
+      "start_date": "2026-10-12",
+      "end_date": "2026-10-12",
+      "budget_range": 1000,
+      "must_visit": [
+        "西安青禾2号工艺展馆",
+        "西安望江2号古建园"
+      ],
+      "interests": [
+        "工艺",
+        "古建"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "pilot-02-04-p0",
+        "name": "西安青禾2号工艺展馆",
+        "category": "attraction",
+        "lat": 34.27,
+        "lng": 108.95,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "工艺"
+        ],
+        "score": 0.95,
+        "source_url": "https://pilot.example.invalid/pilot-02-04/p0",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-02-04-p1",
+        "name": "西安望江2号古建园",
+        "category": "attraction",
+        "lat": 34.272000000000006,
+        "lng": 108.952,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "古建"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://pilot.example.invalid/pilot-02-04/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-02-04-p2",
+        "name": "西安拾光2号摄影馆",
+        "category": "attraction",
+        "lat": 34.274,
+        "lng": 108.95400000000001,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "摄影"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://pilot.example.invalid/pilot-02-04/p2",
+        "fixture_record": true,
+        "closed_dates": [
+          "2026-10-12"
+        ]
+      },
+      {
+        "id": "pilot-02-04-p3",
+        "name": "西安映水2号步道",
+        "category": "attraction",
+        "lat": 34.276,
+        "lng": 108.956,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://pilot.example.invalid/pilot-02-04/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "plan",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-training-pilot24.v1",
+    "split": "train",
+    "scene_template": "optional_closed",
+    "source_group": "pilot-composition-2",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": [
+      {
+        "id": "pilot-02-04-r0",
+        "name": "西安青禾2号家常菜馆",
+        "category": "restaurant",
+        "lat": 34.271,
+        "lng": 108.95100000000001,
+        "ticket_price": 0,
+        "average_cost": 55,
+        "open_time": "10:30",
+        "close_time": "21:00",
+        "address": "西安示例街21号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "家常菜"
+        ],
+        "source_url": "https://pilot.example.invalid/pilot-02-04/r0",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-02-04-r1",
+        "name": "西安青禾2号素食餐厅",
+        "category": "restaurant",
+        "lat": 34.272000000000006,
+        "lng": 108.952,
+        "ticket_price": 0,
+        "average_cost": 45,
+        "open_time": "11:00",
+        "close_time": "20:30",
+        "address": "西安示例街22号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "素食"
+        ],
+        "source_url": "https://pilot.example.invalid/pilot-02-04/r1",
+        "fixture_record": true
+      }
+    ]
+  },
+  {
+    "id": "pilot-03-01",
+    "family": "training",
+    "variant": 0,
+    "request": "2026-10-12开始在苏州游玩1天，总预算220元，必须参观苏州青禾3号工艺展馆和苏州望江3号古建园。预算是不可提高的硬上限，两项必去活动都不能取消。请安排可行行程，并预留午晚餐时段；本次不要求指定餐厅或预订。",
+    "slots": {
+      "destination": "苏州",
+      "travel_days": 1,
+      "start_date": "2026-10-12",
+      "end_date": "2026-10-12",
+      "budget_range": 220,
+      "must_visit": [
+        "苏州青禾3号工艺展馆",
+        "苏州望江3号古建园"
+      ],
+      "interests": [
+        "工艺",
+        "古建"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "pilot-03-01-p0",
+        "name": "苏州青禾3号工艺展馆",
+        "category": "attraction",
+        "lat": 31.3,
+        "lng": 120.58,
+        "ticket_price": 130,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "工艺"
+        ],
+        "score": 0.95,
+        "source_url": "https://pilot.example.invalid/pilot-03-01/p0",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-03-01-p1",
+        "name": "苏州望江3号古建园",
+        "category": "attraction",
+        "lat": 31.302,
+        "lng": 120.582,
+        "ticket_price": 140,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "古建"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://pilot.example.invalid/pilot-03-01/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-03-01-p2",
+        "name": "苏州拾光3号摄影馆",
+        "category": "attraction",
+        "lat": 31.304000000000002,
+        "lng": 120.584,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "摄影"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://pilot.example.invalid/pilot-03-01/p2",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-03-01-p3",
+        "name": "苏州映水3号步道",
+        "category": "attraction",
+        "lat": 31.306,
+        "lng": 120.586,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://pilot.example.invalid/pilot-03-01/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "grounded_stop",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-training-pilot24.v1",
+    "split": "train",
+    "scene_template": "combined_ticket_floor",
+    "source_group": "pilot-composition-3",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": [
+      {
+        "id": "pilot-03-01-r0",
+        "name": "苏州青禾3号家常菜馆",
+        "category": "restaurant",
+        "lat": 31.301000000000002,
+        "lng": 120.581,
+        "ticket_price": 0,
+        "average_cost": 55,
+        "open_time": "10:30",
+        "close_time": "21:00",
+        "address": "苏州示例街21号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "家常菜"
+        ],
+        "source_url": "https://pilot.example.invalid/pilot-03-01/r0",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-03-01-r1",
+        "name": "苏州青禾3号素食餐厅",
+        "category": "restaurant",
+        "lat": 31.302,
+        "lng": 120.582,
+        "ticket_price": 0,
+        "average_cost": 45,
+        "open_time": "11:00",
+        "close_time": "20:30",
+        "address": "苏州示例街22号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "素食"
+        ],
+        "source_url": "https://pilot.example.invalid/pilot-03-01/r1",
+        "fixture_record": true
+      }
+    ]
+  },
+  {
+    "id": "pilot-03-02",
+    "family": "training",
+    "variant": 1,
+    "request": "2026-10-13开始在南京游玩1天，总预算220元，必须参观南京青禾3号工艺展馆和南京望江3号古建园。预算是不可提高的硬上限，两项必去活动都不能取消。请安排可行行程，并预留午晚餐时段；本次不要求指定餐厅或预订。",
+    "slots": {
+      "destination": "南京",
+      "travel_days": 1,
+      "start_date": "2026-10-13",
+      "end_date": "2026-10-13",
+      "budget_range": 220,
+      "must_visit": [
+        "南京青禾3号工艺展馆",
+        "南京望江3号古建园"
+      ],
+      "interests": [
+        "工艺",
+        "古建"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "pilot-03-02-p0",
+        "name": "南京青禾3号工艺展馆",
+        "category": "attraction",
+        "lat": 32.06,
+        "lng": 118.79,
+        "ticket_price": 130,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "工艺"
+        ],
+        "score": 0.95,
+        "source_url": "https://pilot.example.invalid/pilot-03-02/p0",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-03-02-p1",
+        "name": "南京望江3号古建园",
+        "category": "attraction",
+        "lat": 32.062000000000005,
+        "lng": 118.792,
+        "ticket_price": 140,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "古建"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://pilot.example.invalid/pilot-03-02/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-03-02-p2",
+        "name": "南京拾光3号摄影馆",
+        "category": "attraction",
+        "lat": 32.064,
+        "lng": 118.79400000000001,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "摄影"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://pilot.example.invalid/pilot-03-02/p2",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-03-02-p3",
+        "name": "南京映水3号步道",
+        "category": "attraction",
+        "lat": 32.066,
+        "lng": 118.796,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://pilot.example.invalid/pilot-03-02/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "grounded_stop",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-training-pilot24.v1",
+    "split": "train",
+    "scene_template": "combined_ticket_floor",
+    "source_group": "pilot-composition-3",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": [
+      {
+        "id": "pilot-03-02-r0",
+        "name": "南京青禾3号家常菜馆",
+        "category": "restaurant",
+        "lat": 32.061,
+        "lng": 118.79100000000001,
+        "ticket_price": 0,
+        "average_cost": 55,
+        "open_time": "10:30",
+        "close_time": "21:00",
+        "address": "南京示例街21号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "家常菜"
+        ],
+        "source_url": "https://pilot.example.invalid/pilot-03-02/r0",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-03-02-r1",
+        "name": "南京青禾3号素食餐厅",
+        "category": "restaurant",
+        "lat": 32.062000000000005,
+        "lng": 118.792,
+        "ticket_price": 0,
+        "average_cost": 45,
+        "open_time": "11:00",
+        "close_time": "20:30",
+        "address": "南京示例街22号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "素食"
+        ],
+        "source_url": "https://pilot.example.invalid/pilot-03-02/r1",
+        "fixture_record": true
+      }
+    ]
+  },
+  {
+    "id": "pilot-03-03",
+    "family": "training",
+    "variant": 2,
+    "request": "2026-10-14开始在长沙游玩1天，总预算220元，必须参观长沙青禾3号工艺展馆和长沙望江3号古建园。预算是不可提高的硬上限，两项必去活动都不能取消。请安排可行行程，并预留午晚餐时段；本次不要求指定餐厅或预订。",
+    "slots": {
+      "destination": "长沙",
+      "travel_days": 1,
+      "start_date": "2026-10-14",
+      "end_date": "2026-10-14",
+      "budget_range": 220,
+      "must_visit": [
+        "长沙青禾3号工艺展馆",
+        "长沙望江3号古建园"
+      ],
+      "interests": [
+        "工艺",
+        "古建"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "pilot-03-03-p0",
+        "name": "长沙青禾3号工艺展馆",
+        "category": "attraction",
+        "lat": 28.22,
+        "lng": 112.94,
+        "ticket_price": 130,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "工艺"
+        ],
+        "score": 0.95,
+        "source_url": "https://pilot.example.invalid/pilot-03-03/p0",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-03-03-p1",
+        "name": "长沙望江3号古建园",
+        "category": "attraction",
+        "lat": 28.221999999999998,
+        "lng": 112.942,
+        "ticket_price": 140,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "古建"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://pilot.example.invalid/pilot-03-03/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-03-03-p2",
+        "name": "长沙拾光3号摄影馆",
+        "category": "attraction",
+        "lat": 28.224,
+        "lng": 112.944,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "摄影"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://pilot.example.invalid/pilot-03-03/p2",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-03-03-p3",
+        "name": "长沙映水3号步道",
+        "category": "attraction",
+        "lat": 28.226,
+        "lng": 112.946,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://pilot.example.invalid/pilot-03-03/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "grounded_stop",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-training-pilot24.v1",
+    "split": "train",
+    "scene_template": "combined_ticket_floor",
+    "source_group": "pilot-composition-3",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": [
+      {
+        "id": "pilot-03-03-r0",
+        "name": "长沙青禾3号家常菜馆",
+        "category": "restaurant",
+        "lat": 28.221,
+        "lng": 112.941,
+        "ticket_price": 0,
+        "average_cost": 55,
+        "open_time": "10:30",
+        "close_time": "21:00",
+        "address": "长沙示例街21号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "家常菜"
+        ],
+        "source_url": "https://pilot.example.invalid/pilot-03-03/r0",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-03-03-r1",
+        "name": "长沙青禾3号素食餐厅",
+        "category": "restaurant",
+        "lat": 28.221999999999998,
+        "lng": 112.942,
+        "ticket_price": 0,
+        "average_cost": 45,
+        "open_time": "11:00",
+        "close_time": "20:30",
+        "address": "长沙示例街22号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "素食"
+        ],
+        "source_url": "https://pilot.example.invalid/pilot-03-03/r1",
+        "fixture_record": true
+      }
+    ]
+  },
+  {
+    "id": "pilot-03-04",
+    "family": "training",
+    "variant": 3,
+    "request": "2026-10-15开始在西安游玩1天，总预算220元，必须参观西安青禾3号工艺展馆和西安望江3号古建园。预算是不可提高的硬上限，两项必去活动都不能取消。请安排可行行程，并预留午晚餐时段；本次不要求指定餐厅或预订。",
+    "slots": {
+      "destination": "西安",
+      "travel_days": 1,
+      "start_date": "2026-10-15",
+      "end_date": "2026-10-15",
+      "budget_range": 220,
+      "must_visit": [
+        "西安青禾3号工艺展馆",
+        "西安望江3号古建园"
+      ],
+      "interests": [
+        "工艺",
+        "古建"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "pilot-03-04-p0",
+        "name": "西安青禾3号工艺展馆",
+        "category": "attraction",
+        "lat": 34.27,
+        "lng": 108.95,
+        "ticket_price": 130,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "工艺"
+        ],
+        "score": 0.95,
+        "source_url": "https://pilot.example.invalid/pilot-03-04/p0",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-03-04-p1",
+        "name": "西安望江3号古建园",
+        "category": "attraction",
+        "lat": 34.272000000000006,
+        "lng": 108.952,
+        "ticket_price": 140,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "古建"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://pilot.example.invalid/pilot-03-04/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-03-04-p2",
+        "name": "西安拾光3号摄影馆",
+        "category": "attraction",
+        "lat": 34.274,
+        "lng": 108.95400000000001,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "摄影"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://pilot.example.invalid/pilot-03-04/p2",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-03-04-p3",
+        "name": "西安映水3号步道",
+        "category": "attraction",
+        "lat": 34.276,
+        "lng": 108.956,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://pilot.example.invalid/pilot-03-04/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "grounded_stop",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-training-pilot24.v1",
+    "split": "train",
+    "scene_template": "combined_ticket_floor",
+    "source_group": "pilot-composition-3",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": [
+      {
+        "id": "pilot-03-04-r0",
+        "name": "西安青禾3号家常菜馆",
+        "category": "restaurant",
+        "lat": 34.271,
+        "lng": 108.95100000000001,
+        "ticket_price": 0,
+        "average_cost": 55,
+        "open_time": "10:30",
+        "close_time": "21:00",
+        "address": "西安示例街21号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "家常菜"
+        ],
+        "source_url": "https://pilot.example.invalid/pilot-03-04/r0",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-03-04-r1",
+        "name": "西安青禾3号素食餐厅",
+        "category": "restaurant",
+        "lat": 34.272000000000006,
+        "lng": 108.952,
+        "ticket_price": 0,
+        "average_cost": 45,
+        "open_time": "11:00",
+        "close_time": "20:30",
+        "address": "西安示例街22号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "素食"
+        ],
+        "source_url": "https://pilot.example.invalid/pilot-03-04/r1",
+        "fixture_record": true
+      }
+    ]
+  },
+  {
+    "id": "pilot-04-01",
+    "family": "training",
+    "variant": 0,
+    "request": "2026-10-15开始在苏州游玩2天，总预算1000元，必须参观苏州青禾4号工艺展馆和苏州望江4号古建园。这两天内必须进入苏州青禾4号工艺展馆，不接受外观打卡；日期和必去项都不能改。请安排可行行程，并预留午晚餐时段；本次不要求指定餐厅或预订。",
+    "slots": {
+      "destination": "苏州",
+      "travel_days": 2,
+      "start_date": "2026-10-15",
+      "end_date": "2026-10-16",
+      "budget_range": 1000,
+      "must_visit": [
+        "苏州青禾4号工艺展馆",
+        "苏州望江4号古建园"
+      ],
+      "interests": [
+        "工艺",
+        "古建"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "pilot-04-01-p0",
+        "name": "苏州青禾4号工艺展馆",
+        "category": "attraction",
+        "lat": 31.3,
+        "lng": 120.58,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "工艺"
+        ],
+        "score": 0.95,
+        "source_url": "https://pilot.example.invalid/pilot-04-01/p0",
+        "fixture_record": true,
+        "closed_dates": [
+          "2026-10-15",
+          "2026-10-16"
+        ]
+      },
+      {
+        "id": "pilot-04-01-p1",
+        "name": "苏州望江4号古建园",
+        "category": "attraction",
+        "lat": 31.302,
+        "lng": 120.582,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "古建"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://pilot.example.invalid/pilot-04-01/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-04-01-p2",
+        "name": "苏州拾光4号摄影馆",
+        "category": "attraction",
+        "lat": 31.304000000000002,
+        "lng": 120.584,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "摄影"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://pilot.example.invalid/pilot-04-01/p2",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-04-01-p3",
+        "name": "苏州映水4号步道",
+        "category": "attraction",
+        "lat": 31.306,
+        "lng": 120.586,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://pilot.example.invalid/pilot-04-01/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "grounded_stop",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-training-pilot24.v1",
+    "split": "train",
+    "scene_template": "two_day_closure",
+    "source_group": "pilot-composition-4",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": [
+      {
+        "id": "pilot-04-01-r0",
+        "name": "苏州青禾4号家常菜馆",
+        "category": "restaurant",
+        "lat": 31.301000000000002,
+        "lng": 120.581,
+        "ticket_price": 0,
+        "average_cost": 55,
+        "open_time": "10:30",
+        "close_time": "21:00",
+        "address": "苏州示例街21号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "家常菜"
+        ],
+        "source_url": "https://pilot.example.invalid/pilot-04-01/r0",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-04-01-r1",
+        "name": "苏州青禾4号素食餐厅",
+        "category": "restaurant",
+        "lat": 31.302,
+        "lng": 120.582,
+        "ticket_price": 0,
+        "average_cost": 45,
+        "open_time": "11:00",
+        "close_time": "20:30",
+        "address": "苏州示例街22号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "素食"
+        ],
+        "source_url": "https://pilot.example.invalid/pilot-04-01/r1",
+        "fixture_record": true
+      }
+    ]
+  },
+  {
+    "id": "pilot-04-02",
+    "family": "training",
+    "variant": 1,
+    "request": "2026-10-16开始在南京游玩2天，总预算1000元，必须参观南京青禾4号工艺展馆和南京望江4号古建园。这两天内必须进入南京青禾4号工艺展馆，不接受外观打卡；日期和必去项都不能改。请安排可行行程，并预留午晚餐时段；本次不要求指定餐厅或预订。",
+    "slots": {
+      "destination": "南京",
+      "travel_days": 2,
+      "start_date": "2026-10-16",
+      "end_date": "2026-10-17",
+      "budget_range": 1000,
+      "must_visit": [
+        "南京青禾4号工艺展馆",
+        "南京望江4号古建园"
+      ],
+      "interests": [
+        "工艺",
+        "古建"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "pilot-04-02-p0",
+        "name": "南京青禾4号工艺展馆",
+        "category": "attraction",
+        "lat": 32.06,
+        "lng": 118.79,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "工艺"
+        ],
+        "score": 0.95,
+        "source_url": "https://pilot.example.invalid/pilot-04-02/p0",
+        "fixture_record": true,
+        "closed_dates": [
+          "2026-10-16",
+          "2026-10-17"
+        ]
+      },
+      {
+        "id": "pilot-04-02-p1",
+        "name": "南京望江4号古建园",
+        "category": "attraction",
+        "lat": 32.062000000000005,
+        "lng": 118.792,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "古建"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://pilot.example.invalid/pilot-04-02/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-04-02-p2",
+        "name": "南京拾光4号摄影馆",
+        "category": "attraction",
+        "lat": 32.064,
+        "lng": 118.79400000000001,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "摄影"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://pilot.example.invalid/pilot-04-02/p2",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-04-02-p3",
+        "name": "南京映水4号步道",
+        "category": "attraction",
+        "lat": 32.066,
+        "lng": 118.796,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://pilot.example.invalid/pilot-04-02/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "grounded_stop",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-training-pilot24.v1",
+    "split": "train",
+    "scene_template": "two_day_closure",
+    "source_group": "pilot-composition-4",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": [
+      {
+        "id": "pilot-04-02-r0",
+        "name": "南京青禾4号家常菜馆",
+        "category": "restaurant",
+        "lat": 32.061,
+        "lng": 118.79100000000001,
+        "ticket_price": 0,
+        "average_cost": 55,
+        "open_time": "10:30",
+        "close_time": "21:00",
+        "address": "南京示例街21号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "家常菜"
+        ],
+        "source_url": "https://pilot.example.invalid/pilot-04-02/r0",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-04-02-r1",
+        "name": "南京青禾4号素食餐厅",
+        "category": "restaurant",
+        "lat": 32.062000000000005,
+        "lng": 118.792,
+        "ticket_price": 0,
+        "average_cost": 45,
+        "open_time": "11:00",
+        "close_time": "20:30",
+        "address": "南京示例街22号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "素食"
+        ],
+        "source_url": "https://pilot.example.invalid/pilot-04-02/r1",
+        "fixture_record": true
+      }
+    ]
+  },
+  {
+    "id": "pilot-04-03",
+    "family": "training",
+    "variant": 2,
+    "request": "2026-10-17开始在长沙游玩2天，总预算1000元，必须参观长沙青禾4号工艺展馆和长沙望江4号古建园。这两天内必须进入长沙青禾4号工艺展馆，不接受外观打卡；日期和必去项都不能改。请安排可行行程，并预留午晚餐时段；本次不要求指定餐厅或预订。",
+    "slots": {
+      "destination": "长沙",
+      "travel_days": 2,
+      "start_date": "2026-10-17",
+      "end_date": "2026-10-18",
+      "budget_range": 1000,
+      "must_visit": [
+        "长沙青禾4号工艺展馆",
+        "长沙望江4号古建园"
+      ],
+      "interests": [
+        "工艺",
+        "古建"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "pilot-04-03-p0",
+        "name": "长沙青禾4号工艺展馆",
+        "category": "attraction",
+        "lat": 28.22,
+        "lng": 112.94,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "工艺"
+        ],
+        "score": 0.95,
+        "source_url": "https://pilot.example.invalid/pilot-04-03/p0",
+        "fixture_record": true,
+        "closed_dates": [
+          "2026-10-17",
+          "2026-10-18"
+        ]
+      },
+      {
+        "id": "pilot-04-03-p1",
+        "name": "长沙望江4号古建园",
+        "category": "attraction",
+        "lat": 28.221999999999998,
+        "lng": 112.942,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "古建"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://pilot.example.invalid/pilot-04-03/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-04-03-p2",
+        "name": "长沙拾光4号摄影馆",
+        "category": "attraction",
+        "lat": 28.224,
+        "lng": 112.944,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "摄影"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://pilot.example.invalid/pilot-04-03/p2",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-04-03-p3",
+        "name": "长沙映水4号步道",
+        "category": "attraction",
+        "lat": 28.226,
+        "lng": 112.946,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://pilot.example.invalid/pilot-04-03/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "grounded_stop",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-training-pilot24.v1",
+    "split": "train",
+    "scene_template": "two_day_closure",
+    "source_group": "pilot-composition-4",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": [
+      {
+        "id": "pilot-04-03-r0",
+        "name": "长沙青禾4号家常菜馆",
+        "category": "restaurant",
+        "lat": 28.221,
+        "lng": 112.941,
+        "ticket_price": 0,
+        "average_cost": 55,
+        "open_time": "10:30",
+        "close_time": "21:00",
+        "address": "长沙示例街21号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "家常菜"
+        ],
+        "source_url": "https://pilot.example.invalid/pilot-04-03/r0",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-04-03-r1",
+        "name": "长沙青禾4号素食餐厅",
+        "category": "restaurant",
+        "lat": 28.221999999999998,
+        "lng": 112.942,
+        "ticket_price": 0,
+        "average_cost": 45,
+        "open_time": "11:00",
+        "close_time": "20:30",
+        "address": "长沙示例街22号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "素食"
+        ],
+        "source_url": "https://pilot.example.invalid/pilot-04-03/r1",
+        "fixture_record": true
+      }
+    ]
+  },
+  {
+    "id": "pilot-04-04",
+    "family": "training",
+    "variant": 3,
+    "request": "2026-10-18开始在西安游玩2天，总预算1000元，必须参观西安青禾4号工艺展馆和西安望江4号古建园。这两天内必须进入西安青禾4号工艺展馆，不接受外观打卡；日期和必去项都不能改。请安排可行行程，并预留午晚餐时段；本次不要求指定餐厅或预订。",
+    "slots": {
+      "destination": "西安",
+      "travel_days": 2,
+      "start_date": "2026-10-18",
+      "end_date": "2026-10-19",
+      "budget_range": 1000,
+      "must_visit": [
+        "西安青禾4号工艺展馆",
+        "西安望江4号古建园"
+      ],
+      "interests": [
+        "工艺",
+        "古建"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "pilot-04-04-p0",
+        "name": "西安青禾4号工艺展馆",
+        "category": "attraction",
+        "lat": 34.27,
+        "lng": 108.95,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "工艺"
+        ],
+        "score": 0.95,
+        "source_url": "https://pilot.example.invalid/pilot-04-04/p0",
+        "fixture_record": true,
+        "closed_dates": [
+          "2026-10-18",
+          "2026-10-19"
+        ]
+      },
+      {
+        "id": "pilot-04-04-p1",
+        "name": "西安望江4号古建园",
+        "category": "attraction",
+        "lat": 34.272000000000006,
+        "lng": 108.952,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "古建"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://pilot.example.invalid/pilot-04-04/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-04-04-p2",
+        "name": "西安拾光4号摄影馆",
+        "category": "attraction",
+        "lat": 34.274,
+        "lng": 108.95400000000001,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "摄影"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://pilot.example.invalid/pilot-04-04/p2",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-04-04-p3",
+        "name": "西安映水4号步道",
+        "category": "attraction",
+        "lat": 34.276,
+        "lng": 108.956,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://pilot.example.invalid/pilot-04-04/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "grounded_stop",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-training-pilot24.v1",
+    "split": "train",
+    "scene_template": "two_day_closure",
+    "source_group": "pilot-composition-4",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": [
+      {
+        "id": "pilot-04-04-r0",
+        "name": "西安青禾4号家常菜馆",
+        "category": "restaurant",
+        "lat": 34.271,
+        "lng": 108.95100000000001,
+        "ticket_price": 0,
+        "average_cost": 55,
+        "open_time": "10:30",
+        "close_time": "21:00",
+        "address": "西安示例街21号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "家常菜"
+        ],
+        "source_url": "https://pilot.example.invalid/pilot-04-04/r0",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-04-04-r1",
+        "name": "西安青禾4号素食餐厅",
+        "category": "restaurant",
+        "lat": 34.272000000000006,
+        "lng": 108.952,
+        "ticket_price": 0,
+        "average_cost": 45,
+        "open_time": "11:00",
+        "close_time": "20:30",
+        "address": "西安示例街22号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "素食"
+        ],
+        "source_url": "https://pilot.example.invalid/pilot-04-04/r1",
+        "fixture_record": true
+      }
+    ]
+  },
+  {
+    "id": "pilot-05-01",
+    "family": "recovery",
+    "variant": 1,
+    "request": "2026-10-18开始在苏州游玩1天，总预算1000元，必须参观苏州青禾5号工艺展馆和苏州望江5号古建园。请核对天气；不要把一次服务超时当成景点不存在。请安排可行行程，并预留午晚餐时段；本次不要求指定餐厅或预订。",
+    "slots": {
+      "destination": "苏州",
+      "travel_days": 1,
+      "start_date": "2026-10-18",
+      "end_date": "2026-10-18",
+      "budget_range": 1000,
+      "must_visit": [
+        "苏州青禾5号工艺展馆",
+        "苏州望江5号古建园"
+      ],
+      "interests": [
+        "工艺",
+        "古建"
+      ],
+      "information_needs": [
+        "weather"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "pilot-05-01-p0",
+        "name": "苏州青禾5号工艺展馆",
+        "category": "attraction",
+        "lat": 31.3,
+        "lng": 120.58,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "工艺"
+        ],
+        "score": 0.95,
+        "source_url": "https://pilot.example.invalid/pilot-05-01/p0",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-05-01-p1",
+        "name": "苏州望江5号古建园",
+        "category": "attraction",
+        "lat": 31.302,
+        "lng": 120.582,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "古建"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://pilot.example.invalid/pilot-05-01/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-05-01-p2",
+        "name": "苏州拾光5号摄影馆",
+        "category": "attraction",
+        "lat": 31.304000000000002,
+        "lng": 120.584,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "摄影"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://pilot.example.invalid/pilot-05-01/p2",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-05-01-p3",
+        "name": "苏州映水5号步道",
+        "category": "attraction",
+        "lat": 31.306,
+        "lng": 120.586,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://pilot.example.invalid/pilot-05-01/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "plan",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-training-pilot24.v1",
+    "split": "train",
+    "scene_template": "detail_timeout_and_weather",
+    "source_group": "pilot-composition-5",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": [
+      {
+        "id": "pilot-05-01-r0",
+        "name": "苏州青禾5号家常菜馆",
+        "category": "restaurant",
+        "lat": 31.301000000000002,
+        "lng": 120.581,
+        "ticket_price": 0,
+        "average_cost": 55,
+        "open_time": "10:30",
+        "close_time": "21:00",
+        "address": "苏州示例街21号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "家常菜"
+        ],
+        "source_url": "https://pilot.example.invalid/pilot-05-01/r0",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-05-01-r1",
+        "name": "苏州青禾5号素食餐厅",
+        "category": "restaurant",
+        "lat": 31.302,
+        "lng": 120.582,
+        "ticket_price": 0,
+        "average_cost": 45,
+        "open_time": "11:00",
+        "close_time": "20:30",
+        "address": "苏州示例街22号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "素食"
+        ],
+        "source_url": "https://pilot.example.invalid/pilot-05-01/r1",
+        "fixture_record": true
+      }
+    ]
+  },
+  {
+    "id": "pilot-05-02",
+    "family": "recovery",
+    "variant": 1,
+    "request": "2026-10-19开始在南京游玩1天，总预算1000元，必须参观南京青禾5号工艺展馆和南京望江5号古建园。请核对天气；不要把一次服务超时当成景点不存在。请安排可行行程，并预留午晚餐时段；本次不要求指定餐厅或预订。",
+    "slots": {
+      "destination": "南京",
+      "travel_days": 1,
+      "start_date": "2026-10-19",
+      "end_date": "2026-10-19",
+      "budget_range": 1000,
+      "must_visit": [
+        "南京青禾5号工艺展馆",
+        "南京望江5号古建园"
+      ],
+      "interests": [
+        "工艺",
+        "古建"
+      ],
+      "information_needs": [
+        "weather"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "pilot-05-02-p0",
+        "name": "南京青禾5号工艺展馆",
+        "category": "attraction",
+        "lat": 32.06,
+        "lng": 118.79,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "工艺"
+        ],
+        "score": 0.95,
+        "source_url": "https://pilot.example.invalid/pilot-05-02/p0",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-05-02-p1",
+        "name": "南京望江5号古建园",
+        "category": "attraction",
+        "lat": 32.062000000000005,
+        "lng": 118.792,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "古建"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://pilot.example.invalid/pilot-05-02/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-05-02-p2",
+        "name": "南京拾光5号摄影馆",
+        "category": "attraction",
+        "lat": 32.064,
+        "lng": 118.79400000000001,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "摄影"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://pilot.example.invalid/pilot-05-02/p2",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-05-02-p3",
+        "name": "南京映水5号步道",
+        "category": "attraction",
+        "lat": 32.066,
+        "lng": 118.796,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://pilot.example.invalid/pilot-05-02/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "plan",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-training-pilot24.v1",
+    "split": "train",
+    "scene_template": "detail_timeout_and_weather",
+    "source_group": "pilot-composition-5",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": [
+      {
+        "id": "pilot-05-02-r0",
+        "name": "南京青禾5号家常菜馆",
+        "category": "restaurant",
+        "lat": 32.061,
+        "lng": 118.79100000000001,
+        "ticket_price": 0,
+        "average_cost": 55,
+        "open_time": "10:30",
+        "close_time": "21:00",
+        "address": "南京示例街21号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "家常菜"
+        ],
+        "source_url": "https://pilot.example.invalid/pilot-05-02/r0",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-05-02-r1",
+        "name": "南京青禾5号素食餐厅",
+        "category": "restaurant",
+        "lat": 32.062000000000005,
+        "lng": 118.792,
+        "ticket_price": 0,
+        "average_cost": 45,
+        "open_time": "11:00",
+        "close_time": "20:30",
+        "address": "南京示例街22号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "素食"
+        ],
+        "source_url": "https://pilot.example.invalid/pilot-05-02/r1",
+        "fixture_record": true
+      }
+    ]
+  },
+  {
+    "id": "pilot-05-03",
+    "family": "recovery",
+    "variant": 1,
+    "request": "2026-10-20开始在长沙游玩1天，总预算1000元，必须参观长沙青禾5号工艺展馆和长沙望江5号古建园。请核对天气；不要把一次服务超时当成景点不存在。请安排可行行程，并预留午晚餐时段；本次不要求指定餐厅或预订。",
+    "slots": {
+      "destination": "长沙",
+      "travel_days": 1,
+      "start_date": "2026-10-20",
+      "end_date": "2026-10-20",
+      "budget_range": 1000,
+      "must_visit": [
+        "长沙青禾5号工艺展馆",
+        "长沙望江5号古建园"
+      ],
+      "interests": [
+        "工艺",
+        "古建"
+      ],
+      "information_needs": [
+        "weather"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "pilot-05-03-p0",
+        "name": "长沙青禾5号工艺展馆",
+        "category": "attraction",
+        "lat": 28.22,
+        "lng": 112.94,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "工艺"
+        ],
+        "score": 0.95,
+        "source_url": "https://pilot.example.invalid/pilot-05-03/p0",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-05-03-p1",
+        "name": "长沙望江5号古建园",
+        "category": "attraction",
+        "lat": 28.221999999999998,
+        "lng": 112.942,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "古建"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://pilot.example.invalid/pilot-05-03/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-05-03-p2",
+        "name": "长沙拾光5号摄影馆",
+        "category": "attraction",
+        "lat": 28.224,
+        "lng": 112.944,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "摄影"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://pilot.example.invalid/pilot-05-03/p2",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-05-03-p3",
+        "name": "长沙映水5号步道",
+        "category": "attraction",
+        "lat": 28.226,
+        "lng": 112.946,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://pilot.example.invalid/pilot-05-03/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "plan",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-training-pilot24.v1",
+    "split": "train",
+    "scene_template": "detail_timeout_and_weather",
+    "source_group": "pilot-composition-5",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": [
+      {
+        "id": "pilot-05-03-r0",
+        "name": "长沙青禾5号家常菜馆",
+        "category": "restaurant",
+        "lat": 28.221,
+        "lng": 112.941,
+        "ticket_price": 0,
+        "average_cost": 55,
+        "open_time": "10:30",
+        "close_time": "21:00",
+        "address": "长沙示例街21号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "家常菜"
+        ],
+        "source_url": "https://pilot.example.invalid/pilot-05-03/r0",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-05-03-r1",
+        "name": "长沙青禾5号素食餐厅",
+        "category": "restaurant",
+        "lat": 28.221999999999998,
+        "lng": 112.942,
+        "ticket_price": 0,
+        "average_cost": 45,
+        "open_time": "11:00",
+        "close_time": "20:30",
+        "address": "长沙示例街22号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "素食"
+        ],
+        "source_url": "https://pilot.example.invalid/pilot-05-03/r1",
+        "fixture_record": true
+      }
+    ]
+  },
+  {
+    "id": "pilot-05-04",
+    "family": "recovery",
+    "variant": 1,
+    "request": "2026-10-21开始在西安游玩1天，总预算1000元，必须参观西安青禾5号工艺展馆和西安望江5号古建园。请核对天气；不要把一次服务超时当成景点不存在。请安排可行行程，并预留午晚餐时段；本次不要求指定餐厅或预订。",
+    "slots": {
+      "destination": "西安",
+      "travel_days": 1,
+      "start_date": "2026-10-21",
+      "end_date": "2026-10-21",
+      "budget_range": 1000,
+      "must_visit": [
+        "西安青禾5号工艺展馆",
+        "西安望江5号古建园"
+      ],
+      "interests": [
+        "工艺",
+        "古建"
+      ],
+      "information_needs": [
+        "weather"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "pilot-05-04-p0",
+        "name": "西安青禾5号工艺展馆",
+        "category": "attraction",
+        "lat": 34.27,
+        "lng": 108.95,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "工艺"
+        ],
+        "score": 0.95,
+        "source_url": "https://pilot.example.invalid/pilot-05-04/p0",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-05-04-p1",
+        "name": "西安望江5号古建园",
+        "category": "attraction",
+        "lat": 34.272000000000006,
+        "lng": 108.952,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "古建"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://pilot.example.invalid/pilot-05-04/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-05-04-p2",
+        "name": "西安拾光5号摄影馆",
+        "category": "attraction",
+        "lat": 34.274,
+        "lng": 108.95400000000001,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "摄影"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://pilot.example.invalid/pilot-05-04/p2",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-05-04-p3",
+        "name": "西安映水5号步道",
+        "category": "attraction",
+        "lat": 34.276,
+        "lng": 108.956,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://pilot.example.invalid/pilot-05-04/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "plan",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-training-pilot24.v1",
+    "split": "train",
+    "scene_template": "detail_timeout_and_weather",
+    "source_group": "pilot-composition-5",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": [
+      {
+        "id": "pilot-05-04-r0",
+        "name": "西安青禾5号家常菜馆",
+        "category": "restaurant",
+        "lat": 34.271,
+        "lng": 108.95100000000001,
+        "ticket_price": 0,
+        "average_cost": 55,
+        "open_time": "10:30",
+        "close_time": "21:00",
+        "address": "西安示例街21号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "家常菜"
+        ],
+        "source_url": "https://pilot.example.invalid/pilot-05-04/r0",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-05-04-r1",
+        "name": "西安青禾5号素食餐厅",
+        "category": "restaurant",
+        "lat": 34.272000000000006,
+        "lng": 108.952,
+        "ticket_price": 0,
+        "average_cost": 45,
+        "open_time": "11:00",
+        "close_time": "20:30",
+        "address": "西安示例街22号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "素食"
+        ],
+        "source_url": "https://pilot.example.invalid/pilot-05-04/r1",
+        "fixture_record": true
+      }
+    ]
+  },
+  {
+    "id": "pilot-06-01",
+    "family": "evidence",
+    "variant": 0,
+    "request": "2026-10-21开始在苏州游玩1天，总预算1000元，必须参观苏州青禾6号工艺展馆和苏州望江6号古建园。要核实两项必去活动的开放时间；过期页面不能作为依据，其他候选可选。请安排可行行程，并预留午晚餐时段；本次不要求指定餐厅或预订。",
+    "slots": {
+      "destination": "苏州",
+      "travel_days": 1,
+      "start_date": "2026-10-21",
+      "end_date": "2026-10-21",
+      "budget_range": 1000,
+      "must_visit": [
+        "苏州青禾6号工艺展馆",
+        "苏州望江6号古建园"
+      ],
+      "interests": [
+        "工艺",
+        "古建"
+      ],
+      "information_needs": [
+        "opening_hours"
+      ],
+      "current_info_queries": [
+        "苏州青禾6号工艺展馆 2026-10-21 开放时间",
+        "苏州望江6号古建园 2026-10-21 开放时间"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "pilot-06-01-p0",
+        "name": "苏州青禾6号工艺展馆",
+        "category": "attraction",
+        "lat": 31.3,
+        "lng": 120.58,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "工艺"
+        ],
+        "score": 0.95,
+        "source_url": "https://pilot.example.invalid/pilot-06-01/p0",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-06-01-p1",
+        "name": "苏州望江6号古建园",
+        "category": "attraction",
+        "lat": 31.302,
+        "lng": 120.582,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "古建"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://pilot.example.invalid/pilot-06-01/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-06-01-p2",
+        "name": "苏州拾光6号摄影馆",
+        "category": "attraction",
+        "lat": 31.304000000000002,
+        "lng": 120.584,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "摄影"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://pilot.example.invalid/pilot-06-01/p2",
+        "fixture_record": true,
+        "closed_dates": [
+          "2026-10-21"
+        ]
+      },
+      {
+        "id": "pilot-06-01-p3",
+        "name": "苏州映水6号步道",
+        "category": "attraction",
+        "lat": 31.306,
+        "lng": 120.586,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://pilot.example.invalid/pilot-06-01/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "plan",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-training-pilot24.v1",
+    "split": "train",
+    "scene_template": "stale_hours_and_optional_closed",
+    "source_group": "pilot-composition-6",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": [
+      {
+        "id": "pilot-06-01-r0",
+        "name": "苏州青禾6号家常菜馆",
+        "category": "restaurant",
+        "lat": 31.301000000000002,
+        "lng": 120.581,
+        "ticket_price": 0,
+        "average_cost": 55,
+        "open_time": "10:30",
+        "close_time": "21:00",
+        "address": "苏州示例街21号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "家常菜"
+        ],
+        "source_url": "https://pilot.example.invalid/pilot-06-01/r0",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-06-01-r1",
+        "name": "苏州青禾6号素食餐厅",
+        "category": "restaurant",
+        "lat": 31.302,
+        "lng": 120.582,
+        "ticket_price": 0,
+        "average_cost": 45,
+        "open_time": "11:00",
+        "close_time": "20:30",
+        "address": "苏州示例街22号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "素食"
+        ],
+        "source_url": "https://pilot.example.invalid/pilot-06-01/r1",
+        "fixture_record": true
+      }
+    ]
+  },
+  {
+    "id": "pilot-06-02",
+    "family": "evidence",
+    "variant": 1,
+    "request": "2026-10-22开始在南京游玩1天，总预算1000元，必须参观南京青禾6号工艺展馆和南京望江6号古建园。要核实两项必去活动的开放时间；过期页面不能作为依据，其他候选可选。请安排可行行程，并预留午晚餐时段；本次不要求指定餐厅或预订。",
+    "slots": {
+      "destination": "南京",
+      "travel_days": 1,
+      "start_date": "2026-10-22",
+      "end_date": "2026-10-22",
+      "budget_range": 1000,
+      "must_visit": [
+        "南京青禾6号工艺展馆",
+        "南京望江6号古建园"
+      ],
+      "interests": [
+        "工艺",
+        "古建"
+      ],
+      "information_needs": [
+        "opening_hours"
+      ],
+      "current_info_queries": [
+        "南京青禾6号工艺展馆 2026-10-22 开放时间",
+        "南京望江6号古建园 2026-10-22 开放时间"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "pilot-06-02-p0",
+        "name": "南京青禾6号工艺展馆",
+        "category": "attraction",
+        "lat": 32.06,
+        "lng": 118.79,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "工艺"
+        ],
+        "score": 0.95,
+        "source_url": "https://pilot.example.invalid/pilot-06-02/p0",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-06-02-p1",
+        "name": "南京望江6号古建园",
+        "category": "attraction",
+        "lat": 32.062000000000005,
+        "lng": 118.792,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "古建"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://pilot.example.invalid/pilot-06-02/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-06-02-p2",
+        "name": "南京拾光6号摄影馆",
+        "category": "attraction",
+        "lat": 32.064,
+        "lng": 118.79400000000001,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "摄影"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://pilot.example.invalid/pilot-06-02/p2",
+        "fixture_record": true,
+        "closed_dates": [
+          "2026-10-22"
+        ]
+      },
+      {
+        "id": "pilot-06-02-p3",
+        "name": "南京映水6号步道",
+        "category": "attraction",
+        "lat": 32.066,
+        "lng": 118.796,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://pilot.example.invalid/pilot-06-02/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "plan",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-training-pilot24.v1",
+    "split": "train",
+    "scene_template": "stale_hours_and_optional_closed",
+    "source_group": "pilot-composition-6",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": [
+      {
+        "id": "pilot-06-02-r0",
+        "name": "南京青禾6号家常菜馆",
+        "category": "restaurant",
+        "lat": 32.061,
+        "lng": 118.79100000000001,
+        "ticket_price": 0,
+        "average_cost": 55,
+        "open_time": "10:30",
+        "close_time": "21:00",
+        "address": "南京示例街21号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "家常菜"
+        ],
+        "source_url": "https://pilot.example.invalid/pilot-06-02/r0",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-06-02-r1",
+        "name": "南京青禾6号素食餐厅",
+        "category": "restaurant",
+        "lat": 32.062000000000005,
+        "lng": 118.792,
+        "ticket_price": 0,
+        "average_cost": 45,
+        "open_time": "11:00",
+        "close_time": "20:30",
+        "address": "南京示例街22号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "素食"
+        ],
+        "source_url": "https://pilot.example.invalid/pilot-06-02/r1",
+        "fixture_record": true
+      }
+    ]
+  },
+  {
+    "id": "pilot-06-03",
+    "family": "evidence",
+    "variant": 2,
+    "request": "2026-10-23开始在长沙游玩1天，总预算1000元，必须参观长沙青禾6号工艺展馆和长沙望江6号古建园。要核实两项必去活动的开放时间；过期页面不能作为依据，其他候选可选。请安排可行行程，并预留午晚餐时段；本次不要求指定餐厅或预订。",
+    "slots": {
+      "destination": "长沙",
+      "travel_days": 1,
+      "start_date": "2026-10-23",
+      "end_date": "2026-10-23",
+      "budget_range": 1000,
+      "must_visit": [
+        "长沙青禾6号工艺展馆",
+        "长沙望江6号古建园"
+      ],
+      "interests": [
+        "工艺",
+        "古建"
+      ],
+      "information_needs": [
+        "opening_hours"
+      ],
+      "current_info_queries": [
+        "长沙青禾6号工艺展馆 2026-10-23 开放时间",
+        "长沙望江6号古建园 2026-10-23 开放时间"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "pilot-06-03-p0",
+        "name": "长沙青禾6号工艺展馆",
+        "category": "attraction",
+        "lat": 28.22,
+        "lng": 112.94,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "工艺"
+        ],
+        "score": 0.95,
+        "source_url": "https://pilot.example.invalid/pilot-06-03/p0",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-06-03-p1",
+        "name": "长沙望江6号古建园",
+        "category": "attraction",
+        "lat": 28.221999999999998,
+        "lng": 112.942,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "古建"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://pilot.example.invalid/pilot-06-03/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-06-03-p2",
+        "name": "长沙拾光6号摄影馆",
+        "category": "attraction",
+        "lat": 28.224,
+        "lng": 112.944,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "摄影"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://pilot.example.invalid/pilot-06-03/p2",
+        "fixture_record": true,
+        "closed_dates": [
+          "2026-10-23"
+        ]
+      },
+      {
+        "id": "pilot-06-03-p3",
+        "name": "长沙映水6号步道",
+        "category": "attraction",
+        "lat": 28.226,
+        "lng": 112.946,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://pilot.example.invalid/pilot-06-03/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "plan",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-training-pilot24.v1",
+    "split": "train",
+    "scene_template": "stale_hours_and_optional_closed",
+    "source_group": "pilot-composition-6",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": [
+      {
+        "id": "pilot-06-03-r0",
+        "name": "长沙青禾6号家常菜馆",
+        "category": "restaurant",
+        "lat": 28.221,
+        "lng": 112.941,
+        "ticket_price": 0,
+        "average_cost": 55,
+        "open_time": "10:30",
+        "close_time": "21:00",
+        "address": "长沙示例街21号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "家常菜"
+        ],
+        "source_url": "https://pilot.example.invalid/pilot-06-03/r0",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-06-03-r1",
+        "name": "长沙青禾6号素食餐厅",
+        "category": "restaurant",
+        "lat": 28.221999999999998,
+        "lng": 112.942,
+        "ticket_price": 0,
+        "average_cost": 45,
+        "open_time": "11:00",
+        "close_time": "20:30",
+        "address": "长沙示例街22号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "素食"
+        ],
+        "source_url": "https://pilot.example.invalid/pilot-06-03/r1",
+        "fixture_record": true
+      }
+    ]
+  },
+  {
+    "id": "pilot-06-04",
+    "family": "evidence",
+    "variant": 3,
+    "request": "2026-10-24开始在西安游玩1天，总预算1000元，必须参观西安青禾6号工艺展馆和西安望江6号古建园。要核实两项必去活动的开放时间；过期页面不能作为依据，其他候选可选。请安排可行行程，并预留午晚餐时段；本次不要求指定餐厅或预订。",
+    "slots": {
+      "destination": "西安",
+      "travel_days": 1,
+      "start_date": "2026-10-24",
+      "end_date": "2026-10-24",
+      "budget_range": 1000,
+      "must_visit": [
+        "西安青禾6号工艺展馆",
+        "西安望江6号古建园"
+      ],
+      "interests": [
+        "工艺",
+        "古建"
+      ],
+      "information_needs": [
+        "opening_hours"
+      ],
+      "current_info_queries": [
+        "西安青禾6号工艺展馆 2026-10-24 开放时间",
+        "西安望江6号古建园 2026-10-24 开放时间"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "pilot-06-04-p0",
+        "name": "西安青禾6号工艺展馆",
+        "category": "attraction",
+        "lat": 34.27,
+        "lng": 108.95,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "工艺"
+        ],
+        "score": 0.95,
+        "source_url": "https://pilot.example.invalid/pilot-06-04/p0",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-06-04-p1",
+        "name": "西安望江6号古建园",
+        "category": "attraction",
+        "lat": 34.272000000000006,
+        "lng": 108.952,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "古建"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://pilot.example.invalid/pilot-06-04/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-06-04-p2",
+        "name": "西安拾光6号摄影馆",
+        "category": "attraction",
+        "lat": 34.274,
+        "lng": 108.95400000000001,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "摄影"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://pilot.example.invalid/pilot-06-04/p2",
+        "fixture_record": true,
+        "closed_dates": [
+          "2026-10-24"
+        ]
+      },
+      {
+        "id": "pilot-06-04-p3",
+        "name": "西安映水6号步道",
+        "category": "attraction",
+        "lat": 34.276,
+        "lng": 108.956,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://pilot.example.invalid/pilot-06-04/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "plan",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-training-pilot24.v1",
+    "split": "train",
+    "scene_template": "stale_hours_and_optional_closed",
+    "source_group": "pilot-composition-6",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": [
+      {
+        "id": "pilot-06-04-r0",
+        "name": "西安青禾6号家常菜馆",
+        "category": "restaurant",
+        "lat": 34.271,
+        "lng": 108.95100000000001,
+        "ticket_price": 0,
+        "average_cost": 55,
+        "open_time": "10:30",
+        "close_time": "21:00",
+        "address": "西安示例街21号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "家常菜"
+        ],
+        "source_url": "https://pilot.example.invalid/pilot-06-04/r0",
+        "fixture_record": true
+      },
+      {
+        "id": "pilot-06-04-r1",
+        "name": "西安青禾6号素食餐厅",
+        "category": "restaurant",
+        "lat": 34.272000000000006,
+        "lng": 108.952,
+        "ticket_price": 0,
+        "average_cost": 45,
+        "open_time": "11:00",
+        "close_time": "20:30",
+        "address": "西安示例街22号",
+        "tags": [
+          "餐厅",
+          "美食",
+          "素食"
+        ],
+        "source_url": "https://pilot.example.invalid/pilot-06-04/r1",
+        "fixture_record": true
+      }
+    ]
+  }
+]

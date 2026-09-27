@@ -14,10 +14,12 @@ from scripts.evaluate_tradeoff_grounding_sft import (
     _checkpoint_adapter_sha256,
     _full_success,
     _load_selected_corpora,
+    _reason_assembly_exact,
     _runtime_versions,
     _sha256,
     _shadow_claim_preflight,
     _validate_corpus,
+    evaluation_code_snapshot,
 )
 
 
@@ -32,8 +34,27 @@ def test_checkpoint_adapter_sha256_supports_base_and_adapter_checkpoints(tmp_pat
 
 
 def test_partial_positive_reward_is_not_a_full_success():
-    assert not _full_success(
-        {"reward": 0.714286, "checks": {"decision_step_valid": False}}
+    assert not _full_success({"reward": 0.714286, "checks": {"decision_step_valid": False}})
+
+
+def test_reason_assembly_audit_compares_raw_and_authorized_payloads():
+    raw = {"reason": "第1天两个活动重叠45分钟"}
+    assembled = {
+        "reason": (
+            "该问题仍可在现有约束内修复，应先调整顺序并进行一次有界重算：第1天两个活动重叠45分钟。"
+        ),
+        "strategy": "greedy",
+    }
+
+    assert _reason_assembly_exact(
+        observed_action="retry_solve",
+        observed_arguments=assembled,
+        model_raw_arguments=raw,
+    )
+    assert not _reason_assembly_exact(
+        observed_action="retry_solve",
+        observed_arguments={**assembled, "reason": "被评测脚本篡改"},
+        model_raw_arguments=raw,
     )
     assert _full_success(
         {
@@ -98,9 +119,7 @@ def test_internal_corpus_accepts_source_balanced_six_tradeoff_profile(monkeypatc
             for copy_index in range(count):
                 rows.append(
                     SimpleNamespace(
-                        task=SimpleNamespace(
-                            task_id=f"task-{source_index}-{target}-{copy_index}"
-                        ),
+                        task=SimpleNamespace(task_id=f"task-{source_index}-{target}-{copy_index}"),
                         contract={
                             "source_task_id": f"source-{source_index}",
                             "target_action": target,
@@ -165,6 +184,7 @@ def test_shadow_lock_rejects_adapter_sha_mismatch(tmp_path):
             "chat_template_sha256": AGENT_CHAT_TEMPLATE_SHA256,
             "chat_template_kwargs": dict(AGENT_CHAT_TEMPLATE_KWARGS),
             "route_schema_sha256": route_hashes,
+            "evaluation_code_snapshot": evaluation_code_snapshot(),
             "runtime_versions": _runtime_versions(),
         },
         "shadow_claim_file": str(tmp_path / "shadow_eval.claim.json"),

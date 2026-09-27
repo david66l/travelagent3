@@ -1,0 +1,850 @@
+[
+  {
+    "id": "test-01-01",
+    "family": "holdout",
+    "variant": 0,
+    "request": "2026-12-06在武汉玩一天，总预算1000元，必须去武汉澄明1号科技馆和武汉竹影1号植物园。必须买票进入场馆，不能取消任何一个，日期和预算不能改变。 请预留午晚餐时段，本次不要求指定餐厅。",
+    "slots": {
+      "destination": "武汉",
+      "travel_days": 1,
+      "start_date": "2026-12-06",
+      "end_date": "2026-12-06",
+      "budget_range": 1000,
+      "must_visit": [
+        "武汉澄明1号科技馆",
+        "武汉竹影1号植物园"
+      ],
+      "interests": [
+        "科技",
+        "植物"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "test-01-01-p0",
+        "name": "武汉澄明1号科技馆",
+        "category": "attraction",
+        "lat": 30.59,
+        "lng": 114.3,
+        "ticket_price": 600,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "科技"
+        ],
+        "score": 0.95,
+        "source_url": "https://holdout.example.invalid/test-01-01/p0",
+        "fixture_record": true,
+        "closed_dates": [
+          "2026-12-06"
+        ]
+      },
+      {
+        "id": "test-01-01-p1",
+        "name": "武汉竹影1号植物园",
+        "category": "attraction",
+        "lat": 30.592,
+        "lng": 114.30199999999999,
+        "ticket_price": 600,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "植物"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://holdout.example.invalid/test-01-01/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "test-01-01-p2",
+        "name": "武汉星河1号美术馆",
+        "category": "attraction",
+        "lat": 30.594,
+        "lng": 114.304,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "美术"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://holdout.example.invalid/test-01-01/p2",
+        "fixture_record": true
+      },
+      {
+        "id": "test-01-01-p3",
+        "name": "武汉临风1号广场",
+        "category": "attraction",
+        "lat": 30.596,
+        "lng": 114.306,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://holdout.example.invalid/test-01-01/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "grounded_stop",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-holdout16.v1",
+    "split": "test",
+    "scene_template": "closure_and_ticket_conflict",
+    "source_group": "test-composition-1",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": []
+  },
+  {
+    "id": "test-01-02",
+    "family": "holdout",
+    "variant": 0,
+    "request": "2026-12-07在青岛玩一天，总预算1000元，必须去青岛澄明1号科技馆和青岛竹影1号植物园。必须买票进入场馆，不能取消任何一个，日期和预算不能改变。 请预留午晚餐时段，本次不要求指定餐厅。",
+    "slots": {
+      "destination": "青岛",
+      "travel_days": 1,
+      "start_date": "2026-12-07",
+      "end_date": "2026-12-07",
+      "budget_range": 1000,
+      "must_visit": [
+        "青岛澄明1号科技馆",
+        "青岛竹影1号植物园"
+      ],
+      "interests": [
+        "科技",
+        "植物"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "test-01-02-p0",
+        "name": "青岛澄明1号科技馆",
+        "category": "attraction",
+        "lat": 36.07,
+        "lng": 120.38,
+        "ticket_price": 600,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "科技"
+        ],
+        "score": 0.95,
+        "source_url": "https://holdout.example.invalid/test-01-02/p0",
+        "fixture_record": true,
+        "closed_dates": [
+          "2026-12-07"
+        ]
+      },
+      {
+        "id": "test-01-02-p1",
+        "name": "青岛竹影1号植物园",
+        "category": "attraction",
+        "lat": 36.072,
+        "lng": 120.38199999999999,
+        "ticket_price": 600,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "植物"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://holdout.example.invalid/test-01-02/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "test-01-02-p2",
+        "name": "青岛星河1号美术馆",
+        "category": "attraction",
+        "lat": 36.074,
+        "lng": 120.384,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "美术"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://holdout.example.invalid/test-01-02/p2",
+        "fixture_record": true
+      },
+      {
+        "id": "test-01-02-p3",
+        "name": "青岛临风1号广场",
+        "category": "attraction",
+        "lat": 36.076,
+        "lng": 120.386,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://holdout.example.invalid/test-01-02/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "grounded_stop",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-holdout16.v1",
+    "split": "test",
+    "scene_template": "closure_and_ticket_conflict",
+    "source_group": "test-composition-1",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": []
+  },
+  {
+    "id": "test-02-01",
+    "family": "recovery",
+    "variant": 2,
+    "request": "2026-12-10在武汉玩一天，总预算1000元，必须去武汉澄明2号科技馆和武汉竹影2号植物园。如果武汉星河2号美术馆当天开放，也可以顺路去。 请预留午晚餐时段，本次不要求指定餐厅。",
+    "slots": {
+      "destination": "武汉",
+      "travel_days": 1,
+      "start_date": "2026-12-10",
+      "end_date": "2026-12-10",
+      "budget_range": 1000,
+      "must_visit": [
+        "武汉澄明2号科技馆",
+        "武汉竹影2号植物园"
+      ],
+      "interests": [
+        "科技",
+        "植物"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "test-02-01-p0",
+        "name": "武汉澄明2号科技馆",
+        "category": "attraction",
+        "lat": 30.59,
+        "lng": 114.3,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "科技"
+        ],
+        "score": 0.95,
+        "source_url": "https://holdout.example.invalid/test-02-01/p0",
+        "fixture_record": true
+      },
+      {
+        "id": "test-02-01-p1",
+        "name": "武汉竹影2号植物园",
+        "category": "attraction",
+        "lat": 30.592,
+        "lng": 114.30199999999999,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "植物"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://holdout.example.invalid/test-02-01/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "test-02-01-p2",
+        "name": "武汉星河2号美术馆",
+        "category": "attraction",
+        "lat": 30.594,
+        "lng": 114.304,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "美术"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://holdout.example.invalid/test-02-01/p2",
+        "fixture_record": true,
+        "closed_dates": [
+          "2026-12-10"
+        ]
+      },
+      {
+        "id": "test-02-01-p3",
+        "name": "武汉临风2号广场",
+        "category": "attraction",
+        "lat": 30.596,
+        "lng": 114.306,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://holdout.example.invalid/test-02-01/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "plan",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-holdout16.v1",
+    "split": "test",
+    "scene_template": "optional_closed_plus_matrix_fault",
+    "source_group": "test-composition-2",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": []
+  },
+  {
+    "id": "test-02-02",
+    "family": "recovery",
+    "variant": 2,
+    "request": "2026-12-11在青岛玩一天，总预算1000元，必须去青岛澄明2号科技馆和青岛竹影2号植物园。如果青岛星河2号美术馆当天开放，也可以顺路去。 请预留午晚餐时段，本次不要求指定餐厅。",
+    "slots": {
+      "destination": "青岛",
+      "travel_days": 1,
+      "start_date": "2026-12-11",
+      "end_date": "2026-12-11",
+      "budget_range": 1000,
+      "must_visit": [
+        "青岛澄明2号科技馆",
+        "青岛竹影2号植物园"
+      ],
+      "interests": [
+        "科技",
+        "植物"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "test-02-02-p0",
+        "name": "青岛澄明2号科技馆",
+        "category": "attraction",
+        "lat": 36.07,
+        "lng": 120.38,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "科技"
+        ],
+        "score": 0.95,
+        "source_url": "https://holdout.example.invalid/test-02-02/p0",
+        "fixture_record": true
+      },
+      {
+        "id": "test-02-02-p1",
+        "name": "青岛竹影2号植物园",
+        "category": "attraction",
+        "lat": 36.072,
+        "lng": 120.38199999999999,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "植物"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://holdout.example.invalid/test-02-02/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "test-02-02-p2",
+        "name": "青岛星河2号美术馆",
+        "category": "attraction",
+        "lat": 36.074,
+        "lng": 120.384,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "美术"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://holdout.example.invalid/test-02-02/p2",
+        "fixture_record": true,
+        "closed_dates": [
+          "2026-12-11"
+        ]
+      },
+      {
+        "id": "test-02-02-p3",
+        "name": "青岛临风2号广场",
+        "category": "attraction",
+        "lat": 36.076,
+        "lng": 120.386,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://holdout.example.invalid/test-02-02/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "plan",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-holdout16.v1",
+    "split": "test",
+    "scene_template": "optional_closed_plus_matrix_fault",
+    "source_group": "test-composition-2",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": []
+  },
+  {
+    "id": "test-03-01",
+    "family": "holdout",
+    "variant": 0,
+    "request": "2026-12-14开始在武汉旅行，预算1000元，想去武汉澄明3号科技馆和武汉竹影3号植物园，待几天还没决定。 请预留午晚餐时段，本次不要求指定餐厅。",
+    "slots": {
+      "destination": "武汉",
+      "start_date": "2026-12-14",
+      "budget_range": 1000,
+      "must_visit": [
+        "武汉澄明3号科技馆",
+        "武汉竹影3号植物园"
+      ],
+      "interests": [
+        "科技",
+        "植物"
+      ]
+    },
+    "missing_slots": [
+      "travel_days"
+    ],
+    "missing_field": "travel_days",
+    "pois": [
+      {
+        "id": "test-03-01-p0",
+        "name": "武汉澄明3号科技馆",
+        "category": "attraction",
+        "lat": 30.59,
+        "lng": 114.3,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "科技"
+        ],
+        "score": 0.95,
+        "source_url": "https://holdout.example.invalid/test-03-01/p0",
+        "fixture_record": true
+      },
+      {
+        "id": "test-03-01-p1",
+        "name": "武汉竹影3号植物园",
+        "category": "attraction",
+        "lat": 30.592,
+        "lng": 114.30199999999999,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "植物"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://holdout.example.invalid/test-03-01/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "test-03-01-p2",
+        "name": "武汉星河3号美术馆",
+        "category": "attraction",
+        "lat": 30.594,
+        "lng": 114.304,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "美术"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://holdout.example.invalid/test-03-01/p2",
+        "fixture_record": true
+      },
+      {
+        "id": "test-03-01-p3",
+        "name": "武汉临风3号广场",
+        "category": "attraction",
+        "lat": 30.596,
+        "lng": 114.306,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://holdout.example.invalid/test-03-01/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "clarify",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-holdout16.v1",
+    "split": "test",
+    "scene_template": "missing_duration_with_named_venues",
+    "source_group": "test-composition-3",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": []
+  },
+  {
+    "id": "test-03-02",
+    "family": "holdout",
+    "variant": 0,
+    "request": "2026-12-15开始在青岛旅行，预算1000元，想去青岛澄明3号科技馆和青岛竹影3号植物园，待几天还没决定。 请预留午晚餐时段，本次不要求指定餐厅。",
+    "slots": {
+      "destination": "青岛",
+      "start_date": "2026-12-15",
+      "budget_range": 1000,
+      "must_visit": [
+        "青岛澄明3号科技馆",
+        "青岛竹影3号植物园"
+      ],
+      "interests": [
+        "科技",
+        "植物"
+      ]
+    },
+    "missing_slots": [
+      "travel_days"
+    ],
+    "missing_field": "travel_days",
+    "pois": [
+      {
+        "id": "test-03-02-p0",
+        "name": "青岛澄明3号科技馆",
+        "category": "attraction",
+        "lat": 36.07,
+        "lng": 120.38,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "科技"
+        ],
+        "score": 0.95,
+        "source_url": "https://holdout.example.invalid/test-03-02/p0",
+        "fixture_record": true
+      },
+      {
+        "id": "test-03-02-p1",
+        "name": "青岛竹影3号植物园",
+        "category": "attraction",
+        "lat": 36.072,
+        "lng": 120.38199999999999,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "植物"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://holdout.example.invalid/test-03-02/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "test-03-02-p2",
+        "name": "青岛星河3号美术馆",
+        "category": "attraction",
+        "lat": 36.074,
+        "lng": 120.384,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "美术"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://holdout.example.invalid/test-03-02/p2",
+        "fixture_record": true
+      },
+      {
+        "id": "test-03-02-p3",
+        "name": "青岛临风3号广场",
+        "category": "attraction",
+        "lat": 36.076,
+        "lng": 120.386,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://holdout.example.invalid/test-03-02/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "clarify",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-holdout16.v1",
+    "split": "test",
+    "scene_template": "missing_duration_with_named_venues",
+    "source_group": "test-composition-3",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": []
+  },
+  {
+    "id": "test-04-01",
+    "family": "evidence",
+    "variant": 0,
+    "request": "2026-12-18在武汉玩一天，预算1000元，必须去武汉澄明4号科技馆、武汉竹影4号植物园、武汉星河4号美术馆。请核实三个地方的当天开放时间和天气，需要能确认有效的资料。 请预留午晚餐时段，本次不要求指定餐厅。",
+    "slots": {
+      "destination": "武汉",
+      "travel_days": 1,
+      "start_date": "2026-12-18",
+      "end_date": "2026-12-18",
+      "budget_range": 1000,
+      "must_visit": [
+        "武汉澄明4号科技馆",
+        "武汉竹影4号植物园",
+        "武汉星河4号美术馆"
+      ],
+      "interests": [
+        "科技",
+        "植物"
+      ],
+      "information_needs": [
+        "opening_hours",
+        "weather"
+      ],
+      "current_info_queries": [
+        "武汉澄明4号科技馆 2026-12-18 开放时间",
+        "武汉竹影4号植物园 2026-12-18 开放时间",
+        "武汉星河4号美术馆 2026-12-18 开放时间"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "test-04-01-p0",
+        "name": "武汉澄明4号科技馆",
+        "category": "attraction",
+        "lat": 30.59,
+        "lng": 114.3,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "科技"
+        ],
+        "score": 0.95,
+        "source_url": "https://holdout.example.invalid/test-04-01/p0",
+        "fixture_record": true
+      },
+      {
+        "id": "test-04-01-p1",
+        "name": "武汉竹影4号植物园",
+        "category": "attraction",
+        "lat": 30.592,
+        "lng": 114.30199999999999,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "植物"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://holdout.example.invalid/test-04-01/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "test-04-01-p2",
+        "name": "武汉星河4号美术馆",
+        "category": "attraction",
+        "lat": 30.594,
+        "lng": 114.304,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "美术"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://holdout.example.invalid/test-04-01/p2",
+        "fixture_record": true
+      },
+      {
+        "id": "test-04-01-p3",
+        "name": "武汉临风4号广场",
+        "category": "attraction",
+        "lat": 30.596,
+        "lng": 114.306,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://holdout.example.invalid/test-04-01/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "plan",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-holdout16.v1",
+    "split": "test",
+    "scene_template": "three_hours_stale_plus_weather",
+    "source_group": "test-composition-4",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": []
+  },
+  {
+    "id": "test-04-02",
+    "family": "evidence",
+    "variant": 0,
+    "request": "2026-12-19在青岛玩一天，预算1000元，必须去青岛澄明4号科技馆、青岛竹影4号植物园、青岛星河4号美术馆。请核实三个地方的当天开放时间和天气，需要能确认有效的资料。 请预留午晚餐时段，本次不要求指定餐厅。",
+    "slots": {
+      "destination": "青岛",
+      "travel_days": 1,
+      "start_date": "2026-12-19",
+      "end_date": "2026-12-19",
+      "budget_range": 1000,
+      "must_visit": [
+        "青岛澄明4号科技馆",
+        "青岛竹影4号植物园",
+        "青岛星河4号美术馆"
+      ],
+      "interests": [
+        "科技",
+        "植物"
+      ],
+      "information_needs": [
+        "opening_hours",
+        "weather"
+      ],
+      "current_info_queries": [
+        "青岛澄明4号科技馆 2026-12-19 开放时间",
+        "青岛竹影4号植物园 2026-12-19 开放时间",
+        "青岛星河4号美术馆 2026-12-19 开放时间"
+      ]
+    },
+    "missing_slots": [],
+    "missing_field": null,
+    "pois": [
+      {
+        "id": "test-04-02-p0",
+        "name": "青岛澄明4号科技馆",
+        "category": "attraction",
+        "lat": 36.07,
+        "lng": 120.38,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "科技"
+        ],
+        "score": 0.95,
+        "source_url": "https://holdout.example.invalid/test-04-02/p0",
+        "fixture_record": true
+      },
+      {
+        "id": "test-04-02-p1",
+        "name": "青岛竹影4号植物园",
+        "category": "attraction",
+        "lat": 36.072,
+        "lng": 120.38199999999999,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "植物"
+        ],
+        "score": 0.9199999999999999,
+        "source_url": "https://holdout.example.invalid/test-04-02/p1",
+        "fixture_record": true
+      },
+      {
+        "id": "test-04-02-p2",
+        "name": "青岛星河4号美术馆",
+        "category": "attraction",
+        "lat": 36.074,
+        "lng": 120.384,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "美术"
+        ],
+        "score": 0.8899999999999999,
+        "source_url": "https://holdout.example.invalid/test-04-02/p2",
+        "fixture_record": true
+      },
+      {
+        "id": "test-04-02-p3",
+        "name": "青岛临风4号广场",
+        "category": "attraction",
+        "lat": 36.076,
+        "lng": 120.386,
+        "ticket_price": 40,
+        "open_time": "09:00",
+        "close_time": "20:00",
+        "duration_minutes": 75,
+        "tags": [
+          "散步"
+        ],
+        "score": 0.86,
+        "source_url": "https://holdout.example.invalid/test-04-02/p3",
+        "fixture_record": true
+      }
+    ],
+    "expected": "plan",
+    "reference_time": "2026-09-05T00:00:00+00:00",
+    "dataset_version": "harness-holdout16.v1",
+    "split": "test",
+    "scene_template": "three_hours_stale_plus_weather",
+    "source_group": "test-composition-4",
+    "synthetic": true,
+    "training_targets_present": false,
+    "restaurants": []
+  }
+]

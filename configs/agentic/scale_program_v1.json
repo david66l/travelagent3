@@ -1,0 +1,85 @@
+{
+  "version": "scale-program.v1",
+  "status": "planned_not_executed",
+  "purpose": "auditable agent posttraining and cloud service acceptance",
+  "industry_standard_claim": false,
+  "execution": {
+    "compute_location": "cloud_only",
+    "local_allowed": ["lightweight_source_edits", "ssh", "small_reports"],
+    "new_instance_rental_started": false,
+    "large_paid_collection_started": false,
+    "teacher_model": "glm-5.3-flash",
+    "api_batch_budget_cny": 100,
+    "new_cloud_rental_budget_cny": null,
+    "budget_status": "api_limit_confirmed_compute_separate",
+    "large_paid_launch_requires_budget": true
+  },
+  "baseline": {
+    "harness_revision": "evidence-progress-retry-v9",
+    "student_model": "Qwen3-4B with first SFT adapter",
+    "cloud_root": "/root/autodl-tmp/harness-student-corrections-20260905",
+    "student_train": {"passed": 20, "total": 24, "source_groups": 6},
+    "correction_export": {"episodes": 12, "actions": 60, "supervised_tokens": 1346},
+    "dev": {"base_passed": 6, "sft_passed": 7, "total": 8},
+    "regression": {"scope": "agentic_and_evaluation", "passed": 644, "skipped": 2},
+    "production_v9_acceptance": "pending"
+  },
+  "targets": {
+    "train_tasks": {"min": 2000, "max": 5000},
+    "train_structural_groups_min": 40,
+    "action_observation_range": {"min": 20000, "max": 60000, "quota": false},
+    "correction_source_tasks": {"min": 500, "max": 1500},
+    "dev_tasks": 300,
+    "locked_test": {"total": 500, "in_distribution": 300, "unseen_compositions": 200},
+    "separate_stress_tasks": 200,
+    "live_tool_tasks": {"min": 100, "max": 200},
+    "main_training_seeds": 3,
+    "initial_human_audit_episodes_min": 100,
+    "cloud_soak_hours_min": 24
+  },
+  "coverage": [
+    {"id": "candidate_dependencies", "scope": "empty results, alias, candidate changes"},
+    {"id": "entity_evidence_freshness", "scope": "partial entity and date coverage"},
+    {"id": "source_conflicts", "scope": "contradictory sources and unresolved evidence"},
+    {"id": "temporal_transport", "scope": "cross-day arrival, event windows, cancellations"},
+    {"id": "budget_infeasibility", "scope": "cost lower bounds versus mere solver failure"},
+    {"id": "constraint_authorization", "scope": "must-visit versus preferences, explicit tradeoff consent"},
+    {"id": "multi_turn_user_changes", "scope": "scripted reply, revised dates/budget/requirements", "support_gate": "same_session_end_to_end"},
+    {"id": "artifact_invalidation", "scope": "goal, matrix, itinerary and validation versions"},
+    {"id": "tool_fault_recovery", "scope": "timeout, rate limits, empty and malformed results", "support_gate": "dynamic_fault_execution"},
+    {"id": "no_progress", "scope": "identical or semantic duplicates versus justified retries"},
+    {"id": "untrusted_tool_content", "scope": "prompt injection, forged approval, session isolation"},
+    {"id": "session_lifecycle", "scope": "pause, resume, cancel, replay, restart, confirmation", "support_gate": "cloud_service_end_to_end"}
+  ],
+  "stages": [
+    {"id": "M0", "status": "pending", "trial_tasks": 96, "gate": "executable_coverage_lineage_and_measured_cost"},
+    {"id": "M1", "status": "pending", "train_tasks": 500, "dev_tasks": 300, "gate": "verified_episodes_human_sampling_and_split_isolation"},
+    {"id": "M2", "status": "pending", "learning_curve_train_tasks": [500, 2000, 5000], "gate": "matched_budget_sft_correction_comparison_and_seed_reproduction"},
+    {"id": "M3", "status": "pending", "rollouts_per_task": [4, 8], "gate": "group_variance_reward_integrity_and_logprob_mask_audit"},
+    {"id": "M4", "status": "pending", "gate": "preregistered_test_live_tools_cloud_capacity_soak_and_rollback"}
+  ],
+  "data_rules": [
+    "city_name_or_paraphrase_changes_do_not_create_new_structural_groups",
+    "partition_source_lineage_and_snapshot_groups_before_generation",
+    "never_use_dev_test_or_their_derivatives_as_training_targets",
+    "legacy_eight_case_sets_remain_separate",
+    "only_verified_model_actions_are_supervised",
+    "teacher_prefix_recovery_is_not_from_start_student_success",
+    "same_state_required_for_preference_pairs",
+    "preserve_failed_attempts_and_include_retry_costs",
+    "human_review_requires_recorded_human_reviewer"
+  ],
+  "required_experiment_records": [
+    "run_id", "code_data_model_template_hashes", "environment_and_judge_versions",
+    "training_and_inference_seeds", "actual_supervised_tokens", "optimizer_steps",
+    "decoding_and_budgets", "source_lineage", "raw_failures", "costs_including_retries",
+    "per_task_outcomes", "replay_command", "checkpoint_resume_evidence"
+  ],
+  "service_acceptance": {
+    "initial_concurrency_probe": [1, 2, 4, 8],
+    "capacity_claim": "measured_only",
+    "slo_status": "freeze_after_initial_capacity_measurement",
+    "separate_metrics": ["http_admission", "queue_wait", "model_generation", "complete_agent_task"],
+    "fault_drills": ["worker_restart", "queue_redelivery", "sse_reconnect", "cancel", "timeout", "model_rollback"]
+  }
+}

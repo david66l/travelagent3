@@ -7,6 +7,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from agentic.reason_quality import assemble_repair_reason
+
 
 class _PolicyArguments(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -43,21 +45,25 @@ class AskUserArguments(_PolicyArguments):
 
 
 class AbortArguments(_PolicyArguments):
-    reason: str = Field(min_length=1, description="Grounded reason the task cannot continue safely")
-
-
-class ProposeTradeoffArguments(_PolicyArguments):
+    evidence_ids: list[str] | None = Field(default=None, min_length=1, max_length=8,
+        description="When capability.evidence_ids is nonempty, cite the current evidence IDs supporting this stop. Describe those facts faithfully in reason.")
     reason: str = Field(
         min_length=1,
         description=(
-            "Concise user-facing constraint conflict in the user's language; never expose "
-            "internal tools, verifier codes, artifacts, policies, or state fields"
+            "Grounded user-visible evidence detail; the system adds the fixed stop rationale"
         ),
     )
-    options: list[str] = Field(
-        default_factory=list,
-        max_length=3,
-        description="Up to three concise, grounded, user-facing alternatives",
+
+
+class ProposeTradeoffArguments(_PolicyArguments):
+    evidence_ids: list[str] | None = Field(default=None, min_length=1, max_length=8,
+        description="When capability.evidence_ids is nonempty, cite the current evidence IDs supporting this conflict.")
+    reason: str = Field(
+        min_length=1,
+        description=(
+            "Concise grounded conflict detail in the user's language; the system adds the "
+            "fixed tradeoff rationale; never expose internal implementation details"
+        ),
     )
 
 
@@ -87,29 +93,19 @@ class TransportSearchPolicyArguments(_PolicyArguments):
 
 
 class SolvePolicyArguments(_PolicyArguments):
-    strategy: Literal["auto", "cpsat", "greedy"] = "auto"
-
-
-class RetrySolveArguments(_PolicyArguments):
-    reason: str = Field(min_length=1, description="Verifier-grounded reason for retrying")
+    strategy: Literal["auto", "cpsat", "greedy"] = "cpsat"
 
 
 POLICY_ACTION_MODELS: dict[str, type[BaseModel]] = {
     "abort": AbortArguments,
-    "accept_candidates": EmptyArguments,
-    "accept_itinerary": EmptyArguments,
     "ask_user": AskUserArguments,
-    "capability_check": EmptyArguments,
-    "compose_draft": EmptyArguments,
     "finish": EmptyArguments,
     "propose_tradeoff": ProposeTradeoffArguments,
-    "retry_solve": RetrySolveArguments,
     "get_weather": WeatherPolicyArguments,
     "search_pois": SearchPOIsPolicyArguments,
     "retrieve_city_knowledge": CityKnowledgePolicyArguments,
     "search_current_info": CurrentInfoPolicyArguments,
     "search_transport": TransportSearchPolicyArguments,
-    "finalize_research": EmptyArguments,
     "get_poi_detail": EmptyArguments,
     "get_route_matrix": EmptyArguments,
     "solve_itinerary": SolvePolicyArguments,
@@ -149,42 +145,19 @@ _SCHEMA_ANNOTATION_KEYS = frozenset(
 # rejecting every other unknown business field.
 _CONTROLLER_OWNED_ARGUMENTS: dict[str, frozenset[str]] = {
     "get_poi_detail": frozenset({"candidate_poi_ids", "poi_ids", "poi_names", "city"}),
-    # A retry is authorized only after the controller has observed one failed
-    # primary solve.  The fallback solver is therefore an execution-policy
-    # decision, not a language-model choice.  Keeping it off the model surface
-    # prevents a model from claiming unsupported solver authority.
-    "retry_solve": frozenset({"strategy"}),
 }
 
 _DESCRIPTIONS = {
     "abort": "Stop safely when the task is unsupported, unsafe, or infeasible.",
-    "accept_candidates": (
-        "Accept the currently grounded POI candidates when they are sufficient to plan."
-    ),
-    "accept_itinerary": "Accept an itinerary only when the latest verifier report hard-passes.",
     "ask_user": "Ask for information or confirmation that only the user can provide.",
-    "capability_check": "Record the controller-computed capability assessment.",
-    "compose_draft": "Project a user-facing draft from the verified solver artifact.",
     "finish": "Present the verified draft and wait for confirmation.",
     "propose_tradeoff": "Offer grounded alternatives when constraints conflict.",
-    "retry_solve": (
-        "Request one bounded deterministic retry after verifier evidence; the controller "
-        "selects the safe fallback solver strategy."
-    ),
     "get_weather": "Read the trusted destination's weather snapshot.",
     "search_pois": "Search POIs in the trusted destination using grounded preferences.",
-    "retrieve_city_knowledge": (
-        "Read stable city and POI facts from the local knowledge base before using live search."
-    ),
-    "search_current_info": (
-        "Search source-backed current facts, including any kind of event, opening hours, "
-        "closures, restaurants, or seasonal activities."
-    ),
+    "retrieve_city_knowledge": "Retrieve stable city facts when useful for the current task.",
+    "search_current_info": "Search source-backed current facts, including any kind of event, opening hours, closures, restaurants, or seasonal activities.",
     "search_transport": "Search current flight or train schedule evidence for the grounded route.",
-    "finalize_research": (
-        "Propose that research is complete; the programmatic evidence verifier may reject it."
-    ),
-    "get_poi_detail": "Collect details for the controller-selected POI candidates.",
+    "get_poi_detail": "Collect details for the current grounded candidate set.",
     "get_route_matrix": "Build a matrix from trusted candidate and constraint artifacts.",
     "solve_itinerary": "Run deterministic constraint solving over trusted artifacts.",
     "validate_itinerary": "Run the programmatic hard-constraint validator.",
@@ -251,11 +224,11 @@ def policy_action_schemas_for_state(
     """Hide controller-owned tradeoff options from the model tool surface."""
     visible_actions = model_visible_policy_actions(actions, capability=capability)
     schemas = policy_action_schemas(visible_actions)
-    if "propose_tradeoff" not in visible_actions:
-        return schemas
     output = deepcopy(schemas)
     for schema in output:
         function = schema.get("function") or {}
+        if function.get("name") in {"abort", "propose_tradeoff"} and not capability.get("evidence_ids"):
+            function.get("parameters", {}).get("properties", {}).pop("evidence_ids", None)
         if function.get("name") != "propose_tradeoff":
             continue
         parameters = function.get("parameters") or {}
@@ -282,22 +255,9 @@ def project_model_owned_arguments(action: Any) -> dict[str, Any]:
     return strip_policy_schema_artifacts(name, arguments)
 
 
-def controller_retry_strategy() -> Literal["greedy"]:
-    """Return the single controller-authorized fallback after the primary CP-SAT solve.
-
-    Runtime authorization already limits this action to one retry after a
-    verifier-confirmed, solver-adjustable failure.  The executor forces the
-    primary solve to CP-SAT, so ``greedy`` is the deterministic, bounded
-    alternate path.  This deliberately has no model-visible inputs.
-    """
-    return "greedy"
-
-
 def controller_override_attempt(action: str, arguments: dict[str, Any]) -> bool:
-    """Whether a model tried to set a controller-owned decision field."""
-    return (action == "propose_tradeoff" and "options" in arguments) or (
-        action == "retry_solve" and "strategy" in arguments
-    )
+    """Whether a model attempted to replace protected tradeoff options."""
+    return action == "propose_tradeoff" and "options" in arguments
 
 
 def unauthorized_tradeoff_alternatives(
@@ -312,7 +272,9 @@ def unauthorized_tradeoff_alternatives(
     raw_options = contract.get("relaxation_options") if isinstance(contract, dict) else None
     if not isinstance(raw_options, dict):
         return []
-    normalized_reason = "".join(character.casefold() for character in reason if not character.isspace())
+    normalized_reason = "".join(
+        character.casefold() for character in reason if not character.isspace()
+    )
     violations: list[str] = []
     for values in raw_options.values():
         if not isinstance(values, list):
@@ -342,10 +304,6 @@ def validate_policy_arguments_for_state(
     capability: dict[str, Any],
 ) -> dict[str, Any]:
     """Validate only model-owned fields under the current controller authority."""
-    if action == "retry_solve":
-        model_arguments = dict(arguments)
-        model_arguments.pop("strategy", None)
-        return validate_policy_arguments(action, model_arguments)
     if action != "propose_tradeoff":
         return validate_policy_arguments(action, arguments)
     options = controller_tradeoff_options(capability)
@@ -363,9 +321,9 @@ def validate_policy_arguments_for_state(
 
 
 def authorize_policy_action(context: Any, action: Any) -> Any:
-    """Apply controller-owned argument authority at the central Agent Loop boundary."""
+    """Apply trusted argument authority and reason rendering at the Agent Loop boundary."""
     action_name = str(action.action)
-    if action_name not in {"propose_tradeoff", "retry_solve"}:
+    if action_name not in {"abort", "propose_tradeoff"}:
         # Other actions keep their existing validation/execution boundary.  In
         # particular, this helper must not widen a tradeoff-specific contract
         # migration into an unrelated Agent Loop behavior change.
@@ -378,6 +336,11 @@ def authorize_policy_action(context: Any, action: Any) -> Any:
         raw_arguments,
         capability=dict(context.capability),
     )
+    # Preserve the original model payload above, then render the user-facing
+    # reason through the one production implementation shared by serve/eval.
+    # The renderer is idempotent for legacy checkpoints that already emit an
+    # audited rationale prefix and fails closed on an explicit action conflict.
+    arguments["reason"] = assemble_repair_reason(arguments.get("reason"), action_name)
     if action_name == "propose_tradeoff":
         unauthorized = unauthorized_tradeoff_alternatives(
             str(arguments.get("reason") or ""),
@@ -392,19 +355,18 @@ def authorize_policy_action(context: Any, action: Any) -> Any:
         arguments["options"] = options
         hydrated_fields = ["options"]
     else:
-        arguments["strategy"] = controller_retry_strategy()
-        hydrated_fields = ["strategy"]
+        hydrated_fields = []
     override_attempt = controller_override_attempt(action_name, raw_arguments)
-    return action.model_copy(
-        update={
-            "arguments": arguments,
-            "model_arguments": raw_arguments,
-            "controller_override_attempt": override_attempt,
-            "model_contract_compliant": not override_attempt,
-            "controller_hydration_exact": True,
-            "controller_hydrated_fields": hydrated_fields,
-        }
-    )
+    update = {
+        "arguments": arguments,
+        "model_arguments": raw_arguments,
+        "controller_override_attempt": override_attempt,
+        "model_contract_compliant": not override_attempt,
+        "controller_hydrated_fields": hydrated_fields,
+    }
+    if action_name in {"propose_tradeoff"}:
+        update["controller_hydration_exact"] = True
+    return action.model_copy(update=update)
 
 
 def policy_tool_call_json_schema(
@@ -537,7 +499,6 @@ __all__ = [
     "project_model_owned_arguments",
     "authorize_policy_action",
     "controller_override_attempt",
-    "controller_retry_strategy",
     "controller_tradeoff_options",
     "strip_policy_schema_artifacts",
     "validate_policy_arguments",

@@ -12,7 +12,7 @@ def test_default_reference_clock_follows_the_wall_clock():
     now = reference_now()
     after = datetime.now(UTC)
     assert before <= now <= after
-    assert reference_today() == date.today()
+    assert reference_today() == datetime.now(UTC).date()
 
 
 def test_frozen_context_pins_now_and_today_and_restores():
@@ -55,5 +55,5 @@ def test_weather_window_uses_the_frozen_date_when_replaying():
     # Against today's wall clock the same trip may sit inside the window;
     # the live behaviour stays calendar-relative and unchanged.
     live = infer_research_requirements(goal)
-    delta_days = (date.fromisoformat(start_date) - date.today()).days
+    delta_days = (date.fromisoformat(start_date) - datetime.now(UTC).date()).days
     assert live.requires_weather is (0 <= delta_days <= 10)

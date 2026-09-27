@@ -55,7 +55,7 @@ def test_valid_itinerary_passes_and_emits_versioned_metrics() -> None:
     )
 
     assert report.hard_pass is True
-    assert report.validator_version == "travel-validator.v1"
+    assert report.validator_version == "travel-validator.v3-named-dining"
     assert report.metrics["total_cost"] == 50
     assert report.metrics["total_transit_minutes"] == 30
     assert report.soft_scores["preference_match"] == 0.5

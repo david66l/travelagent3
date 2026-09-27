@@ -94,6 +94,19 @@ class TestIntentResult:
         assert r.missing_required == ["destination"]
         assert r.clarification_questions == ["想去哪里？"]
 
+    def test_inference_metrics_are_runtime_only(self):
+        r = IntentResult(
+            intent="generate_itinerary",
+            confidence=0.9,
+            inference_metrics={
+                "model": "intent-model",
+                "backend": "cloud-openai-compatible",
+            },
+        )
+
+        assert r.inference_metrics["model"] == "intent-model"
+        assert "inference_metrics" not in r.model_dump(mode="json")
+
 
 class TestBudgetPanel:
     """Test BudgetPanel model."""

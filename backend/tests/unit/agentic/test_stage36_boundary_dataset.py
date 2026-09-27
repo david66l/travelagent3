@@ -1,6 +1,7 @@
 """Regression tests for the Stage36 boundary-SFT package."""
 
 from pathlib import Path
+import pytest
 
 from agentic.sft_dataset import DatasetManifest
 from scripts.build_stage36_boundary_sft import build
@@ -17,6 +18,10 @@ SOURCE_DIR = (
 )
 
 
+@pytest.mark.skipif(
+    not (SOURCE_DIR.parent / "manifest.json").exists(),
+    reason="Historical experiment assets are not installed",
+)
 def test_stage36_dataset_preserves_audited_isolation_and_split_counts(tmp_path):
     report = build(SOURCE_DIR, tmp_path)
     manifest = DatasetManifest.model_validate_json(

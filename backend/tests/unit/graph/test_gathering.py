@@ -9,7 +9,7 @@ from schemas import IntentResult
 
 
 @pytest.mark.asyncio
-async def test_gathering_turn_impl_clarify_when_profile_incomplete():
+async def test_gathering_preserves_missing_information_for_agent_decision():
     intent = IntentResult(
         intent="generate_itinerary",
         confidence=0.9,
@@ -30,14 +30,13 @@ async def test_gathering_turn_impl_clarify_when_profile_incomplete():
         return intent
 
     with patch("graph.gathering.process_user_turn", new=AsyncMock(side_effect=_turn)):
-        with patch("graph.gathering.is_profile_ready", return_value=False):
-            result = await gathering_turn_impl(
-                {"user_input": "5000", "_conversation_state": {"profile": {}}}
-            )
+        result = await gathering_turn_impl(
+            {"user_input": "5000", "_conversation_state": {"profile": {}}}
+        )
 
-    assert result["next_action"] == "clarify"
-    assert result["stage"] == "gathering"
-    assert result["conversation_sync"]["phase"] == "gathering"
+    assert result["next_action"] == "plan"
+    assert result["stage"] == "demand_parsed"
+    assert result["conversation_sync"]["phase"] == "planning"
     assert result["clarification_questions"] == ["您需要把这个信息告诉我：目的地。"]
 
 
@@ -54,14 +53,13 @@ async def test_gathering_turn_impl_plan_when_profile_ready():
     )
 
     with patch("graph.gathering.process_user_turn", new=AsyncMock(return_value=intent)):
-        with patch("graph.gathering.is_profile_ready", return_value=True):
-            result = await gathering_turn_impl(
-                {
-                    "user_input": "去成都4天",
-                    "profile": {},
-                    "_conversation_state": {"phase": "gathering"},
-                }
-            )
+        result = await gathering_turn_impl(
+            {
+                "user_input": "去成都4天",
+                "profile": {},
+                "_conversation_state": {"phase": "gathering"},
+            }
+        )
 
     assert result["next_action"] == "plan"
     assert result["stage"] == "demand_parsed"
@@ -82,13 +80,12 @@ async def test_gathering_turn_impl_skips_notice_when_already_planning():
     )
 
     with patch("graph.gathering.process_user_turn", new=AsyncMock(return_value=intent)):
-        with patch("graph.gathering.is_profile_ready", return_value=True):
-            result = await gathering_turn_impl(
-                {
-                    "user_input": "第三天换个景点",
-                    "_conversation_state": {"phase": "planning"},
-                }
-            )
+        result = await gathering_turn_impl(
+            {
+                "user_input": "第三天换个景点",
+                "_conversation_state": {"phase": "planning"},
+            }
+        )
 
     assert result["next_action"] == "plan"
     assert "intent_ready_message" not in result

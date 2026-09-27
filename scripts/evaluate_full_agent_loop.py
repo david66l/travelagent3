@@ -183,19 +183,57 @@ def _action_rows(episode: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
-def _agent_runtime_error(result: dict[str, Any]) -> str | None:
-    if result.get("agent_error") or result.get("error"):
-        return str(result.get("agent_error") or result.get("error"))
+def _agent_failure_diagnostic(result: dict[str, Any]) -> dict[str, Any] | None:
     events = list((result.get("agent_episode") or {}).get("events") or [])
-    return next(
+    terminal = next(
         (
-            str(event.get("payload", {}).get("error"))
+            dict(event.get("payload") or {})
             for event in reversed(events)
             if event.get("event_type") == "episode_terminated"
             and event.get("payload", {}).get("error")
         ),
-        None,
+        {},
     )
+    message = terminal.get("error") or result.get("agent_error") or result.get("error")
+    if not message:
+        return None
+    reason = str(terminal.get("reason") or result.get("termination_reason") or "unknown")
+    error_type = str(terminal.get("error_type") or "") or None
+    failure_class = terminal.get("failure_class")
+    if failure_class is None:
+        if reason == "policy_error_fallback" and (
+            error_type == "PolicyOutputError"
+            or str(message).startswith("PolicyOutputError:")
+        ):
+            failure_class = "model_policy_failure"
+        elif reason in {"budget_exhausted_fallback", "partial_finish"}:
+            failure_class = "agent_control_failure"
+        else:
+            failure_class = "runtime_error"
+    return {
+        "classification": str(failure_class),
+        "reason": reason,
+        "error_type": error_type,
+        "error_code": terminal.get("error_code"),
+        "error_detail_code": terminal.get("error_detail_code"),
+        "message": str(message)[:1000],
+        "policy_output_summary": terminal.get("policy_output_summary"),
+    }
+
+
+def _failure_channels(result: dict[str, Any]) -> dict[str, dict[str, Any] | None]:
+    diagnostic = _agent_failure_diagnostic(result)
+    classification = (diagnostic or {}).get("classification")
+    return {
+        "failure_diagnostic": diagnostic,
+        "model_policy_failure": (
+            diagnostic if classification == "model_policy_failure" else None
+        ),
+        "agent_control_failure": (
+            diagnostic if classification == "agent_control_failure" else None
+        ),
+        "runtime_error": diagnostic if classification == "runtime_error" else None,
+    }
 
 
 def _normalized_text(value: Any) -> str:
@@ -252,6 +290,49 @@ def _score_intent(case: FullAgentLoopCase, intent: Any) -> list[str]:
     )
 
 
+def _score_required_action_arguments(
+    case: FullAgentLoopCase,
+    actions: list[dict[str, Any]],
+) -> list[str]:
+    """Require at least one semantically correct call for each pinned action.
+
+    Merely calling a search tool is not enough: using the event route for a
+    restaurant query or the flight route for a train request is still a model
+    error, even when the provider happens to return some text.
+    """
+    failures: list[str] = []
+    for action_name, expected in case.required_action_arguments.items():
+        candidates = [
+            dict(item.get("arguments") or {})
+            for item in actions
+            if item.get("action") == action_name
+        ]
+        if not candidates:
+            continue
+        if not any(
+            all(
+                field in arguments
+                and _value_matches(arguments[field], expected_value)
+                for field, expected_value in expected.items()
+            )
+            for arguments in candidates
+        ):
+            failures.append(f"ACTION_ARGUMENT_MISMATCH:{action_name}")
+    return failures
+
+
+def _exact_policy_action_repeated(actions: list[dict[str, Any]]) -> bool:
+    exact = Counter(
+        (
+            item["action"],
+            json.dumps(item["arguments"], ensure_ascii=False, sort_keys=True),
+        )
+        for item in actions
+        if item["source"] == "policy"
+    )
+    return any(count > 1 for count in exact.values())
+
+
 def _score_draft(
     case: FullAgentLoopCase,
     result: dict[str, Any],
@@ -271,21 +352,14 @@ def _score_draft(
     for action in case.required_actions:
         if action not in action_names:
             failures.append(f"MISSING_ACTION:{action}")
+    failures.extend(_score_required_action_arguments(case, actions))
     artifact_types = {str(item.get("artifact_type")) for item in artifacts}
     for artifact in case.required_artifacts:
         if artifact not in artifact_types:
             failures.append(f"MISSING_ARTIFACT:{artifact}")
     if sum(item["source"] == "policy" for item in actions) < 2:
         failures.append("NOT_A_MULTI_TURN_POLICY_LOOP")
-    exact = Counter(
-        (
-            item["action"],
-            json.dumps(item["arguments"], ensure_ascii=False, sort_keys=True),
-        )
-        for item in actions
-        if item["source"] == "policy"
-    )
-    if any(count > 1 for count in exact.values()):
+    if _exact_policy_action_repeated(actions):
         failures.append("EXACT_POLICY_ACTION_REPEAT")
     return failures
 
@@ -297,8 +371,6 @@ def _score_safe_termination(
 ) -> list[str]:
     """Accept a grounded tradeoff when a live provider cannot satisfy hard gates."""
     failures: list[str] = []
-    if result.get("agent_status") != "awaiting_information":
-        failures.append(f"STATUS:{result.get('agent_status')}")
     if result.get("itinerary"):
         failures.append("UNVERIFIED_ITINERARY_EMITTED")
     ledger = result.get("agent_ledger") or {}
@@ -318,6 +390,21 @@ def _score_safe_termination(
     for action in case.safe_required_actions:
         if action not in action_names:
             failures.append(f"MISSING_SAFE_ACTION:{action}")
+    failures.extend(_score_required_action_arguments(case, actions))
+    terminal_actions = [
+        str(item["action"])
+        for item in actions
+        if str(item["action"]) in set(case.safe_terminal_actions)
+    ]
+    if not terminal_actions:
+        failures.append("MISSING_SAFE_TERMINAL_ACTION")
+    else:
+        terminal_action = terminal_actions[-1]
+        expected_status = (
+            "awaiting_information" if terminal_action == "propose_tradeoff" else "failed"
+        )
+        if result.get("agent_status") != expected_status:
+            failures.append(f"STATUS:{result.get('agent_status')}")
     recorded = ledger.get("failures") or []
     capability = (ledger.get("goal") or {}).get("capability") or {}
     capability_grounded = capability.get("status") in {"infeasible", "unsafe"} and bool(
@@ -335,6 +422,8 @@ def _score_safe_termination(
     minimum_policy_calls = 1 if capability_grounded else 2
     if sum(item["source"] == "policy" for item in actions) < minimum_policy_calls:
         failures.append("NOT_A_MULTI_TURN_POLICY_LOOP")
+    if _exact_policy_action_repeated(actions):
+        failures.append("EXACT_POLICY_ACTION_REPEAT")
     return failures
 
 
@@ -343,6 +432,7 @@ async def _evaluate_revision_result(
     *,
     intent: Any,
     intent_tokens: int,
+    intent_inference: dict[str, Any] | None,
     initial_result: dict[str, Any],
     initial_actions: list[dict[str, Any]],
     initial_artifacts: list[dict[str, Any]],
@@ -385,6 +475,8 @@ async def _evaluate_revision_result(
     second_episode = revised_result.get("agent_episode") or {}
     second_actions = _action_rows(second_episode)
     second_artifacts = _current_artifacts(second_ledger)
+    initial_channels = _failure_channels(initial_result)
+    revised_channels = _failure_channels(revised_result)
     failures.extend(
         f"REVISED:{code}"
         for code in _score_draft(case, revised_result, second_actions, second_artifacts)
@@ -442,6 +534,7 @@ async def _evaluate_revision_result(
         "passed": not failures,
         "failures": failures,
         "intent": intent.model_dump(mode="json"),
+        "intent_inference": intent_inference,
         "intent_tokens": intent_tokens,
         "revision_tokens": revision_tokens,
         "agent_tokens": first_agent_tokens + second_agent_tokens,
@@ -482,9 +575,21 @@ async def _evaluate_revision_result(
             "first_itinerary_days": len(initial_result.get("itinerary") or []),
             "second_itinerary_days": len(revised_result.get("itinerary") or []),
         },
+        "failure_diagnostics": {
+            "initial": initial_channels["failure_diagnostic"],
+            "revised": revised_channels["failure_diagnostic"],
+        },
+        "model_policy_failures": {
+            "initial": initial_channels["model_policy_failure"],
+            "revised": revised_channels["model_policy_failure"],
+        },
+        "agent_control_failures": {
+            "initial": initial_channels["agent_control_failure"],
+            "revised": revised_channels["agent_control_failure"],
+        },
         "runtime_errors": {
-            "initial": _agent_runtime_error(initial_result),
-            "revised": _agent_runtime_error(revised_result),
+            "initial": initial_channels["runtime_error"],
+            "revised": revised_channels["runtime_error"],
         },
         "error": None,
     }
@@ -502,8 +607,10 @@ async def evaluate_case(
     state = default_conversation_state()
     identity = f"travelagent-benchmark:{case.case_id}:{rollout_id or 'default'}"
     state["user_id"] = str(uuid5(NAMESPACE_URL, identity))
+    intent_inference: dict[str, Any] | None = None
     try:
         intent = await process_user_turn(state, case.user_input)
+        intent_inference = intent.inference_metrics
         intent_tokens = int(intent.token_usage or 0)
         intent_failures = _score_intent(case, intent)
         state["user_input"] = case.user_input
@@ -527,6 +634,7 @@ async def evaluate_case(
                 "passed": not failures,
                 "failures": failures,
                 "intent": intent.model_dump(mode="json"),
+                "intent_inference": intent_inference,
                 "intent_tokens": intent_tokens,
                 "agent_tokens": 0,
                 "total_tokens": intent_tokens,
@@ -534,6 +642,10 @@ async def evaluate_case(
                 "agent_status": "not_started_missing_information",
                 "solver_status": None,
                 "validation_hard_pass": None,
+                "failure_diagnostics": {"initial": None, "revised": None},
+                "model_policy_failures": {"initial": None, "revised": None},
+                "agent_control_failures": {"initial": None, "revised": None},
+                "runtime_errors": {"initial": None, "revised": None},
                 "actions": [],
                 "artifact_types": [],
                 "error": None,
@@ -556,11 +668,19 @@ async def evaluate_case(
         episode = result.get("agent_episode") or {}
         actions = _action_rows(episode)
         artifacts = _current_artifacts(ledger)
+        _collect_episode(
+            episode_collector,
+            case,
+            result,
+            rollout_id=effective_rollout_id,
+            phase="initial",
+        )
         if case.expected_outcome == "revision":
             return await _evaluate_revision_result(
                 case,
                 intent=intent,
                 intent_tokens=intent_tokens,
+                intent_inference=intent_inference,
                 initial_result=result,
                 initial_actions=actions,
                 initial_artifacts=artifacts,
@@ -571,13 +691,6 @@ async def evaluate_case(
                 episode_collector=episode_collector,
                 rollout_id=effective_rollout_id,
             )
-        _collect_episode(
-            episode_collector,
-            case,
-            result,
-            rollout_id=effective_rollout_id,
-            phase="initial",
-        )
         if (
             case.expected_outcome == "draft_or_safe_termination"
             and result.get("agent_status") != "awaiting_confirmation"
@@ -592,6 +705,7 @@ async def evaluate_case(
                 *_score_draft(case, result, actions, artifacts),
             ]
         agent_tokens = int((ledger.get("budget") or {}).get("used_tokens") or 0)
+        channels = _failure_channels(result)
         return {
             "case_id": case.case_id,
             "slice": case.slice,
@@ -599,13 +713,29 @@ async def evaluate_case(
             "passed": not failures,
             "failures": failures,
             "intent": intent.model_dump(mode="json"),
+            "intent_inference": intent_inference,
             "intent_tokens": intent_tokens,
             "agent_tokens": agent_tokens,
             "total_tokens": intent_tokens + agent_tokens,
             "latency_ms": round((time.perf_counter() - started) * 1000, 3),
             "agent_status": result.get("agent_status"),
             "termination_reason": result.get("termination_reason"),
-            "runtime_error": _agent_runtime_error(result),
+            "failure_diagnostics": {
+                "initial": channels["failure_diagnostic"],
+                "revised": None,
+            },
+            "model_policy_failures": {
+                "initial": channels["model_policy_failure"],
+                "revised": None,
+            },
+            "agent_control_failures": {
+                "initial": channels["agent_control_failure"],
+                "revised": None,
+            },
+            "runtime_errors": {
+                "initial": channels["runtime_error"],
+                "revised": None,
+            },
             "solver_status": result.get("solve_status"),
             "solver_metadata": next(
                 (
@@ -626,12 +756,22 @@ async def evaluate_case(
             "error": None,
         }
     except Exception as exc:
+        diagnostic = {
+            "classification": "runtime_error",
+            "reason": "evaluation_exception",
+            "error_type": type(exc).__name__,
+            "error_code": None,
+            "error_detail_code": None,
+            "message": str(exc)[:1000],
+            "policy_output_summary": None,
+        }
         return {
             "case_id": case.case_id,
             "slice": case.slice,
             "expected_outcome": case.expected_outcome,
             "passed": False,
             "failures": [f"EXCEPTION:{type(exc).__name__}"],
+            "intent_inference": intent_inference,
             "intent_tokens": int(llm.last_token_usage or 0),
             "agent_tokens": 0,
             "total_tokens": int(llm.last_token_usage or 0),
@@ -639,6 +779,10 @@ async def evaluate_case(
             "agent_status": "exception",
             "solver_status": None,
             "validation_hard_pass": None,
+            "failure_diagnostics": {"evaluation": diagnostic},
+            "model_policy_failures": {"evaluation": None},
+            "agent_control_failures": {"evaluation": None},
+            "runtime_errors": {"evaluation": diagnostic},
             "actions": [],
             "artifact_types": [],
             "error": str(exc),
@@ -724,6 +868,36 @@ def build_report(
             ),
             "failure_counts": dict(
                 Counter(code for item in records for code in item.get("failures") or [])
+            ),
+            "intent_parse_source_counts": dict(
+                Counter(
+                    str((item.get("intent") or {}).get("parse_source") or "unknown")
+                    for item in records
+                )
+            ),
+            "intent_actual_model_counts": dict(
+                Counter(
+                    str((item.get("intent_inference") or {}).get("model") or "unavailable")
+                    for item in records
+                )
+            ),
+            "intent_backend_counts": dict(
+                Counter(
+                    str((item.get("intent_inference") or {}).get("backend") or "unavailable")
+                    for item in records
+                )
+            ),
+            "model_policy_failure_count": sum(
+                any(bool(value) for value in (item.get("model_policy_failures") or {}).values())
+                for item in records
+            ),
+            "agent_control_failure_count": sum(
+                any(bool(value) for value in (item.get("agent_control_failures") or {}).values())
+                for item in records
+            ),
+            "runtime_error_count": sum(
+                any(bool(value) for value in (item.get("runtime_errors") or {}).values())
+                for item in records
             ),
         },
         "records": records,

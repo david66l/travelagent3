@@ -7,9 +7,24 @@ import { cn } from "@/lib/utils";
 interface SidebarProps {
   onNewChat: () => void | Promise<void>;
   isStartingNewChat?: boolean;
+  /**
+   * Moves the active conversation. `apply` is the local state swap for the
+   * target (a snapshot or a trip); numbering the switch, closing the old stream
+   * and opening the new one belong to `useChat().switchConversation`, so this
+   * component never subscribes to a stream itself. `null` means "this record has
+   * no conversation of its own" and only the data swap happens.
+   */
+  onSwitchConversation: (
+    targetId: string | null,
+    apply?: () => void
+  ) => void | Promise<void>;
 }
 
-export function Sidebar({ onNewChat, isStartingNewChat = false }: SidebarProps) {
+export function Sidebar({
+  onNewChat,
+  isStartingNewChat = false,
+  onSwitchConversation,
+}: SidebarProps) {
   const store = useChatStore();
   const { chatSnapshots, trips, activeView, setActiveView, loadTrip, restoreChat } = store;
 
@@ -33,7 +48,9 @@ export function Sidebar({ onNewChat, isStartingNewChat = false }: SidebarProps) 
   const handleCurrentTrip = () => {
     const trip = findNearestTrip();
     if (trip) {
-      loadTrip(trip.id);
+      void onSwitchConversation(trip.conversationId || null, () =>
+        loadTrip(trip.id)
+      );
       setActiveView("itinerary");
     }
   };
@@ -88,7 +105,9 @@ export function Sidebar({ onNewChat, isStartingNewChat = false }: SidebarProps) 
                 <button
                   key={chat.id}
                   onClick={() => {
-                    restoreChat(chat.id);
+                    void onSwitchConversation(chat.id, () =>
+                      restoreChat(chat.id)
+                    );
                     setActiveView("chat");
                   }}
                   title={chat.title}
@@ -125,7 +144,9 @@ export function Sidebar({ onNewChat, isStartingNewChat = false }: SidebarProps) 
                 <button
                   key={trip.id}
                   onClick={() => {
-                    loadTrip(trip.id);
+                    void onSwitchConversation(trip.conversationId || null, () =>
+                      loadTrip(trip.id)
+                    );
                     setActiveView("itinerary");
                   }}
                   title={trip.title}

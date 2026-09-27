@@ -7,15 +7,11 @@ import pytest
 from graph.exceptions import DegradationLevel, NodeException, classify_error
 from graph.graph import build_graph
 from graph.routers import (
-    route_after_apply_change,
     route_after_agent_loop,
     route_after_confirm_gate,
-    route_after_factcheck,
     route_after_gathering,
-    route_after_hallucination,
     route_after_output,
     route_after_profile,
-    route_after_tool_call,
 )
 from graph.session_manager import SessionManager
 from models.travel_slots import SlotParseOutput, TravelSlots
@@ -54,20 +50,6 @@ async def test_gathering_turn_node_with_error_handling():
     assert "llm timeout" in result["error_message"]
 
 
-@pytest.mark.asyncio
-async def test_plan_node_with_error_handling():
-    from graph.nodes import plan_node
-
-    state = {"slots": {}, "profile": {}, "knowledge_results": []}
-    with patch(
-        "graph.node_impl._planner_async", new=AsyncMock(side_effect=RuntimeError("vrp down"))
-    ):
-        result = await plan_node(state)
-
-    assert result["error_node"] == "plan"
-    assert result["next_action"] == "fallback"
-
-
 def test_router_after_gathering():
     assert route_after_gathering({"next_action": "clarify"}) == "clarify"
     assert route_after_gathering({"next_action": "respond"}) == "respond"
@@ -78,7 +60,7 @@ def test_router_after_gathering():
 
 def test_router_after_profile_writeback():
     # Planning path fans out into equal-length parallel branches re-joining at plan.
-    assert route_after_profile({"stage": "memory_loaded"}) == ["retrieve", "weather_check"]
+    assert route_after_profile({"stage": "memory_loaded"}) == "agent_loop"
     assert route_after_profile({"stage": "memory_updated"}) == "__end__"
     assert route_after_profile({"policy_mode": "agent"}) == "agent_loop"
 
@@ -94,9 +76,9 @@ def test_router_after_agent_loop_checkpoints_or_stops_without_legacy_fallback():
 
 
 def test_router_after_confirm_gate():
-    assert route_after_confirm_gate({"confirm_decision": "confirm"}) == "tool_call"
-    assert route_after_confirm_gate({"confirm_decision": "modify"}) == "apply_single_change"
-    assert route_after_confirm_gate({"confirm_decision": None}) == "plan"
+    assert route_after_confirm_gate({"confirm_decision": "confirm"}) == "output"
+    assert route_after_confirm_gate({"confirm_decision": "modify"}) == "agent_loop"
+    assert route_after_confirm_gate({"confirm_decision": None}) == "output"
     assert route_after_confirm_gate({"confirm_decision": "reject_needs_reason"}) == "output"
     assert route_after_confirm_gate({"confirm_decision": "reject_with_reason"}) == "agent_loop"
 
@@ -120,31 +102,28 @@ async def test_agent_rejection_without_reason_asks_before_replanning():
 
 @pytest.mark.asyncio
 async def test_agent_confirmation_closes_global_completion_gate():
-    from agentic.integration import run_agent_branch
-    from agentic.runtime import initialize_agent_ledger
+    from tests.unit.agentic.test_harness_loop import ledger, artifact, seed_evidence
     from graph.nodes import confirm_gate_node
-    from tests.unit.agentic.test_integration import FirstAllowedPolicy, SuccessfulExecutor
 
-    initialized = initialize_agent_ledger(
-        {
-            "user_input": "Plan one day in Shanghai",
-            "slots": {"destination": "Shanghai", "travel_days": 1},
-        },
-        mode="agent",
+    state = ledger()
+    seed_evidence(state)
+    artifact(state, "solver_result", {"days": []})
+    artifact(state, "validation_report", {"hard_pass": True, "hard_violations": []})
+    artifact(state, "finish", {})
+    state.task_graph = state.task_graph.model_copy(
+        update={"tasks": (state.task_graph.tasks[0].model_copy(update={"status": "blocked"}),)}
     )
-    agent_result = await run_agent_branch(
-        initialized,
-        policy=FirstAllowedPolicy(),
-        executor=SuccessfulExecutor(),
-    )
-    state = {**initialized, **agent_result}
-
     with patch("langgraph.types.interrupt", return_value={"action": "confirm"}):
-        result = await confirm_gate_node(state)
-
+        result = await confirm_gate_node(
+            {
+                "policy_mode": "agent",
+                "agent_status": "awaiting_confirmation",
+                "agent_ledger": state.model_dump(mode="json"),
+                "itinerary": [],
+            }
+        )
     assert result["agent_status"] == "finished"
-    assert result["termination_reason"] == "validated_finish"
-    assert result["completion_decision"]["allowed"] is True
+    assert result["next_action"] == "agent_final"
 
 
 @pytest.mark.asyncio
@@ -161,92 +140,9 @@ async def test_fallback_draft_confirmation_does_not_close_failed_agent_ledger():
     with patch("langgraph.types.interrupt", return_value={"action": "confirm"}):
         result = await confirm_gate_node(state)
 
-    assert result["confirm_decision"] == "confirm"
-    assert result["next_action"] == "enrich"
-    assert "agent_ledger" not in result
-
-
-def test_router_after_apply_change():
-    assert route_after_apply_change({"next_action": "planner"}) == "plan"
-    assert route_after_apply_change({"next_action": "fact_check"}) == "factcheck"
-
-
-def test_router_after_tool_call():
-    assert route_after_tool_call({"next_action": "fact_check"}) == "factcheck"
-    assert route_after_tool_call({"next_action": "clarify"}) == "output"
-
-
-def test_router_after_factcheck_is_pure():
-    # The router no longer mutates state; the factcheck node owns the loop counter.
-    state = {"next_action": "planner", "loop_count": 0}
-    assert route_after_factcheck(state) == "plan"
-    assert state["loop_count"] == 0  # router must not mutate
-    assert route_after_factcheck({"next_action": "factcheck_done"}) == "hallucination"
-    assert route_after_factcheck({"next_action": "agent_error"}) == "output"
-    assert route_after_factcheck({"stage": "fact_check_done"}) == "hallucination"
-
-
-@pytest.mark.asyncio
-async def test_agent_post_confirmation_conflict_never_falls_back_to_legacy_planner():
-    from graph.nodes import factcheck_node
-
-    with patch(
-        "graph.node_impl._fact_check_async",
-        new=AsyncMock(return_value={"next_action": "planner", "warnings": ["price changed"]}),
-    ):
-        result = await factcheck_node({"policy_mode": "agent", "agent_status": "finished"})
-
-    assert result["next_action"] == "agent_error"
     assert result["agent_status"] == "failed"
-    assert result["termination_reason"] == "POST_CONFIRMATION_FACT_CONFLICT"
-
-
-@pytest.mark.asyncio
-async def test_factcheck_node_owns_loop_guard():
-    from graph.node_impl import _fact_check_async
-
-    class _FakeResult:
-        def mappings(self):
-            return self
-
-        def first(self):
-            return {
-                "status": "active",
-                "ticket_price": 999.0,
-                "open_time": "08:00",
-                "close_time": "18:00",
-            }
-
-    class _FakeDB:
-        async def execute(self, *a, **k):
-            return _FakeResult()
-
-    class _FakeMaker:
-        def __call__(self):
-            return self
-
-        async def __aenter__(self):
-            return _FakeDB()
-
-        async def __aexit__(self, *a):
-            return False
-
-    itinerary = [{"activities": [{"poi_name": "故宫", "ticket_price": 10}]}]
-    with patch("core.database.async_session_maker", new=_FakeMaker()):
-        # Within budget → replan and advance the counter (node, not router).
-        r0 = await _fact_check_async({"itinerary": itinerary, "loop_count": 0, "max_loops": 3})
-        assert r0["next_action"] == "planner"
-        assert r0["loop_count"] == 1
-
-        # Budget exhausted → give up, keep plan, surface the unresolved conflict.
-        r3 = await _fact_check_async({"itinerary": itinerary, "loop_count": 3, "max_loops": 3})
-        assert r3["next_action"] == "factcheck_done"
-        assert any("未解决" in w for w in r3["warnings"])
-
-
-def test_router_after_hallucination():
-    assert route_after_hallucination({"next_action": "respond"}) == "output"
-    assert route_after_hallucination({"next_action": "clarify"}) == "output"
+    assert result["next_action"] == "agent_error"
+    assert "agent_ledger" not in result
 
 
 def test_router_after_output():
@@ -260,150 +156,6 @@ def test_router_after_output():
     assert route_after_output({"confirm_decision": "modify"}) == "confirm_gate"
     # Only an explicitly confirmed plan proceeds to booking.
     assert route_after_output({"confirm_decision": "confirm"}) == "booking"
-
-
-@pytest.mark.asyncio
-async def test_constraint_change_updates_profile_and_requires_fresh_plan():
-    from core.conversation_state import flatten_profile
-    from graph.nodes import apply_single_change_node
-
-    state = {
-        "profile": {"destination": "成都", "travel_days": 3},
-        "slots": {"destination": "成都", "travel_days": 3},
-        "itinerary": [{"day_number": 1, "activities": []}],
-        "pending_change": {"action": "set_budget", "value": 6000},
-    }
-    result = await apply_single_change_node(state)
-
-    assert flatten_profile(result["profile"])["budget_range"] == 6000
-    assert result["slots"]["total_budget"] == 6000
-    assert result["next_action"] == "planner"
-    assert result["confirm_decision"] is None
-
-
-@pytest.mark.asyncio
-async def test_remove_activity_recomputes_day_cost_and_invalidates_booking_budget():
-    from graph.nodes import apply_single_change_node
-
-    state = {
-        "itinerary": [
-            {
-                "day_number": 1,
-                # 100 fixed meal allowance + 50 ticket + 9 transport.
-                "total_cost": 159,
-                "transport_cost": 9,
-                "activities": [
-                    {
-                        "poi_name": "大雁塔",
-                        "ticket_price": 50,
-                        "transport_cost": 0,
-                    },
-                    {
-                        "poi_name": "陕西历史博物馆",
-                        "ticket_price": 0,
-                        "transport_cost": 9,
-                    },
-                ],
-            }
-        ],
-        "budget_breakdown": {"total": 999},
-        "pending_change": {
-            "action": "remove",
-            "day_number": 1,
-            "poi_id": "大雁塔",
-        },
-    }
-
-    result = await apply_single_change_node(state)
-
-    assert [a["poi_name"] for a in result["itinerary"][0]["activities"]] == ["陕西历史博物馆"]
-    assert result["itinerary"][0]["total_cost"] == 109
-    assert result["itinerary"][0]["transport_cost"] == 9
-    assert result["budget_breakdown"] is None
-    # Local edits must not mutate the checkpoint value passed into the node.
-    assert state["itinerary"][0]["total_cost"] == 159
-
-
-@pytest.mark.asyncio
-async def test_replace_activity_recomputes_explicit_cost_delta():
-    from graph.nodes import apply_single_change_node
-
-    result = await apply_single_change_node(
-        {
-            "itinerary": [
-                {
-                    "day_number": 1,
-                    "total_cost": 170,
-                    "activities": [
-                        {"poi_name": "旧景点", "ticket_price": 70},
-                    ],
-                }
-            ],
-            "pending_change": {
-                "action": "replace",
-                "day_number": 1,
-                "poi_id": "旧景点",
-                "new_poi": {"poi_name": "新景点", "ticket_price": 20},
-            },
-        }
-    )
-
-    assert result["itinerary"][0]["activities"][0]["poi_name"] == "新景点"
-    assert result["itinerary"][0]["total_cost"] == 120
-
-
-def test_replan_closure_replaces_the_closed_poi_in_same_slot():
-    from graph.nodes import _trace_replan_local
-
-    itinerary = [
-        {
-            "day_number": 1,
-            "activities": [{"poi_name": "宽窄巷子", "start_time": "09:00", "end_time": "11:00"}],
-        }
-    ]
-    candidates = [
-        {
-            "spot_name": "杜甫草堂",
-            "category": "attraction",
-            "ticket_price": 50,
-            "lat": 30.66,
-            "lng": 104.03,
-        }
-    ]
-
-    changed, note = _trace_replan_local(
-        {"type": "closure", "poi": "宽窄巷子"}, itinerary, candidates
-    )
-
-    activity = changed[0]["activities"][0]
-    assert activity["poi_name"] == "杜甫草堂"
-    assert activity["start_time"] == "09:00"
-    assert "替换" in note
-    assert itinerary[0]["activities"][0]["poi_name"] == "宽窄巷子"
-
-
-def test_replan_weather_reorders_and_delay_shifts_real_times():
-    from graph.nodes import _trace_replan_local
-
-    itinerary = [
-        {
-            "day_number": 1,
-            "activities": [
-                {"poi_name": "成都博物馆", "start_time": "09:00", "end_time": "11:00"},
-                {"poi_name": "人民公园", "start_time": "11:30", "end_time": "13:00"},
-            ],
-        }
-    ]
-    weather, _ = _trace_replan_local({"type": "weather", "detail": "下午有雨"}, itinerary)
-    assert [a["poi_name"] for a in weather[0]["activities"]] == ["人民公园", "成都博物馆"]
-    assert weather[0]["activities"][0]["start_time"] == "09:00"
-
-    delayed, note = _trace_replan_local(
-        {"type": "delay", "detail": "晚到1.5小时", "day_number": 1}, itinerary
-    )
-    assert delayed[0]["activities"][0]["start_time"] == "10:30"
-    assert delayed[0]["activities"][1]["end_time"] == "14:30"
-    assert "90 分钟" in note
 
 
 def test_error_classification():

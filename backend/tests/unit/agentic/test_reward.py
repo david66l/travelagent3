@@ -33,7 +33,7 @@ def _context(trajectory_id: str, task_id: str, action: str) -> PolicyContext:
 
 def _episode(*, hard_pass: bool = True, termination: str = "awaiting_user") -> AgentEpisode:
     trajectory_id = "reward-trajectory"
-    actions = ["solve_itinerary", "validate_itinerary", "compose_draft"]
+    actions = ["solve_itinerary", "validate_itinerary", "finish"]
     steps = []
     for index, action in enumerate(actions):
         is_tool = action in {"solve_itinerary", "validate_itinerary"}
@@ -130,6 +130,85 @@ def test_validated_episode_gets_positive_outcome_first_reward():
     assert reward.quality_reward == 0
     assert reward.audit_metrics["quality_drives_training"] is False
     assert len(reward.turn_rewards) == 3
+
+
+def test_long_validated_plan_outranks_a_single_clarifying_question():
+    """Reaching a validated plan must never score below asking one question.
+
+    Under the v2 efficiency term every step was charged against a fixed budget,
+    so a plan that legitimately needed a longer tool sequence scored below a
+    one-step clarification. That rewarded truncation over solving the task.
+    """
+    engine = HierarchicalRewardEngine()
+    actions = ["search_pois", "get_poi_detail", "get_route_matrix", "validate_itinerary"]
+    clarification = _episode(termination="awaiting_user")
+    clarification.final_state["goal"]["missing_information"] = ["origin"]
+    clarification.steps = [
+        TrajectoryStep(
+            step_index=0,
+            task_id="travel_agent",
+            context=_context(clarification.trajectory_id, "travel_agent", "ask_user"),
+            action=PolicyAction(action="ask_user", arguments={"question": "Which city?"}),
+            observations=[],
+            verification={},
+            state_before_hash="b0",
+            state_after_hash="a0",
+        )
+    ]
+    clarification.status = "interrupted"
+    clarification.termination_reason = "awaiting_user"
+    clarification.content_hash = episode_content_hash(clarification)
+    clarify_reward = engine.score(clarification)
+    assert clarify_reward.gate_status == "passed"
+
+    for length in (9, 12, 16):
+        long_plan = _episode(termination="validated_finish")
+        long_plan.steps = [
+            TrajectoryStep(
+                step_index=index,
+                task_id=actions[index % len(actions)],
+                context=_context(
+                    long_plan.trajectory_id, actions[index % len(actions)], actions[index % len(actions)]
+                ),
+                action=PolicyAction(
+                    action_id=f"call-{index}", action=actions[index % len(actions)]
+                ),
+                observations=[
+                    ObservationEnvelope(
+                        ok=True,
+                        tool=actions[index % len(actions)],
+                        data={"ok": True},
+                        source="built_in",
+                        confidence=1,
+                        tool_call_id=f"call-{index}",
+                    )
+                ],
+                verification={"passed": True},
+                state_before_hash=f"b{index}",
+                state_after_hash=f"a{index}",
+            )
+            for index in range(length - 1)
+        ] + [
+            TrajectoryStep(
+                step_index=length - 1,
+                task_id="await_confirmation",
+                context=_context(long_plan.trajectory_id, "await_confirmation", "finish"),
+                action=PolicyAction(action="finish"),
+                observations=[],
+                verification={},
+                state_before_hash="before-finish",
+                state_after_hash="after-finish",
+            )
+        ]
+        long_plan.content_hash = episode_content_hash(long_plan)
+
+        plan_reward = engine.score(long_plan)
+
+        assert plan_reward.gate_status == "passed"
+        assert plan_reward.episode_reward > clarify_reward.episode_reward, (
+            f"validated plan with {length} steps scored "
+            f"{plan_reward.episode_reward} <= clarification {clarify_reward.episode_reward}"
+        )
 
 
 def test_security_or_forgery_cannot_be_offset_by_other_rewards():
@@ -257,7 +336,9 @@ def test_generated_user_question_is_not_treated_as_ungrounded_tool_argument():
 
     reward = HierarchicalRewardEngine().score(episode)
 
-    assert reward.components.task == 1
+    # A well-grounded clarifying question is still a correct outcome; it simply
+    # ranks below a validated plan (see the ordering test above).
+    assert reward.components.task > 0.5
     assert reward.turn_rewards[0].grounding == 1
     assert reward.gate_status == "passed"
 

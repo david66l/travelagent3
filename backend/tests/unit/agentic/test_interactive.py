@@ -1,59 +1,22 @@
 """Tests that interactive training drives the production Agent Loop semantics."""
 
-from typing import Any
-
 from agentic.interactive import InteractiveAgentSession
 from agentic.loop import ActionOutcome, PolicyAction
-from agentic.state import AgentLedgerState, ArtifactRecord, GoalLedger, TaskGraph, TaskNode
+from agentic.state import AgentLedgerState
 from agentic.trajectory import EpisodeReplayVerifier
 
 
-def _ledger() -> AgentLedgerState:
+def _ledger():
+    from agentic.runtime import initialize_agent_ledger
+
     return AgentLedgerState(
-        goal=GoalLedger(original_request="Plan a trip"),
-        task_graph=TaskGraph(
-            goal_version=1,
-            tasks=(
-                TaskNode(
-                    task_id="solve",
-                    goal="solve",
-                    allowed_actions=("solve_itinerary",),
-                    success_criteria={"required_artifact_types": ["solver_result"]},
-                ),
-                TaskNode(
-                    task_id="validate",
-                    goal="validate",
-                    depends_on=("solve",),
-                    allowed_actions=("validate_itinerary",),
-                    success_criteria={
-                        "required_artifact_types": ["validation_report"],
-                        "require_hard_pass": True,
-                    },
-                ),
-            ),
-        ),
+        **initialize_agent_ledger({"user_input": "Plan a trip"}, mode="agent")["agent_ledger"]
     )
 
 
 class Executor:
-    async def execute(self, *, task, action, ledger) -> ActionOutcome:
-        payloads: dict[str, tuple[str, dict[str, Any]]] = {
-            "solve": ("solver_result", {"days": [{}]}),
-            "validate": ("validation_report", {"hard_pass": True, "hard_violations": []}),
-        }
-        artifact_type, payload = payloads[task.task_id]
-        return ActionOutcome(
-            tool_calls_used=1,
-            artifacts=[
-                ArtifactRecord(
-                    artifact_id=f"artifact-{task.task_id}",
-                    artifact_type=artifact_type,
-                    payload=payload,
-                    goal_version=ledger.goal.goal_version,
-                    plan_version=ledger.task_graph.plan_version,
-                )
-            ],
-        )
+    async def execute(self, *, task, action, ledger):
+        return ActionOutcome(status="awaiting_user")
 
 
 def _session() -> InteractiveAgentSession:
@@ -67,37 +30,28 @@ def _session() -> InteractiveAgentSession:
     )
 
 
-async def test_interactive_actions_close_the_same_verified_loop():
+async def test_interactive_model_question_interrupts_without_claiming_completion():
     session = _session()
-    first = await session.start()
-
-    assert first.done is False
-    assert first.next_context.current_subtask["task_id"] == "solve"
-    second = await session.submit(PolicyAction(action="solve_itinerary", token_usage=10))
-    assert second.done is False
-    assert second.committed_step.action.action == "solve_itinerary"
-    assert second.next_context.current_subtask["task_id"] == "validate"
-    final = await session.submit(PolicyAction(action="validate_itinerary", token_usage=20))
-
-    assert final.done is True
-    assert final.status == "finished"
-    assert final.termination_reason == "validated_finish"
-    assert final.episode is not None
+    await session.start()
+    final = await session.submit(
+        PolicyAction(action="ask_user", arguments={"question": "Where?"}, token_usage=10)
+    )
+    assert final.done and final.status == "interrupted"
+    assert final.episode.final_state["budget"]["used_tokens"] == 10
     assert EpisodeReplayVerifier().verify(final.episode) == []
-    assert final.episode.final_state["budget"]["used_tokens"] == 30
-    assert final.episode.final_state["budget"]["used_tool_calls"] == 2
+    await session.aclose()
 
 
 async def test_invalid_action_is_retried_by_production_controller():
     session = _session()
     first = await session.start()
-    assert first.next_context.current_subtask["task_id"] == "solve"
+    assert first.next_context.current_subtask["task_id"] == "travel_agent"
 
-    retry = await session.submit(PolicyAction(action="get_weather"))
+    retry = await session.submit(PolicyAction(action="retired_tool"))
 
     assert retry.done is False
     assert retry.committed_step.verification["error_code"] == "ACTION_NOT_ALLOWED"
-    assert retry.next_context.current_subtask["task_id"] == "solve"
+    assert retry.next_context.current_subtask["task_id"] == "travel_agent"
     assert retry.next_context.failure_summary[-1]["code"] == "ACTION_NOT_ALLOWED"
     await session.aclose()
 

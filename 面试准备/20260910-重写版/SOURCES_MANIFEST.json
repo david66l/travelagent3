@@ -1,0 +1,337 @@
+{
+  "created_date": "2026-09-10",
+  "article": "01-项目全貌与Long-Horizon-Agent架构.md",
+  "series_scope": "first article complete; six later topics planned only",
+  "review_scope": "current main-chain source review plus historical records and previously verified posttraining report copy; not exhaustive line-by-line review",
+  "cloud_status": "SSH connection refused on two read-only attempts; no upload performed",
+  "verification_scope": "documentation structure and source links; no new runtime tests or model inference",
+  "sources": [
+    {
+      "topic": "HTTP消息与SSE",
+      "relative_path": "backend/src/api/v1/chat.py",
+      "path": "E:/A_Louis/TravelAgent2/backend/src/api/v1/chat.py",
+      "symbol": "async def chat_message",
+      "line": 274,
+      "sha256": "dc8fbe77e035b6806b3ba9931934eaf89914fedd6be4deb72f52a565f5b006cb"
+    },
+    {
+      "topic": "聊天任务及会话状态",
+      "relative_path": "backend/src/api/chat_runtime.py",
+      "path": "E:/A_Louis/TravelAgent2/backend/src/api/chat_runtime.py",
+      "symbol": "async def create_chat_planning_job",
+      "line": 92,
+      "sha256": "db5911905bb740346638efe5b5857641391bcb1431fee74197128e90262eb397"
+    },
+    {
+      "topic": "任务认领与持久化",
+      "relative_path": "backend/src/repositories/planning_job.py",
+      "path": "E:/A_Louis/TravelAgent2/backend/src/repositories/planning_job.py",
+      "symbol": "async def acquire_job_by_id",
+      "line": 290,
+      "sha256": "aea2c96109c3a7a93e1582de7c683967c8998d31f6aa0cf93aeb7376fa661f1c"
+    },
+    {
+      "topic": "Worker执行与事件",
+      "relative_path": "backend/src/worker/planning_worker.py",
+      "path": "E:/A_Louis/TravelAgent2/backend/src/worker/planning_worker.py",
+      "symbol": "async def _run_graph_for_job",
+      "line": 427,
+      "sha256": "0062aa5e774208ebb3f22266b20e24a27b8e8e55714f27322a611ac3f20fd99e"
+    },
+    {
+      "topic": "任务派发恢复",
+      "relative_path": "backend/src/worker/planning_tasks.py",
+      "path": "E:/A_Louis/TravelAgent2/backend/src/worker/planning_tasks.py",
+      "symbol": "def redispatch_pending_planning_jobs",
+      "line": 167,
+      "sha256": "9aaa3b18b6540efd10bc094d013a03bd02f2c622dd70182a61ea656495afbd27"
+    },
+    {
+      "topic": "Celery调度",
+      "relative_path": "backend/src/core/celery_app.py",
+      "path": "E:/A_Louis/TravelAgent2/backend/src/core/celery_app.py",
+      "symbol": "beat_schedule=",
+      "line": 60,
+      "sha256": "1bd55b9337e18303e90ae6945dc7f72128f5e34776a83ead0149ca66e7a688d6"
+    },
+    {
+      "topic": "外层图",
+      "relative_path": "backend/src/graph/graph.py",
+      "path": "E:/A_Louis/TravelAgent2/backend/src/graph/graph.py",
+      "symbol": "def build_graph",
+      "line": 25,
+      "sha256": "724844406fddcc9eef67b35b359dd5257cba66403fbfb75ddd507201476a3ce1"
+    },
+    {
+      "topic": "Agent节点与确认",
+      "relative_path": "backend/src/graph/nodes.py",
+      "path": "E:/A_Louis/TravelAgent2/backend/src/graph/nodes.py",
+      "symbol": "async def agent_loop_node",
+      "line": 30,
+      "sha256": "04c807e058cb2e31d488d738185a00195058fadf1be6dc96f46067cd006681aa"
+    },
+    {
+      "topic": "图路由",
+      "relative_path": "backend/src/graph/routers.py",
+      "path": "E:/A_Louis/TravelAgent2/backend/src/graph/routers.py",
+      "symbol": "def route_after_agent_loop",
+      "line": 35,
+      "sha256": "0143a4122cc90610193b14b0ca01dd6e9a5486f642fcdaaa47a1c12d30be1637"
+    },
+    {
+      "topic": "图运行恢复",
+      "relative_path": "backend/src/graph/runner.py",
+      "path": "E:/A_Louis/TravelAgent2/backend/src/graph/runner.py",
+      "symbol": "async def stream_graph_events",
+      "line": 183,
+      "sha256": "125c52d6a1bd742864bbe0e2d90d4ae6abefd53f0b21e9763c5c7f08b874efc7"
+    },
+    {
+      "topic": "需求收集",
+      "relative_path": "backend/src/graph/gathering.py",
+      "path": "E:/A_Louis/TravelAgent2/backend/src/graph/gathering.py",
+      "symbol": "async def _gathering_turn_traced",
+      "line": 73,
+      "sha256": "e592418cfe2eb3364aeb30970542c3ac13df98dc4492c25f78e79015f7b37b9d"
+    },
+    {
+      "topic": "策略集成",
+      "relative_path": "backend/src/agentic/integration.py",
+      "path": "E:/A_Louis/TravelAgent2/backend/src/agentic/integration.py",
+      "symbol": "async def run_agent_branch",
+      "line": 33,
+      "sha256": "fec2bd956fb3df0f183a0e8ff7e741477ced82f5501b6bf2a9d04099d73b08b6"
+    },
+    {
+      "topic": "单会话任务",
+      "relative_path": "backend/src/agentic/react.py",
+      "path": "E:/A_Louis/TravelAgent2/backend/src/agentic/react.py",
+      "symbol": "class ReactTaskGraphPlanner",
+      "line": 267,
+      "sha256": "25140227b1bef4cf1460a94a57c8974b812645cdf27d05b377fdb3eeaa2def60"
+    },
+    {
+      "topic": "Harness前置条件",
+      "relative_path": "backend/src/agentic/harness.py",
+      "path": "E:/A_Louis/TravelAgent2/backend/src/agentic/harness.py",
+      "symbol": "def preflight_action",
+      "line": 120,
+      "sha256": "7110634fd93b6695b3a697fc660c832e09aecc3e7795a4d16bc16e0d7b32df61"
+    },
+    {
+      "topic": "Ledger与预算",
+      "relative_path": "backend/src/agentic/state.py",
+      "path": "E:/A_Louis/TravelAgent2/backend/src/agentic/state.py",
+      "symbol": "class BudgetLedger",
+      "line": 202,
+      "sha256": "0c9d41ad73f7f3bf721b8b0db6ab8c16a3406e60fca6cc76baca5a59462204e9"
+    },
+    {
+      "topic": "有界决策循环",
+      "relative_path": "backend/src/agentic/loop.py",
+      "path": "E:/A_Louis/TravelAgent2/backend/src/agentic/loop.py",
+      "symbol": "class BoundedAgentLoop",
+      "line": 201,
+      "sha256": "0235d543388698832bf561160884648e0921998ec1daccd4b73fc831d2455262"
+    },
+    {
+      "topic": "模型可见上下文",
+      "relative_path": "backend/src/agentic/policy_prompts.py",
+      "path": "E:/A_Louis/TravelAgent2/backend/src/agentic/policy_prompts.py",
+      "symbol": "def policy_prompt_payload",
+      "line": 49,
+      "sha256": "80f8ca5efa885f009f9aa2a06cb7dcdf48294232084f3cb6d34c7de027af76e3"
+    },
+    {
+      "topic": "动作契约",
+      "relative_path": "backend/src/agentic/policy_actions.py",
+      "path": "E:/A_Louis/TravelAgent2/backend/src/agentic/policy_actions.py",
+      "symbol": "POLICY_ACTION_MODELS:",
+      "line": 99,
+      "sha256": "391d89b2be9499b968a9bdef186cba2370ac8cb8f928730c504ab267c9b2525d"
+    },
+    {
+      "topic": "工具参数装配",
+      "relative_path": "backend/src/agentic/action_executor.py",
+      "path": "E:/A_Louis/TravelAgent2/backend/src/agentic/action_executor.py",
+      "symbol": "def _hydrate_arguments",
+      "line": 435,
+      "sha256": "77473e7a041500d1f069666e4be1999cafdd33937caa3cf3b13d5f70e273ab2f"
+    },
+    {
+      "topic": "修订与澄清恢复",
+      "relative_path": "backend/src/agentic/runtime.py",
+      "path": "E:/A_Louis/TravelAgent2/backend/src/agentic/runtime.py",
+      "symbol": "async def revise_agent_ledger",
+      "line": 417,
+      "sha256": "9e49b7c6629690996d850b7d5ccbf68ed2d407e41da338c1d3675cf94a2ef1fa"
+    },
+    {
+      "topic": "轨迹记录",
+      "relative_path": "backend/src/agentic/trajectory.py",
+      "path": "E:/A_Louis/TravelAgent2/backend/src/agentic/trajectory.py",
+      "symbol": "class EpisodeRecorder",
+      "line": 114,
+      "sha256": "1fe53b24f74508defc238804c2d8c60cee3fc6969372024dd39b1e26504da8aa"
+    },
+    {
+      "topic": "工具适配",
+      "relative_path": "backend/src/tools/tool_executor.py",
+      "path": "E:/A_Louis/TravelAgent2/backend/src/tools/tool_executor.py",
+      "symbol": "class ToolExecutor",
+      "line": 290,
+      "sha256": "b4877940dd70f33f87772473ee41de6278edb7eeb832d14c345b6b46e7ece45d"
+    },
+    {
+      "topic": "求解器",
+      "relative_path": "backend/src/vrp_solver_service/solver.py",
+      "path": "E:/A_Louis/TravelAgent2/backend/src/vrp_solver_service/solver.py",
+      "symbol": "class TravelVRPSolver",
+      "line": 42,
+      "sha256": "2c990b7962a2aedca634536e7e5c2fde02d42030568826e030c3b52d15b31e9c"
+    },
+    {
+      "topic": "独立行程检查",
+      "relative_path": "backend/src/evaluation/validator.py",
+      "path": "E:/A_Louis/TravelAgent2/backend/src/evaluation/validator.py",
+      "symbol": "",
+      "line": null,
+      "sha256": "4ab3413b60bc742717f2937879bd68fcc5862efa2943abb6402a5b30b52b02dc"
+    },
+    {
+      "topic": "通用消息压缩",
+      "relative_path": "backend/src/core/prompt_compress.py",
+      "path": "E:/A_Louis/TravelAgent2/backend/src/core/prompt_compress.py",
+      "symbol": "def compress_message_history",
+      "line": 59,
+      "sha256": "bdbfcd22cd2f92b2decfc91aa857c542a21fa21994bf0532e56d5141120c81f0"
+    },
+    {
+      "topic": "长期画像",
+      "relative_path": "backend/src/agents/profile_recall.py",
+      "path": "E:/A_Louis/TravelAgent2/backend/src/agents/profile_recall.py",
+      "symbol": "class ProfileRecallAgent",
+      "line": 59,
+      "sha256": "21884a49b529d4e8ef80a5cf6a961c6a3acd77dea35cfff29b9fbde72f8fbf6f"
+    },
+    {
+      "topic": "冷热记忆",
+      "relative_path": "backend/src/core/memory.py",
+      "path": "E:/A_Louis/TravelAgent2/backend/src/core/memory.py",
+      "symbol": "class MemoryManager",
+      "line": 65,
+      "sha256": "fef8f0b9ff8ef2ac4a5cb695bbf49cd079b48d628e73a1f49e6125b65dba49d0"
+    },
+    {
+      "topic": "需求合并",
+      "relative_path": "backend/src/core/conversation_turn.py",
+      "path": "E:/A_Louis/TravelAgent2/backend/src/core/conversation_turn.py",
+      "symbol": "async def process_user_turn",
+      "line": 364,
+      "sha256": "cf4b390a224f8892bb248fb0ff2f1035805d3495abf35d98b8ebb6bbb7779587"
+    },
+    {
+      "topic": "检索实现",
+      "relative_path": "backend/src/data/retrieval_repository.py",
+      "path": "E:/A_Louis/TravelAgent2/backend/src/data/retrieval_repository.py",
+      "symbol": "async def search_bm25",
+      "line": 124,
+      "sha256": "afb7ab91c69b7bf9907f923be81e9e7cb510b5253956bfce7abbfec9f8f658d1"
+    },
+    {
+      "topic": "向量默认配置",
+      "relative_path": "backend/src/core/settings.py",
+      "path": "E:/A_Louis/TravelAgent2/backend/src/core/settings.py",
+      "symbol": "embedding_provider:",
+      "line": 97,
+      "sha256": "da75cee0d364482c050e472199debcfd514d0085f68a68575d06c871fbcc1438"
+    },
+    {
+      "topic": "策略绕过通用截取",
+      "relative_path": "backend/src/core/llm_client.py",
+      "path": "E:/A_Louis/TravelAgent2/backend/src/core/llm_client.py",
+      "symbol": "prepared = messages",
+      "line": 185,
+      "sha256": "2df532ab3ac1b98651581beb231655241b8e2730ba96095900ed09f6f700ef4d"
+    },
+    {
+      "topic": "Go网关",
+      "relative_path": "gateway/cmd/gateway/main.go",
+      "path": "E:/A_Louis/TravelAgent2/gateway/cmd/gateway/main.go",
+      "symbol": "func main",
+      "line": 43,
+      "sha256": "f486af435222fb4ef0126569348aba3f5c6111de11e82b1caa8f7de7d9e97862"
+    },
+    {
+      "topic": "前端发送消息",
+      "relative_path": "frontend/src/hooks/useChat.ts",
+      "path": "E:/A_Louis/TravelAgent2/frontend/src/hooks/useChat.ts",
+      "symbol": "const sendMessage",
+      "line": 77,
+      "sha256": "4486a2aea921608e97d34cd85ae868cc58ceab2faa52753211e3fbec4eb622fc"
+    },
+    {
+      "topic": "前端事件流",
+      "relative_path": "frontend/src/hooks/useSSE.ts",
+      "path": "E:/A_Louis/TravelAgent2/frontend/src/hooks/useSSE.ts",
+      "symbol": "export function useSSE",
+      "line": 102,
+      "sha256": "951c6e78d6ff263bb2f1dc174abbb82c10e7c462c507be171445c459e7683fdf"
+    },
+    {
+      "topic": "当前Harness文档",
+      "relative_path": "docs/AGENT_HARNESS_ARCHITECTURE.md",
+      "path": "E:/A_Louis/TravelAgent2/docs/AGENT_HARNESS_ARCHITECTURE.md",
+      "symbol": "",
+      "line": null,
+      "sha256": "848ad6df00590c36da26e749e906e69e9c147c26541d784eb2e1641af925db36"
+    },
+    {
+      "topic": "版本验收说明",
+      "relative_path": "docs/INDUSTRIAL_READINESS.md",
+      "path": "E:/A_Louis/TravelAgent2/docs/INDUSTRIAL_READINESS.md",
+      "symbol": "",
+      "line": null,
+      "sha256": "9687e76fb7bb050eaaf9dd2de73bdb57ebfd7611f6a8d34fc7f85fd3235469e7"
+    },
+    {
+      "topic": "历史Token报告",
+      "relative_path": "ml/agentic/reports/stage40-policy-driven-runtime-vs-pure-react-v1/REPORT.md",
+      "path": "E:/A_Louis/TravelAgent2/ml/agentic/reports/stage40-policy-driven-runtime-vs-pure-react-v1/REPORT.md",
+      "symbol": "",
+      "line": null,
+      "sha256": "2e02c0fe8c77fcf194f71b807b4c78454f117cd59d780f6ee9298f52d3c63ac2"
+    },
+    {
+      "topic": "历史Token聚合",
+      "relative_path": "ml/agentic/reports/stage40-policy-driven-runtime-vs-pure-react-v1/report.json",
+      "path": "E:/A_Louis/TravelAgent2/ml/agentic/reports/stage40-policy-driven-runtime-vs-pure-react-v1/report.json",
+      "symbol": "",
+      "line": null,
+      "sha256": "c6c4d6beaad5e3a02b44f1465bb79dc9f2df2254dfd8c430731a55c1ef63e366"
+    },
+    {
+      "topic": "历史运行时轨迹",
+      "relative_path": "ml/agentic/reports/stage40-policy-driven-runtime-vs-pure-react-v1/runs.jsonl",
+      "path": "E:/A_Louis/TravelAgent2/ml/agentic/reports/stage40-policy-driven-runtime-vs-pure-react-v1/runs.jsonl",
+      "symbol": "",
+      "line": null,
+      "sha256": "70b57776c3bbe21c8a98107f5258665877517443549ed103ce547ca19fca319d"
+    },
+    {
+      "topic": "纯ReAct参考轨迹",
+      "relative_path": "ml/agentic/reports/stage38-pure-agent-vs-verified-final-v1/runs.jsonl",
+      "path": "E:/A_Louis/TravelAgent2/ml/agentic/reports/stage38-pure-agent-vs-verified-final-v1/runs.jsonl",
+      "symbol": "",
+      "line": null,
+      "sha256": "02a71ba27c554d67d5b9746ef7f48c1645f0db867c8c1d2f0724cb63883c98fc"
+    }
+  ],
+  "document_sha256": "853d696d28ffc2866ef59108bc712c2715af0a279bce23208587b04265392681",
+  "document_bytes": 63606,
+  "prior_posttraining_report": {
+    "path": "C:/Users/Rain/Documents/Codex/2026-09-05/kan/reports/project-complete-explanation-20260909-v2/TravelAgent2_项目全景说明.md",
+    "sha256": "9737dd2237364fca18d8daea39aa9b8ff463f91f3eecfcd89ae838180a128f63",
+    "verification": "previously verified report copy; not live cloud verification this turn"
+  }
+}

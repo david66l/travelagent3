@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -25,6 +26,15 @@ type Config struct {
 	// Upstream
 	BackendURL  string
 	FrontendURL string
+
+	// Browser origins allowed to call the API. Credentials are enabled, so a
+	// wildcard is never valid here and every real deployment origin must be
+	// listed explicitly.
+	CORSAllowOrigins []string
+
+	// Browser request headers the API accepts. Any header a client sends on a
+	// cross-origin request must appear here or the preflight rejects the call.
+	CORSAllowHeaders []string
 
 	// Rate limiting (requests per minute)
 	RateLimitIP    int
@@ -58,6 +68,19 @@ func Load() Config {
 		RedisURL:                 env("REDIS_URL", "redis://localhost:6379/0"),
 		BackendURL:               env("BACKEND_URL", "http://localhost:8000"),
 		FrontendURL:              env("FRONTEND_URL", "http://localhost:3000"),
+		CORSAllowOrigins: envList("GATEWAY_CORS_ORIGINS", []string{
+			"http://localhost:3000",
+			"http://127.0.0.1:3000",
+		}),
+		CORSAllowHeaders: envList("GATEWAY_CORS_ALLOW_HEADERS", []string{
+			"Authorization",
+			"Content-Type",
+			// The chat client sends this to make message submission idempotent.
+			// Omitting it made every cross-origin POST fail its CORS preflight.
+			"Idempotency-Key",
+			"X-Device-Fingerprint",
+			"X-Request-ID",
+		}),
 		RateLimitIP:              envInt("RATE_LIMIT_IP_PER_MINUTE", 60),
 		RateLimitUser:            envInt("RATE_LIMIT_USER_PER_MINUTE", 60),
 		RateLimitGuest:           envInt("RATE_LIMIT_GUEST_PER_MINUTE", 30),
@@ -101,4 +124,23 @@ func envFloat(key string, def float64) float64 {
 		}
 	}
 	return def
+}
+
+// envList parses a comma-separated environment variable into a slice, dropping
+// empty entries. An unset or blank value keeps the default list.
+func envList(key string, def []string) []string {
+	raw := os.Getenv(key)
+	if strings.TrimSpace(raw) == "" {
+		return def
+	}
+	items := make([]string, 0, len(def))
+	for _, part := range strings.Split(raw, ",") {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			items = append(items, trimmed)
+		}
+	}
+	if len(items) == 0 {
+		return def
+	}
+	return items
 }

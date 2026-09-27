@@ -4,8 +4,8 @@ import {
   getDeviceFingerprint,
   getStoredAccessToken,
 } from "@/lib/api";
-import { handleChatEvent } from "@/lib/chatEvents";
-import { useChatStore } from "@/stores/chatStore";
+import { handleChatEvent, type EventRefs } from "@/lib/chatEvents";
+import { emptyConversationRuntime, useChatStore } from "@/stores/chatStore";
 
 export type SSEEventType =
   | "stage"
@@ -25,9 +25,16 @@ export interface UseSSEOptions {
   onError?: (error: Error) => void;
 }
 
-interface ParseContext {
-  activeJobIdRef: React.MutableRefObject<string | null>;
-  lastEventIdRef: React.MutableRefObject<number>;
+interface ConnectionHandle {
+  controller: AbortController;
+  jobId: string | null;
+  lastEventId: number;
+  reconnectAttempt: number;
+  reconnectTimer: ReturnType<typeof setTimeout> | null;
+  /** Set once a 401/403 proves the token is unusable, to stop reconnect loops. */
+  authFailed: boolean;
+  /** True while a fetch for this conversation is in flight. */
+  open: boolean;
 }
 
 function isAuthError(status: number): boolean {
@@ -91,85 +98,168 @@ function parseSSEPart(
 }
 
 /**
- * Manages a single Server-Sent Events connection for the chat stream.
+ * Manages one SSE connection **per conversation**.
  *
- * Features:
- * - Automatic reconnect with exponential backoff (max 30s) and jitter.
- * - Resume from the last received event id (`last_event_id`).
- * - Forwards events to the chat store and optional callbacks.
- * - Detects 401/403 auth errors and stops infinite reconnection loops.
+ * The previous implementation held a single `abortRef` / `lastEventIdRef`, so
+ * opening a stream for another conversation necessarily tore the previous one
+ * down: a job running in a conversation the user had switched away from lost its
+ * stream, its cursor, and any live progress. Connections are now keyed by
+ * conversation id and are independent:
+ *
+ * - switching conversations no longer closes the stream being left behind;
+ * - each conversation keeps its own job id, event cursor and reconnect backoff;
+ * - `connectedConversationIds` is a set of conversations rather than one global
+ *   boolean, so N open streams cannot clobber each other's connected flag.
+ *
+ * Every event is routed with the `conversation_id` the server now stamps on each
+ * frame, so a background conversation's tokens land on that conversation's
+ * runtime instead of the one on screen.
  */
 export function useSSE(options: UseSSEOptions = {}) {
   const { onMessage, onError } = options;
-  const abortRef = useRef<AbortController | null>(null);
-  const activeJobIdRef = useRef<string | null>(null);
-  const lastEventIdRef = useRef(0);
-  const reconnectAttemptRef = useRef(0);
-  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const connectingRef = useRef<string | null>(null);
+  const connectionsRef = useRef<Map<string, ConnectionHandle>>(new Map());
   const isMountedRef = useRef(true);
+  // Callbacks change identity between renders; read them through refs so
+  // `open`/`close` stay stable and never re-create a connection needlessly.
+  const onMessageRef = useRef(onMessage);
+  const onErrorRef = useRef(onError);
+  onMessageRef.current = onMessage;
+  onErrorRef.current = onError;
 
-  const disconnect = useCallback(() => {
-    if (reconnectTimerRef.current) {
-      clearTimeout(reconnectTimerRef.current);
-      reconnectTimerRef.current = null;
-    }
-    if (abortRef.current) {
-      abortRef.current.abort();
-      abortRef.current = null;
-    }
-    useChatStore.getState().setConnected(false);
+  const publishConnected = useCallback(() => {
+    useChatStore
+      .getState()
+      .setConnectedIds([...connectionsRef.current.keys()]);
   }, []);
+
+  const close = useCallback(
+    (conversationId: string) => {
+      const handle = connectionsRef.current.get(conversationId);
+      if (!handle) return;
+      if (handle.reconnectTimer) {
+        clearTimeout(handle.reconnectTimer);
+        handle.reconnectTimer = null;
+      }
+      handle.controller.abort();
+      connectionsRef.current.delete(conversationId);
+      publishConnected();
+    },
+    [publishConnected]
+  );
+
+  const closeAll = useCallback(() => {
+    for (const conversationId of [...connectionsRef.current.keys()]) {
+      close(conversationId);
+    }
+  }, [close]);
 
   useEffect(() => {
     isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
-      disconnect();
+      closeAll();
     };
-  }, [disconnect]);
+  }, [closeAll]);
 
-  const connect = useCallback(
+  /**
+   * Open (or re-open) the stream for one conversation. Never touches any other
+   * conversation's connection.
+   */
+  const open = useCallback(
     async (
       conversationId: string,
-      connectOptions?: { jobId?: string; lastEventId?: number }
+      openOptions?: {
+        jobId?: string;
+        lastEventId?: number;
+        /** Deliberately re-attach even if this conversation already has a stream. */
+        force?: boolean;
+      }
     ) => {
-      const connectionKey = `${conversationId}:${connectOptions?.jobId ?? "session"}`;
-      if (connectingRef.current === connectionKey) {
-        return;
+      if (!conversationId) return;
+      const existing = connectionsRef.current.get(conversationId);
+      if (existing && !openOptions?.force) {
+        // Same conversation, same job: the stream is already doing this work.
+        // A different job means the caller wants to follow the new turn.
+        const wantedJob = openOptions?.jobId ?? null;
+        if (existing.jobId === wantedJob) return;
       }
-      connectingRef.current = connectionKey;
+      if (existing) close(conversationId);
 
-      disconnect();
-
-      if (!isMountedRef.current) {
-        connectingRef.current = null;
-        return;
-      }
+      if (!isMountedRef.current) return;
 
       const token = getStoredAccessToken();
       const fingerprint = getDeviceFingerprint();
       if (!token) {
         const err = new Error("No access token — call ensureGuestSession first");
-        onError?.(err);
+        onErrorRef.current?.(err);
         throw err;
       }
 
+      const current = useChatStore.getState().runtimeFor(conversationId);
+      const jobId = openOptions?.jobId ?? current.jobId ?? null;
       const lastEventId =
-        connectOptions?.lastEventId ?? lastEventIdRef.current;
+        openOptions?.lastEventId ?? (jobId ? current.lastEventId : 0);
+
+      const handle: ConnectionHandle = {
+        controller: new AbortController(),
+        jobId,
+        lastEventId,
+        reconnectAttempt: existing?.reconnectAttempt ?? 0,
+        reconnectTimer: null,
+        authFailed: false,
+        open: true,
+      };
+      connectionsRef.current.set(conversationId, handle);
+      publishConnected();
+
+      // Live events for a background conversation must land on that
+      // conversation's runtime, never on the one being displayed.
+      const refs: EventRefs = {
+        activeJobIdRef: {
+          get current() {
+            return handle.jobId;
+          },
+          set current(value: string | null) {
+            handle.jobId = value;
+          },
+        },
+        lastEventIdRef: {
+          get current() {
+            return handle.lastEventId;
+          },
+          set current(value: number) {
+            handle.lastEventId = value;
+          },
+        },
+        conversationId,
+      };
+
       const url = buildChatStreamUrl(conversationId, {
-        jobId: connectOptions?.jobId,
+        jobId: jobId ?? undefined,
         lastEventId,
       });
-
-      const controller = new AbortController();
-      abortRef.current = controller;
-      const store = useChatStore.getState();
-      store.setConnected(true);
-
-      const refs: ParseContext = { activeJobIdRef, lastEventIdRef };
-      let authFailed = false;
       let rateLimitedMs = 0;
+
+      const scheduleReconnect = () => {
+        if (!isMountedRef.current) return;
+        if (handle.authFailed) return;
+        const delay =
+          rateLimitedMs > 0
+            ? rateLimitedMs
+            : computeReconnectDelay(handle.reconnectAttempt);
+        if (rateLimitedMs <= 0) handle.reconnectAttempt += 1;
+        handle.reconnectTimer = setTimeout(() => {
+          if (!isMountedRef.current) return;
+          if (!connectionsRef.current.has(conversationId)) return;
+          void open(conversationId, {
+            jobId: handle.jobId ?? undefined,
+            lastEventId: handle.lastEventId,
+            force: true,
+          }).catch((retryErr) => {
+            console.error("SSE reconnect failed:", retryErr);
+          });
+        }, delay);
+      };
 
       try {
         const res = await fetch(url, {
@@ -178,19 +268,18 @@ export function useSSE(options: UseSSEOptions = {}) {
             "X-Device-Fingerprint": fingerprint,
             Accept: "text/event-stream",
           },
-          signal: controller.signal,
+          signal: handle.controller.signal,
         });
 
         if (!res.ok || !res.body) {
           if (isAuthError(res.status)) {
-            authFailed = true;
+            handle.authFailed = true;
             // Token expired or revoked — do not auto-reconnect, let the app handle auth.
-            store.setConnected(false);
-            store.setLoading(false);
+            close(conversationId);
             const err = new Error(
               `SSE auth failed: ${res.status}. Please log in again.`
             );
-            onError?.(err);
+            onErrorRef.current?.(err);
             throw err;
           }
           if (res.status === 429) {
@@ -206,8 +295,7 @@ export function useSSE(options: UseSSEOptions = {}) {
           throw new Error(`SSE open failed: ${res.status}`);
         }
 
-        // Reset reconnect counter on successful connection.
-        reconnectAttemptRef.current = 0;
+        handle.reconnectAttempt = 0;
 
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
@@ -223,59 +311,66 @@ export function useSSE(options: UseSSEOptions = {}) {
           for (const part of parts) {
             const isDone = parseSSEPart(part, (data) => {
               handleChatEvent(data, refs);
-              onMessage?.(data as SSEMessage);
+              onMessageRef.current?.(data as SSEMessage);
             });
             if (isDone) {
-              disconnect();
+              close(conversationId);
               return;
             }
           }
         }
+        // Server closed the stream without `done` (timeout, restart). Reconnect
+        // so a still-running job is not silently abandoned.
+        scheduleReconnect();
       } catch (err) {
         const error = err instanceof Error ? err : new Error(String(err));
         if (error.name === "AbortError") {
-          // Graceful disconnect — do not reconnect.
+          // Deliberate close — never reconnect.
           return;
         }
-
         console.error("SSE error:", error);
-        onError?.(error);
-        store.setConnected(false);
-        store.setLoading(false);
-
-        if (isMountedRef.current && !authFailed) {
-          // Retry unless this was an auth error. Respect server Retry-After on 429.
-          const delay =
-            rateLimitedMs > 0
-              ? rateLimitedMs
-              : computeReconnectDelay(reconnectAttemptRef.current);
-          if (rateLimitedMs <= 0) {
-            reconnectAttemptRef.current += 1;
-          }
-          reconnectTimerRef.current = setTimeout(() => {
-            if (isMountedRef.current) {
-              connect(conversationId, {
-                jobId: activeJobIdRef.current ?? connectOptions?.jobId,
-                lastEventId: lastEventIdRef.current,
-              }).catch((retryErr) => {
-                console.error("SSE reconnect failed:", retryErr);
-              });
-            }
-          }, delay);
-        }
-        return;
+        onErrorRef.current?.(error);
+        scheduleReconnect();
       } finally {
-        if (connectingRef.current === connectionKey) {
-          connectingRef.current = null;
+        handle.open = false;
+        if (
+          connectionsRef.current.get(conversationId)?.controller ===
+          handle.controller
+        ) {
+          connectionsRef.current.delete(conversationId);
+          publishConnected();
         }
-        if (abortRef.current === controller) {
-          abortRef.current = null;
-        }
-        useChatStore.getState().setConnected(false);
       }
     },
-    [disconnect, onMessage, onError]
+    [close, publishConnected]
   );
 
-  return { connect, disconnect, activeJobIdRef, lastEventIdRef };
+  /** True when this conversation currently holds an open stream. */
+  const isOpen = useCallback(
+    (conversationId: string) => connectionsRef.current.has(conversationId),
+    []
+  );
+
+  const jobIdFor = useCallback(
+    (conversationId: string) =>
+      connectionsRef.current.get(conversationId)?.jobId ?? null,
+    []
+  );
+
+  return { open, close, closeAll, isOpen, jobIdFor };
+}
+
+/**
+ * Seed a runtime entry for every conversation that still has an unfinished job.
+ *
+ * A page load starts with no streams and an empty runtime map, so a job that was
+ * already running would be invisible. The server is the only authority on what is
+ * still running (`GET /chat/stream` without a job id attaches to the newest
+ * pending/running job), so the caller drives discovery through `open()` and this
+ * helper only guarantees a runtime entry exists to write progress into.
+ */
+export function ensureRuntimeEntry(conversationId: string): void {
+  const store = useChatStore.getState();
+  if (store.runtimeByConversation[conversationId]) return;
+  store.setRuntime(conversationId, emptyConversationRuntime());
 }

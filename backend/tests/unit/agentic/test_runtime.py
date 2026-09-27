@@ -1,38 +1,22 @@
 """Tests for legacy-to-Agent-Loop state projection."""
 
-
-from agentic.runtime import confirm_agent_ledger, initialize_agent_ledger
+from agentic.runtime import initialize_agent_ledger
 from agentic.state import AgentLedgerState
 
 
-def test_deterministic_mode_does_not_create_agent_state():
-    result = initialize_agent_ledger({"user_input": "Plan Shanghai"}, mode="deterministic")
+def test_retired_mode_is_rejected():
+    import pytest
 
-    assert result == {"policy_mode": "deterministic", "agent_status": "disabled"}
+    with pytest.raises(ValueError, match="Only agent"):
+        initialize_agent_ledger({"user_input": "Plan Shanghai"}, mode="deterministic")
 
 
-
-def test_explicit_react_graph_mode_does_not_depend_on_environment_default():
+def test_runtime_initializes_one_model_driven_session():
     result = initialize_agent_ledger(
-        {
-            "user_input": "上海两日游",
-            "slots": {"destination": "上海", "travel_days": 2},
-            "missing_slots": [],
-        },
-        mode="agent",
-        task_graph_mode="react",
+        {"slots": {"destination": "Shanghai", "travel_days": 2}}, mode="agent"
     )
-    ledger = AgentLedgerState(**result["agent_ledger"])
-
-    assert result["current_task_id"] == "research_evidence"
-    assert [task.task_id for task in ledger.task_graph.tasks] == [
-        "research_evidence",
-        "solve_itinerary",
-        "validate_itinerary",
-        "review_itinerary",
-        "compose_draft",
-        "await_confirmation",
-    ]
+    assert result["current_task_id"] == "travel_agent"
+    assert len(result["agent_ledger"]["task_graph"]["tasks"]) == 1
 
 
 def test_nullable_capability_lists_are_projected_as_empty_lists():
@@ -207,14 +191,14 @@ def test_single_profile_date_derives_end_from_trip_duration():
 def test_existing_ledger_is_resumed_instead_of_reset():
     initial = initialize_agent_ledger(
         {"user_input": "Plan Shanghai", "slots": {"destination": "Shanghai"}},
-        mode="shadow",
+        mode="agent",
     )
     ledger = AgentLedgerState(**initial["agent_ledger"])
     ledger.budget = ledger.budget.consume(episode_steps=2)
 
     resumed = initialize_agent_ledger(
         {"user_input": "ignored", "agent_ledger": ledger.model_dump(mode="json")},
-        mode="shadow",
+        mode="agent",
     )
 
     assert AgentLedgerState(**resumed["agent_ledger"]).budget.used_episode_steps == 2
@@ -261,40 +245,3 @@ def test_material_goal_change_starts_new_version_without_stale_artifacts():
     assert current.budget.used_tool_calls == 0
     assert current.facts == {}
     assert current.artifacts == {}
-
-
-
-
-
-def test_confirmation_closes_task_graph_and_passes_global_guard():
-    from agentic.state import ArtifactRecord, GoalLedger, TaskGraph, TaskNode
-
-    ledger = AgentLedgerState(
-        goal=GoalLedger(original_request="Plan Shanghai"),
-        task_graph=TaskGraph(
-            goal_version=1,
-            tasks=(
-                TaskNode(
-                    task_id="await_confirmation",
-                    goal="confirm",
-                    status="blocked",
-                    allowed_actions=("ask_user", "finish"),
-                    success_criteria={"required_fact_keys": ["user_confirmation"]},
-                    attempts=1,
-                ),
-            ),
-        ),
-    )
-    ledger.artifacts["validation"] = ArtifactRecord(
-        artifact_id="validation",
-        artifact_type="validation_report",
-        payload={"hard_pass": True, "hard_violations": []},
-        goal_version=1,
-        plan_version=1,
-    )
-
-    confirmed, decision = confirm_agent_ledger(ledger)
-
-    assert confirmed.task_graph.get("await_confirmation").status == "succeeded"
-    assert confirmed.termination_reason == "validated_finish"
-    assert decision.allowed is True

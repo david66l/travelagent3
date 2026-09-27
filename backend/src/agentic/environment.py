@@ -168,36 +168,17 @@ class SnapshotToolExecutor:
                 None,
             )
         if matched_index is None:
-            expected = [responses[index].expected_arguments for index in available]
             return self._failure(
                 name,
                 tool_call_id,
                 "SNAPSHOT_ARGUMENT_MISMATCH",
                 "tool arguments do not match any unused snapshot response",
                 retryable=False,
-                details={"actual": arguments, "expected_any": expected},
+                details={"actual": arguments},
             )
 
         consumed.add(matched_index)
         response = responses[matched_index]
-        mismatches = (
-            {}
-            if self._arguments_match(arguments, response, responses)
-            else {
-                key: {"expected": value, "actual": arguments.get(key)}
-                for key, value in response.expected_arguments.items()
-                if arguments.get(key) != value
-            }
-        )
-        if mismatches:
-            return self._failure(
-                name,
-                tool_call_id,
-                "SNAPSHOT_ARGUMENT_MISMATCH",
-                "tool arguments do not match the immutable snapshot",
-                retryable=False,
-                details=mismatches,
-            )
         result = ToolResult(
             data=deepcopy(response.data),
             data_source=response.data_source,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import json
 import os
 import time
 from typing import Any, AsyncIterator
@@ -165,21 +166,7 @@ async def run_graph_turn(
 # The frontend (stageLabels.ts) maps each of these to a specific status line
 # (e.g. retrieve → "正在收集景点信息…"), so we must forward the *actual* node
 # name instead of collapsing everything to a generic "planning" label.
-_PROGRESS_NODES = {
-    "understand",
-    "profile_recall",
-    "agent_loop",
-    "retrieve",
-    "weather_check",
-    "plan",
-    "tool_call",
-    "factcheck",
-    "hallucination",
-    "output",
-    "booking",
-    "apply_single_change",
-    "replan_local",
-}
+_PROGRESS_NODES = {"gathering", "profile_recall", "agent_loop", "output", "confirm_gate", "booking"}
 
 
 def _public_stage_for_node(name: str) -> str:
@@ -344,7 +331,6 @@ async def stream_graph_events(
         and snapshot_values.get("agent_status") == "awaiting_information"
         and snapshot_values.get("agent_ledger")
     ):
-        from agentic.runtime import resume_agent_ledger
         from agentic.state import AgentLedgerState
 
         blocked_ledger = AgentLedgerState(**snapshot_values["agent_ledger"])
@@ -362,25 +348,9 @@ async def stream_graph_events(
                 },
             }
             return
-        expected_keys = list(blocked_task.success_criteria.get("required_fact_keys") or [])
-        current_fact_keys = {
-            fact.key
-            for fact in blocked_ledger.facts.values()
-            if fact.goal_version == blocked_ledger.goal.goal_version
-            and fact.plan_version == blocked_ledger.task_graph.plan_version
-        }
-        unanswered_keys = [key for key in expected_keys if key not in current_fact_keys]
-        fact_key = (
-            unanswered_keys[0]
-            if unanswered_keys
-            else (expected_keys[0] if expected_keys else f"user_response.{blocked_task.task_id}")
-        )
-        resumed_ledger = resume_agent_ledger(
-            blocked_ledger,
-            task_id=blocked_task.task_id,
-            user_value=user_input,
-            fact_key=fact_key,
-        )
+        from agentic.runtime import resume_agent_conversation
+
+        resumed_ledger = await resume_agent_conversation(blocked_ledger, user_input=user_input)
         graph_input = Command(
             goto="agent_loop",
             update={
@@ -454,87 +424,51 @@ async def stream_graph_events(
                 "payload": {"error": str(exc), "error_type": exc.code},
             }
             return
+        from graph.nodes import apply_draft_decision
+
+        decision = {"action": action}
         if action == "modify":
-            payload = action_payload or {}
-            graph_input = Command(
-                goto="apply_single_change",
-                update={
-                    "confirm_decision": "modify",
-                    "pending_change": payload.get("change") or payload,
-                },
-            )
+            decision["change"] = payload.get("change") or payload
         elif action == "reject":
-            reason = str((action_payload or {}).get("reason") or "").strip()
-            if values.get("policy_mode") == "agent" and values.get("agent_ledger"):
-                if reason:
-                    from agentic.runtime import revise_agent_ledger
-
-                    revised = await revise_agent_ledger(
-                        values["agent_ledger"], revision_reason=reason
-                    )
-                    graph_input = Command(
-                        goto="agent_loop",
-                        update={
-                            "confirm_decision": "reject_with_reason",
-                            "agent_ledger": revised.model_dump(mode="json"),
-                            "agent_status": "running",
-                            "stage": "revision_resumed",
-                        },
-                    )
-                else:
-                    graph_input = Command(
-                        goto="output",
-                        update={
-                            "confirm_decision": "reject_needs_reason",
-                            "agent_status": "awaiting_revision_reason",
-                            "next_action": "clarify",
-                            "clarification_questions": [
-                                "这版行程哪里不合适？例如太赶、预算过高、景点不喜欢或交通不方便。"
-                            ],
-                            "stage": "awaiting_revision_reason",
-                        },
-                    )
-            else:
-                graph_input = Command(
-                    goto="plan",
-                    update={"confirm_decision": None, "stage": "rejected"},
-                )
-        else:
-            update: dict[str, Any] = {
-                "confirm_decision": "confirm",
-                "next_action": "enrich",
-            }
-            if (
-                values.get("policy_mode") == "agent"
-                and values.get("agent_status") == "awaiting_confirmation"
-                and values.get("agent_ledger")
-            ):
-                from agentic.runtime import confirm_agent_ledger
-
-                ledger, completion = confirm_agent_ledger(values["agent_ledger"])
-                update.update(
-                    {
-                        "agent_ledger": ledger.model_dump(mode="json"),
-                        "agent_status": "finished",
-                        "termination_reason": "validated_finish",
-                        "completion_decision": completion.model_dump(mode="json"),
-                    }
-                )
-            graph_input = Command(
-                goto="tool_call",
-                update=update,
-            )
+            decision["reason"] = payload.get("reason")
+        update = await apply_draft_decision(values, decision)
+        target = "agent_loop" if update.get("next_action") == "agent_continue" else "output"
+        graph_input = Command(goto=target, update=update)
         logger.warning(
             "Checkpoint for %s did not expose confirm interrupt; continued action=%s from draft",
             session_id,
             action,
         )
     elif action == "trip_event" and snapshot and snapshot.values:
-        graph_input = Command(
-            goto="replan_local",
-            update={"external_event": action_payload or {}},
+        from agentic.runtime import revise_agent_ledger
+
+        values = dict(snapshot.values)
+        if not values.get("agent_ledger"):
+            yield {
+                "type": "error",
+                "stage": "agent_resume_failed",
+                "payload": {
+                    "error": "旧会话无法恢复，请新建旅行任务。",
+                    "error_type": "LegacySessionUnsupported",
+                },
+            }
+            return
+        revised = await revise_agent_ledger(
+            values["agent_ledger"],
+            revision_reason="行程中的新情况："
+            + json.dumps(action_payload or {}, ensure_ascii=False),
         )
-        logger.info("Graph in-trip replan for %s", session_id)
+        graph_input = Command(
+            goto="agent_loop",
+            update={
+                "agent_ledger": revised.model_dump(mode="json"),
+                "agent_status": "running",
+                "termination_reason": None,
+                "next_action": "agent_continue",
+                "stage": "revision_resumed",
+            },
+        )
+        logger.info("Graph in-trip revision for %s", session_id)
     elif is_paused:
         # A paused draft only accepts explicit control actions. Silently treating
         # free text as "reject" used to discard the user's text and corrupt the
@@ -785,18 +719,6 @@ async def stream_graph_events(
                 }
                 return
             elapsed_ms = int((time.monotonic() - t_start) * 1000)
-            if vals.get("policy_mode") == "shadow":
-                try:
-                    from agentic.shadow import record_deterministic_shadow_result
-
-                    await record_deterministic_shadow_result(vals, latency_ms=elapsed_ms)
-                except Exception as exc:
-                    # Evaluation must never change the user-visible planning result.
-                    logger.warning(
-                        "Could not record deterministic shadow scenario for %s: %s",
-                        session_id,
-                        exc,
-                    )
             if _LOCAL_TRACE_ENABLED:
                 try:
                     _save_local(
@@ -914,7 +836,6 @@ def _extract_result(state: dict[str, Any]) -> dict[str, Any]:
         "agent_status": state.get("agent_status"),
         "termination_reason": state.get("termination_reason"),
         "agent_error": state.get("agent_error"),
-        "agent_policy_routing": state.get("agent_policy_routing"),
         "pending_approval": state.get("pending_approval"),
     }
 

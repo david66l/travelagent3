@@ -1,0 +1,23 @@
+{
+  "version": "harness-student-correction24.v1",
+  "count": 24,
+  "split": "train",
+  "source_groups": [
+    "pilot-composition-1",
+    "pilot-composition-2",
+    "pilot-composition-3",
+    "pilot-composition-4",
+    "pilot-composition-5",
+    "pilot-composition-6"
+  ],
+  "cases_sha256": "4e3e8704b43879067db402803a65bfad2c7ae527f73fa50a01128747d73fd3a7",
+  "builder_sha256": "696f33c47a1e323a02e86f47c923aa2d2765223f5a69a4bf90a9e50873875b01",
+  "parent_builder_sha256": "43fd50375c1774730b5e2940cda4b3d2b5b00b1bfa4c4a90f0fd19b8ad98b242",
+  "holdout_content_used": false,
+  "training_targets_present": false,
+  "limits": [
+    "synthetic train-only instances of six existing training families",
+    "not 24 independent templates; not a generalization score",
+    "provider fault rules and meal-slot-only scope are unchanged"
+  ]
+}

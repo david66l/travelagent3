@@ -2,7 +2,6 @@
 
 import json
 
-import pytest
 
 from agentic.environment import (
     EnvironmentSnapshot,
@@ -12,14 +11,6 @@ from agentic.environment import (
     create_rollout_group,
 )
 from agentic.loop import PolicyAction, PolicyContext
-from agentic.trl_environment import (
-    TRLClarificationEnvironment,
-    TRLTradeoffEnvironment,
-)
-from agentic.legacy.environments import (  # archived pre-react modes
-    TRLSearchEnvironment,
-    TRLTravelEnvironment,
-)
 
 
 class FirstAllowedPolicy:
@@ -114,7 +105,6 @@ def _snapshot() -> EnvironmentSnapshot:
         },
         hidden_test_facts={"closed_pois": []},
     )
-
 
 
 async def test_group_members_share_fingerprint_but_not_tool_counters():
@@ -259,57 +249,3 @@ async def test_context_tolerant_keyword_contract_ignores_only_out_of_contract_co
     assert broad[0]["observation"]["error"]["code"] == "QUERY_TOO_BROAD"
     assert narrowed[0]["observation"]["ok"] is True
     assert unexpected[0]["observation"]["error"]["code"] == ("SNAPSHOT_ARGUMENT_MISMATCH")
-
-
-
-
-def test_trl_policy_driven_environment_rejects_teacher_trajectory_prefix():
-    environment = TRLTravelEnvironment()
-
-    with pytest.raises(ValueError, match="trajectory prefixes are forbidden"):
-        environment.reset(
-            task=_task().model_dump(mode="json"),
-            snapshot=_snapshot().model_dump(mode="json"),
-            prompt=[
-                {"role": "system", "content": "policy"},
-                {"role": "user", "content": _task().user_request},
-                {"role": "assistant", "content": "teacher action"},
-            ],
-        )
-
-
-
-def test_trl_environments_expose_only_state_specific_policy_tools():
-    import inspect
-
-    def tools(environment):
-        return {
-            name
-            for name, member in inspect.getmembers(environment, predicate=inspect.ismethod)
-            if name not in {"reset", "get_reward"} and not name.startswith("_")
-        }
-
-    assert tools(TRLSearchEnvironment()) == {"search_pois"}
-    assert tools(TRLClarificationEnvironment()) == {"ask_user"}
-    assert tools(TRLTradeoffEnvironment()) == {"abort", "propose_tradeoff"}
-    assert tools(TRLTravelEnvironment()) == {
-        "accept_candidates",
-        "accept_itinerary",
-        "abort",
-        "ask_user",
-        "capability_check",
-        "compose_draft",
-        "finish",
-        "finalize_research",
-        "get_poi_detail",
-        "get_route_matrix",
-        "get_weather",
-        "propose_tradeoff",
-        "retrieve_city_knowledge",
-        "retry_solve",
-        "search_current_info",
-        "search_pois",
-        "search_transport",
-        "solve_itinerary",
-        "validate_itinerary",
-    }

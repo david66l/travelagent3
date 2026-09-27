@@ -1,0 +1,372 @@
+{
+  "schema_version": 1,
+  "article_number": 2,
+  "title": "记忆、上下文与检索：从用户偏好到模型可见证据",
+  "review_date": "2026-09-10",
+  "project_root": "E:/A_Louis/TravelAgent2",
+  "method": "Static source and call-chain review; no application services, model loading, database operations, training, benchmarks or test suites executed.",
+  "scope": [
+    "Conversation state and slot mapping",
+    "Redis/PostgreSQL recovery and archiving",
+    "Profile persistence and recall",
+    "Conflict resolution and explicit updates",
+    "Embedding and retrieval call sites",
+    "Generic compression and policy context projection",
+    "Interview explanations and proposed verification"
+  ],
+  "artifact": {
+    "path": "E:/A_Louis/TravelAgent2/面试准备/20260910-重写版/02-记忆上下文与检索.md",
+    "sha256": "b0cba64709aa1896a17648843b4fbd4d5ba147b4ed868d55e3e558cb6e5b5f3b",
+    "bytes": 62042,
+    "characters": 29760,
+    "lines": 1083
+  },
+  "source_files": [
+    {
+      "path": "backend/src/core/conversation_state.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/core/conversation_state.py",
+      "purpose": "会话结构、字段集合与 patch",
+      "kind": "source",
+      "line": 84,
+      "symbol_found": true,
+      "sha256": "223e5cbafe06a85d624e115fd4819e1ebdc9b513babd0732f5be336c47ade464",
+      "bytes": 8463
+    },
+    {
+      "path": "backend/src/core/conversation_turn.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/core/conversation_turn.py",
+      "purpose": "解析槽位、回填、画像召回主链",
+      "kind": "source",
+      "line": 69,
+      "symbol_found": true,
+      "sha256": "cf4b390a224f8892bb248fb0ff2f1035805d3495abf35d98b8ebb6bbb7779587",
+      "bytes": 15367
+    },
+    {
+      "path": "backend/src/core/memory.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/core/memory.py",
+      "purpose": "热暖冷存取、归档、锁",
+      "kind": "source",
+      "line": 228,
+      "symbol_found": true,
+      "sha256": "fef8f0b9ff8ef2ac4a5cb695bbf49cd079b48d628e73a1f49e6125b65dba49d0",
+      "bytes": 13020
+    },
+    {
+      "path": "backend/src/api/chat_runtime.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/api/chat_runtime.py",
+      "purpose": "聊天恢复与 PlanningJob 回退",
+      "kind": "source",
+      "line": 220,
+      "symbol_found": true,
+      "sha256": "db5911905bb740346638efe5b5857641391bcb1431fee74197128e90262eb397",
+      "bytes": 38541
+    },
+    {
+      "path": "backend/src/graph/session_manager.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/graph/session_manager.py",
+      "purpose": "图会话入口的恢复范围",
+      "kind": "source",
+      "line": 15,
+      "symbol_found": true,
+      "sha256": "66f9bd126c686b9f7b3c794a10742061dfb5327f60e41fc8ae0b991de2c1587c",
+      "bytes": 3220
+    },
+    {
+      "path": "backend/src/worker/memory_tasks.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/worker/memory_tasks.py",
+      "purpose": "归档、断连调度与压缩任务",
+      "kind": "source",
+      "line": 135,
+      "symbol_found": true,
+      "sha256": "ddaa82587255b4ed95beb007dfe285c0625d347ba269c9dc0c4833d8d3f053c3",
+      "bytes": 12347
+    },
+    {
+      "path": "backend/src/core/celery_app.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/core/celery_app.py",
+      "purpose": "周期任务配置",
+      "kind": "source",
+      "line": 60,
+      "symbol_found": true,
+      "sha256": "1bd55b9337e18303e90ae6945dc7f72128f5e34776a83ead0149ca66e7a688d6",
+      "bytes": 3458
+    },
+    {
+      "path": "backend/src/models/user_profile_vector.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/models/user_profile_vector.py",
+      "purpose": "长期画像数据结构",
+      "kind": "source",
+      "line": 11,
+      "symbol_found": true,
+      "sha256": "be7ae40e14e694fcc6fae0c4b97e729266acbb7f078883a057003b9381e44731",
+      "bytes": 1594
+    },
+    {
+      "path": "backend/src/data/profile_service.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/data/profile_service.py",
+      "purpose": "画像真实读写与向量更新",
+      "kind": "source",
+      "line": 28,
+      "symbol_found": true,
+      "sha256": "954809560d40aa32b07786b29fa98d403be40db27e9f186f5dfbc0c9924f0d7d",
+      "bytes": 9037
+    },
+    {
+      "path": "backend/src/agents/profile_recall.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/agents/profile_recall.py",
+      "purpose": "本人及相似画像召回",
+      "kind": "source",
+      "line": 59,
+      "symbol_found": true,
+      "sha256": "21884a49b529d4e8ef80a5cf6a961c6a3acd77dea35cfff29b9fbde72f8fbf6f",
+      "bytes": 16064
+    },
+    {
+      "path": "backend/src/agents/memory_conflict_resolver.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/agents/memory_conflict_resolver.py",
+      "purpose": "字段合并规则",
+      "kind": "source",
+      "line": 8,
+      "symbol_found": true,
+      "sha256": "aae4df7e266c56cfc4b6e8ce23a1205b35a5b0f5e4f49a523ffaa2296ab24ccd",
+      "bytes": 6294
+    },
+    {
+      "path": "backend/src/graph/node_impl.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/graph/node_impl.py",
+      "purpose": "主链长期画像回写",
+      "kind": "source",
+      "line": 134,
+      "symbol_found": true,
+      "sha256": "321980a0147ee38fa2d8118a4271ea81a36e0382e1abe25b33a4a5009f368282",
+      "bytes": 42660
+    },
+    {
+      "path": "backend/src/schemas.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/schemas.py",
+      "purpose": "UserProfile 画像字段契约",
+      "kind": "source",
+      "line": 7,
+      "symbol_found": true,
+      "sha256": "7b0cff701d9549adc6bb767df4c78ad464223c1b2fe25707c9e3066c70212573",
+      "bytes": 12306
+    },
+    {
+      "path": "backend/src/models/travel_slots.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/models/travel_slots.py",
+      "purpose": "TravelSlots 与 RevisionOperation 字段契约",
+      "kind": "source",
+      "line": 12,
+      "symbol_found": true,
+      "sha256": "c1fd892bdeb6f488daa8b444535b839e077a36c2b660e9dc65e4e658367a1369",
+      "bytes": 8208
+    },
+    {
+      "path": "backend/src/data/embedding.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/data/embedding.py",
+      "purpose": "1024 维编码与禁用开关",
+      "kind": "source",
+      "line": 20,
+      "symbol_found": true,
+      "sha256": "eae0c607360e9eed636289e38abe3254ed2c54b63404a86708e4b719251376a5",
+      "bytes": 4485
+    },
+    {
+      "path": "backend/src/core/settings.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/core/settings.py",
+      "purpose": "编码与压缩默认配置",
+      "kind": "source",
+      "line": 97,
+      "symbol_found": true,
+      "sha256": "da75cee0d364482c050e472199debcfd514d0085f68a68575d06c871fbcc1438",
+      "bytes": 13975
+    },
+    {
+      "path": "backend/src/data/retrieval_repository.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/data/retrieval_repository.py",
+      "purpose": "结构化、向量与词面方法",
+      "kind": "source",
+      "line": 20,
+      "symbol_found": true,
+      "sha256": "afb7ab91c69b7bf9907f923be81e9e7cb510b5253956bfce7abbfec9f8f658d1",
+      "bytes": 7593
+    },
+    {
+      "path": "backend/src/tools/tool_executor.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/tools/tool_executor.py",
+      "purpose": "检索实际调用与画像工具回执",
+      "kind": "source",
+      "line": 941,
+      "symbol_found": true,
+      "sha256": "b4877940dd70f33f87772473ee41de6278edb7eeb832d14c345b6b46e7ece45d",
+      "bytes": 52040
+    },
+    {
+      "path": "backend/src/core/prompt_compress.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/core/prompt_compress.py",
+      "purpose": "通用消息压缩",
+      "kind": "source",
+      "line": 59,
+      "symbol_found": true,
+      "sha256": "bdbfcd22cd2f92b2decfc91aa857c542a21fa21994bf0532e56d5141120c81f0",
+      "bytes": 3715
+    },
+    {
+      "path": "backend/src/core/llm_client.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/core/llm_client.py",
+      "purpose": "Agent 策略绕过通用压缩",
+      "kind": "source",
+      "line": 185,
+      "symbol_found": true,
+      "sha256": "2df532ab3ac1b98651581beb231655241b8e2730ba96095900ed09f6f700ef4d",
+      "bytes": 22018
+    },
+    {
+      "path": "backend/src/agentic/loop.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/agentic/loop.py",
+      "purpose": "当前证据筛选与策略观察",
+      "kind": "source",
+      "line": 886,
+      "symbol_found": true,
+      "sha256": "0235d543388698832bf561160884648e0921998ec1daccd4b73fc831d2455262",
+      "bytes": 56630
+    },
+    {
+      "path": "backend/src/agentic/policy_prompts.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/agentic/policy_prompts.py",
+      "purpose": "模型输入投影与信任边界",
+      "kind": "source",
+      "line": 49,
+      "symbol_found": true,
+      "sha256": "80f8ca5efa885f009f9aa2a06cb7dcdf48294232084f3cb6d34c7de027af76e3",
+      "bytes": 8745
+    },
+    {
+      "path": "backend/src/agentic/state.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/src/agentic/state.py",
+      "purpose": "执行账本与证据模型",
+      "kind": "source",
+      "line": 253,
+      "symbol_found": true,
+      "sha256": "0c9d41ad73f7f3bf721b8b0db6ab8c16a3406e60fca6cc76baca5a59462204e9",
+      "bytes": 14195
+    },
+    {
+      "path": "backend/tests/unit/core/test_conversation_state.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/tests/unit/core/test_conversation_state.py",
+      "purpose": "已有单元测试入口；本次未执行",
+      "kind": "test_inventory",
+      "line": 28,
+      "symbol_found": true,
+      "sha256": "35a7ec6b5ba19d71a5f1a694dd94c4a610ecf82b14799d3c72bca885ca0438f9",
+      "bytes": 8432
+    },
+    {
+      "path": "backend/tests/unit/core/test_conversation_turn.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/tests/unit/core/test_conversation_turn.py",
+      "purpose": "已有单元测试入口；本次未执行",
+      "kind": "test_inventory",
+      "line": 46,
+      "symbol_found": true,
+      "sha256": "6851edb17f918235d49325b8984fefac8b6f33d929c21492f3c91a3fb50e1ce5",
+      "bytes": 19068
+    },
+    {
+      "path": "backend/tests/unit/core/test_memory.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/tests/unit/core/test_memory.py",
+      "purpose": "已有单元测试入口；本次未执行",
+      "kind": "test_inventory",
+      "line": 21,
+      "symbol_found": true,
+      "sha256": "f8221c7a5b0bfded016c5f34ea7e9d8811b70e5520e02ab7cca09b26c6f0e37e",
+      "bytes": 11355
+    },
+    {
+      "path": "backend/tests/unit/core/test_prompt_compress.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/tests/unit/core/test_prompt_compress.py",
+      "purpose": "已有单元测试入口；本次未执行",
+      "kind": "test_inventory",
+      "line": 6,
+      "symbol_found": true,
+      "sha256": "983110495a7c0352140a2b830bdff833fdd15752da89c25ba0aa25d8c922dbfe",
+      "bytes": 1892
+    },
+    {
+      "path": "backend/tests/unit/agents/test_profile_recall.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/tests/unit/agents/test_profile_recall.py",
+      "purpose": "已有单元测试入口；本次未执行",
+      "kind": "test_inventory",
+      "line": 32,
+      "symbol_found": true,
+      "sha256": "2b016b283a74245ad09d745d4e15fe4cc1196fd699cf4b421d5072b4d0670f57",
+      "bytes": 5636
+    },
+    {
+      "path": "backend/tests/unit/agents/test_memory_conflict_resolver.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/tests/unit/agents/test_memory_conflict_resolver.py",
+      "purpose": "已有单元测试入口；本次未执行",
+      "kind": "test_inventory",
+      "line": 14,
+      "symbol_found": true,
+      "sha256": "4f67b86d3eeacada1aa448b0b5cca12f960cccdd4e637c81724d992d695c2a39",
+      "bytes": 3041
+    },
+    {
+      "path": "backend/tests/unit/worker/test_memory_tasks.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/tests/unit/worker/test_memory_tasks.py",
+      "purpose": "已有单元测试入口；本次未执行",
+      "kind": "test_inventory",
+      "line": 31,
+      "symbol_found": true,
+      "sha256": "616745795779c7bd59240637b3dea4e2e85d201ae45abb436db0d5b9575b435a",
+      "bytes": 12020
+    },
+    {
+      "path": "backend/tests/unit/data/test_retrieval_repository.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/tests/unit/data/test_retrieval_repository.py",
+      "purpose": "已有单元测试入口；本次未执行",
+      "kind": "test_inventory",
+      "line": 27,
+      "symbol_found": true,
+      "sha256": "83e67215b7225fa8e0e2612d5cf22f69553f0724f731c157da8c53b51d35cd06",
+      "bytes": 3468
+    },
+    {
+      "path": "backend/tests/unit/data/test_retrieval_fallback.py",
+      "absolute_path": "E:/A_Louis/TravelAgent2/backend/tests/unit/data/test_retrieval_fallback.py",
+      "purpose": "已有单元测试入口；本次未执行",
+      "kind": "test_inventory",
+      "line": 24,
+      "symbol_found": true,
+      "sha256": "9c121cddf2e02fa522ba24e002733b46d2be666b36c2daeba862538d156f89c4",
+      "bytes": 2567
+    }
+  ],
+  "verification": {
+    "source_hashes": "SHA-256 of local source snapshot",
+    "test_files": "Existing test entry points inventoried, not executed",
+    "retrieval_call_search": "rg over backend/src for search_vector( and search_bm25( returned definitions only",
+    "runtime_claims": "No current cloud runtime, index deployment, embedding coverage, database availability or test pass rate verified",
+    "examples": "Illustrative only; proposed checks are not completed experiments"
+  },
+  "cloud": {
+    "reprobed_this_article": false,
+    "uploaded": false,
+    "note": "Previous article recorded SSH connection refusal; this article performed lightweight local document work only."
+  },
+  "prior_article_manifest": "SOURCES_MANIFEST.json",
+  "limitations": [
+    "Local working tree contains pre-existing modifications; source hashes do not identify a deployed cloud revision.",
+    "Static risks are distinguished from reproduced failures.",
+    "No performance, memory quality or posttraining metric was newly measured.",
+    "Future design suggestions are not represented as implemented functionality."
+  ],
+  "document_corrections": [
+    {
+      "date": "2026-09-10",
+      "reason": "Article 3 source review clarified decision_history maximum 32, repeat detection last 8 and policy-visible last 6. Counts cover retained records.",
+      "source": "backend/src/agentic/loop.py:776"
+    }
+  ]
+}

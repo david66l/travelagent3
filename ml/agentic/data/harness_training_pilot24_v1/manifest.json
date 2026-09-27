@@ -1,0 +1,31 @@
+{
+  "version": "harness-training-pilot24.v1",
+  "split": "train",
+  "count": 24,
+  "sha256": "ff38585e1731256baf255363a3ecd2e256c1bdb25acd04523573e9af95946a50",
+  "source_groups": [
+    "pilot-composition-1",
+    "pilot-composition-2",
+    "pilot-composition-3",
+    "pilot-composition-4",
+    "pilot-composition-5",
+    "pilot-composition-6"
+  ],
+  "scene_templates": [
+    "combined_ticket_floor",
+    "detail_timeout_and_weather",
+    "optional_closed",
+    "stale_hours_and_optional_closed",
+    "two_day_closure",
+    "two_venues_hours"
+  ],
+  "diagnostic_entity_overlap": [],
+  "diagnostic_request_overlap": [],
+  "limits": [
+    "synthetic pilot, not independent test",
+    "shared decision skills; scene compositions differ, no statistical independence claim",
+    "no final test cases constructed or used",
+    "not SFT-ready until actual execution and example review",
+    "meal time slots only; named restaurant routing not evaluated"
+  ]
+}

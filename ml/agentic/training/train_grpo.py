@@ -20,9 +20,6 @@ sys.path.insert(0, str(REPO_ROOT / "backend" / "src"))
 
 from agentic.grpo_training import (  # noqa: E402
     DEFAULT_POLICY_DRIVEN_TOOL_ITERATIONS,
-    MIN_POLICY_DRIVEN_TOOL_ITERATIONS,
-    VERIFIER_REPAIR_ACTIONS_BY_ROUTE,
-    VERIFIER_REPAIR_SCHEMA_CAPABILITY_BY_ROUTE,
     estimate_stateful_completion_budget,
     load_grpo_corpus,
     minimum_completion_length_floor,
@@ -42,7 +39,6 @@ from agentic.chat_template_contract import (  # noqa: E402
 )
 from agentic.reward import RewardConfig  # noqa: E402
 from agentic.trl_environment import (  # noqa: E402
-    VERIFIED_DECISION_STATE_REPLAY_CONTRACT,
     build_trl_environment_factories,
     canonical_trl_tool_schemas,
 )
@@ -80,7 +76,9 @@ def create_stable_tool_suffix_grpo_trainer_class(
                         f"found {trl_version}"
                     )
                 if not isinstance(getattr(self, "_env_tools", None), dict):
-                    raise RuntimeError("TRL environment schema bridge structure changed")
+                    raise RuntimeError(
+                        "TRL environment schema bridge structure changed"
+                    )
                 # TRL converts Python signatures to a permissive JSON schema
                 # that omits Pydantic constraints such as additionalProperties
                 # and minLength. Execution still uses the bound methods in
@@ -90,8 +88,8 @@ def create_stable_tool_suffix_grpo_trainer_class(
                 self._env_tools = {
                     name: canonical_trl_tool_schemas(
                         tools,
-                        action_order=VERIFIER_REPAIR_ACTIONS_BY_ROUTE.get(name),
-                        capability=VERIFIER_REPAIR_SCHEMA_CAPABILITY_BY_ROUTE.get(name),
+                        action_order=None,
+                        capability=None,
                     )
                     for name, tools in self._env_tools.items()
                 }
@@ -104,7 +102,9 @@ def create_stable_tool_suffix_grpo_trainer_class(
                 # Qwen template. From this point onward, use the explicit shared
                 # prefix-preserving renderer rather than TRL's implicit copy.
                 self.chat_template = None
-                active_template = self.chat_template or self.processing_class.chat_template
+                active_template = (
+                    self.chat_template or self.processing_class.chat_template
+                )
                 validate_agent_chat_template(active_template)
                 if self.chat_template_kwargs != AGENT_CHAT_TEMPLATE_KWARGS:
                     raise RuntimeError(
@@ -138,7 +138,9 @@ def create_stable_tool_suffix_grpo_trainer_class(
             preflight_failure_count = 0
             environments = list(self.environments or [])
             if environments and len(environments) != len(working_completions):
-                raise RuntimeError("TRL environment/completion batch cardinality changed")
+                raise RuntimeError(
+                    "TRL environment/completion batch cardinality changed"
+                )
             for index, environment in enumerate(environments):
                 if not getattr(environment, "_single_decision_tool_contract", False):
                     continue
@@ -189,9 +191,7 @@ def create_stable_tool_suffix_grpo_trainer_class(
                     images,
                     multimodal_fields,
                 )
-                terminal_eos_indices = set(
-                    self._agent_terminal_eos_environment_indices
-                )
+                terminal_eos_indices = set(self._agent_terminal_eos_environment_indices)
             finally:
                 self._agent_inside_tool_loop = False
                 self._agent_tool_loop_environment_indices = []
@@ -212,9 +212,13 @@ def create_stable_tool_suffix_grpo_trainer_class(
                     or rendered_completion_ids[index][-1]
                     != self._tokenizer.eos_token_id
                 ):
-                    raise RuntimeError("terminal decision completion is missing its EOS")
+                    raise RuntimeError(
+                        "terminal decision completion is missing its EOS"
+                    )
                 if index >= len(tool_mask) or not tool_mask[index]:
-                    raise RuntimeError("terminal decision completion is missing its tool mask")
+                    raise RuntimeError(
+                        "terminal decision completion is missing its tool mask"
+                    )
                 # This EOS is inserted by the Trainer bridge after the terminal
                 # tool result. It closes truncation accounting but is not a
                 # model-authored token and must never receive policy gradient.
@@ -231,7 +235,9 @@ def create_stable_tool_suffix_grpo_trainer_class(
 
         def _generate_single_turn(self, prompt_ids, images, multimodal_fields):
             if not getattr(self, "_agent_inside_tool_loop", False):
-                return super()._generate_single_turn(prompt_ids, images, multimodal_fields)
+                return super()._generate_single_turn(
+                    prompt_ids, images, multimodal_fields
+                )
             active_indices = list(self._agent_tool_loop_environment_indices)
             if len(active_indices) != len(prompt_ids):
                 raise RuntimeError("TRL active tool-loop subset cardinality changed")
@@ -364,7 +370,9 @@ def run_rollout_only_audit(
     with torch.no_grad():
         prepared = trainer._generate_and_score_completions(generation_batch)
     optimizer_absent_after = trainer.optimizer is None
-    gradients_absent = all(parameter.grad is None for parameter in trainer.model.parameters())
+    gradients_absent = all(
+        parameter.grad is None for parameter in trainer.model.parameters()
+    )
     source_after = (
         _file_provenance(source_adapter_path) if source_adapter_path.is_file() else None
     )
@@ -377,7 +385,9 @@ def run_rollout_only_audit(
     for environment in environments:
         rollout = environment.rollout_record
         if rollout is None:
-            raise RuntimeError("rollout-only environment did not expose a scored record")
+            raise RuntimeError(
+                "rollout-only environment did not expose a scored record"
+            )
         reward = rollout.reward
         rewards.append(float(reward.episode_reward))
         credited_step_start = int(getattr(environment, "_decision_step_start", 0))
@@ -413,11 +423,11 @@ def run_rollout_only_audit(
             }
         )
 
-    advantages = [float(value) for value in prepared["advantages"].detach().cpu().tolist()]
+    advantages = [
+        float(value) for value in prepared["advantages"].detach().cpu().tolist()
+    ]
     metrics = {
-        name: values[-1]
-        for name, values in trainer._metrics["train"].items()
-        if values
+        name: values[-1] for name, values in trainer._metrics["train"].items() if values
     }
     structural_valid = all(
         row["policy_call_attempt_count"] == 1
@@ -427,7 +437,9 @@ def run_rollout_only_audit(
         and row["no_policy_call_rejections"] is True
         for row in decision_rows
     )
-    reward_variance = len(set(rewards)) >= 2 and float(metrics.get("reward_std") or 0) > 0
+    reward_variance = (
+        len(set(rewards)) >= 2 and float(metrics.get("reward_std") or 0) > 0
+    )
     advantage_variance = any(value > 0 for value in advantages) and any(
         value < 0 for value in advantages
     )
@@ -506,7 +518,9 @@ def latest_completed_eval_metrics(log_history: list[dict] | None) -> dict:
     """Return an epoch-end evaluation already completed inside ``train()``."""
     for item in reversed(log_history or []):
         if item.get("eval_runtime") is not None and item.get("eval_reward") is not None:
-            return {key: value for key, value in item.items() if key.startswith("eval_")}
+            return {
+                key: value for key, value in item.items() if key.startswith("eval_")
+            }
     return {}
 
 
@@ -615,8 +629,8 @@ def main() -> int:
         default="react",
         help=(
             "react matches production: the model owns research/recovery choices while "
-            "the controller advances deterministic gates. controller_first is the old "
-            "narrow baseline; policy_driven remains a full-DAG research stress mode."
+            "the model chooses every action. "
+            "Online and training use the same harness."
         ),
     )
     parser.add_argument(
@@ -625,7 +639,7 @@ def main() -> int:
         default=DEFAULT_POLICY_DRIVEN_TOOL_ITERATIONS,
         help=(
             "Maximum policy tool rounds. Controller-first recovery usually needs "
-            "two decisions; full-DAG policy_driven audits need the larger default."
+            "full episodes need the larger default."
         ),
     )
     parser.add_argument("--max-completion-length", type=int, default=16384)
@@ -732,7 +746,9 @@ def main() -> int:
     )
 
     if args.rollout_only and not args.allow_small_corpus:
-        raise ValueError("rollout-only is an isolated diagnostic and requires --allow-small-corpus")
+        raise ValueError(
+            "rollout-only is an isolated diagnostic and requires --allow-small-corpus"
+        )
 
     eval_num_generations = resolve_num_generations_eval(
         args.num_generations, args.num_generations_eval
@@ -755,15 +771,6 @@ def main() -> int:
         raise ValueError("turn-credit-blend must be in [0, 1]")
     if args.credit_mode == "turn_r1" and args.max_tool_calling_iterations < 2:
         raise ValueError("turn_r1 requires at least two tool-calling iterations")
-    if (
-        args.execution_mode == "policy_driven"
-        and args.max_tool_calling_iterations < MIN_POLICY_DRIVEN_TOOL_ITERATIONS
-    ):
-        raise ValueError(
-            "policy_driven GRPO requires at least "
-            f"{MIN_POLICY_DRIVEN_TOOL_ITERATIONS} tool-calling iterations for the "
-            "nominal production DAG"
-        )
     effective_batch = args.batch_size * args.gradient_accumulation
     if effective_batch % args.num_generations:
         raise ValueError(
@@ -836,10 +843,12 @@ def main() -> int:
     from datasets import Dataset
     from peft import LoraConfig, PeftConfig, PeftModel, prepare_model_for_kbit_training
     from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+
     if not args.use_vllm:
         _disable_unused_vllm_import()
     import trl
     from trl import GRPOConfig, GRPOTrainer
+
     StableToolSuffixGRPOTrainer = create_stable_tool_suffix_grpo_trainer_class(
         base_trainer_class=GRPOTrainer,
         trl_version=trl.__version__,
@@ -1014,7 +1023,8 @@ def main() -> int:
         )
         args.output_dir.mkdir(parents=True, exist_ok=True)
         (args.output_dir / "rollout_only_report.json").write_text(
-            json.dumps(rollout_report, ensure_ascii=False, indent=2, default=str) + "\n",
+            json.dumps(rollout_report, ensure_ascii=False, indent=2, default=str)
+            + "\n",
             encoding="utf-8",
         )
         print(json.dumps(rollout_report, ensure_ascii=False, indent=2, default=str))
@@ -1065,7 +1075,9 @@ def main() -> int:
     )
     metadata = {
         "status": "rejected" if turn_credit_gate_errors else "trained",
-        "run_scope": "smoke" if args.max_steps > 0 or args.allow_small_corpus else "formal",
+        "run_scope": "smoke"
+        if args.max_steps > 0 or args.allow_small_corpus
+        else "formal",
         "method": (
             "group-relative-turn-credit-grpo-r1"
             if args.credit_mode == "turn_r1"
@@ -1073,22 +1085,14 @@ def main() -> int:
         ),
         "credit_mode": args.credit_mode,
         "execution_mode": args.execution_mode,
-        "policy_decision_scope": {
-            "policy_driven": "all_dag_actions",
-            "controller_first": "legacy_narrow_delegated_actions",
-            "react": "production_research_recovery_clarification_tradeoff_actions",
-        }[args.execution_mode],
+        "policy_decision_scope": "all_13_actions_full_episode",
         "rollout_initialization_contract": (
             rollout_contracts[0] if len(rollout_contracts) == 1 else "mixed"
         ),
         "rollout_initialization_contracts": rollout_contracts,
-        "teacher_trajectory_prefix": (
-            VERIFIED_DECISION_STATE_REPLAY_CONTRACT in rollout_contracts
-        ),
+        "teacher_trajectory_prefix": (False),
         "teacher_prefix_optimization_targets": False,
-        "verified_replay_prefix_in_prompt": (
-            VERIFIED_DECISION_STATE_REPLAY_CONTRACT in rollout_contracts
-        ),
+        "verified_replay_prefix_in_prompt": (False),
         "credit_assignment_claim": (
             "programmatic turn-relative research baseline"
             if args.credit_mode == "turn_r1"
@@ -1136,7 +1140,9 @@ def main() -> int:
                 "torch": torch.__version__,
                 "cuda_runtime": torch.version.cuda,
                 "gpu": torch.cuda.get_device_name(0),
-                "gpu_total_memory_bytes": torch.cuda.get_device_properties(0).total_memory,
+                "gpu_total_memory_bytes": torch.cuda.get_device_properties(
+                    0
+                ).total_memory,
             },
         },
         "seed": args.seed,

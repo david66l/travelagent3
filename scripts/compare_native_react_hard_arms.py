@@ -80,11 +80,9 @@ def _records(report: dict[str, Any]) -> dict[str, dict[str, Any]]:
     for row in result.values():
         metadata = row.get("benchmark_metadata") or {}
         row["family"] = str(metadata.get("family") or "unknown")
-        fallbacks = sum(
-            bool((action.get("route_trace") or {}).get("fallback_used"))
-            for action in row.get("actions") or []
-        )
-        row["model_calls"] = int(row.get("policy_calls") or 0) + fallbacks
+        # Every model turn is a policy call; the retired student/teacher routing
+        # layer used to add fallback model calls on top of this count.
+        row["model_calls"] = int(row.get("policy_calls") or 0)
     return result
 
 
@@ -121,44 +119,15 @@ def _validate_protocol(reports: dict[str, dict[str, Any]]) -> None:
             raise ValueError(f"arm {name} case ids differ from {baseline_name}")
 
 
-def _route_audit(records: dict[str, dict[str, Any]]) -> dict[str, Any]:
-    policy_calls = 0
-    traced_calls = 0
-    specialist_calls = 0
-    generalist_calls = 0
-    fallbacks = 0
-    specialist_actions: Counter[str] = Counter()
-    for row in records.values():
-        for action in row.get("actions") or []:
-            if action.get("source") != "policy":
-                continue
-            policy_calls += 1
-            trace = action.get("route_trace")
-            if not trace:
-                continue
-            traced_calls += 1
-            target = trace.get("executed_target")
-            if target == "student":
-                specialist_calls += 1
-                specialist_actions[str(action.get("action"))] += 1
-            elif target == "teacher":
-                generalist_calls += 1
-            fallbacks += int(bool(trace.get("fallback_used")))
-    return {
-        "policy_calls": policy_calls,
-        "traced_calls": traced_calls,
-        "trace_coverage": round(traced_calls / policy_calls, 6) if policy_calls else 1.0,
-        "specialist_calls": specialist_calls,
-        "generalist_calls": generalist_calls,
-        "fallbacks": fallbacks,
-        "specialist_action_counts": dict(specialist_actions),
-        "specialist_scope_valid": set(specialist_actions) <= {"get_poi_detail"},
-    }
-
-
 def _arm_summary(report: dict[str, Any]) -> dict[str, Any]:
     records = _records(report)
     summary = report.get("summary") or {}
+    policy_calls = sum(
+        1
+        for row in records.values()
+        for action in row.get("actions") or []
+        if action.get("source") == "policy"
+    )
     return {
         "model": (report.get("runtime") or {}).get("policy_model"),
         "topology": (report.get("runtime") or {}).get("policy_topology", "single-model"),
@@ -175,7 +144,7 @@ def _arm_summary(report: dict[str, Any]) -> dict[str, Any]:
         "mean_tool_calls": summary.get("mean_tool_calls"),
         "mean_latency_ms": summary.get("mean_latency_ms"),
         "failure_counts": summary.get("failure_counts") or {},
-        "route_audit": _route_audit(records),
+        "policy_calls": policy_calls,
     }
 
 
